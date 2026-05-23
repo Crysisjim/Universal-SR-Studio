@@ -68,6 +68,9 @@ a = Analysis(
         'src.ui.tabs.tab_queue',
         'src.ui.tabs.tab_distributed',
         # ── External packages ─────────────────────────────────────────────────
+        'appdirs',
+        'pkg_resources',
+        'setuptools',
         'yaml',
         'toml',
         'tomllib',              # Python 3.11+ built-in

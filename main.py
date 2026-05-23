@@ -112,8 +112,49 @@ def check_first_launch():
                 pass
     return True
 
+def _ask_language_first_launch():
+    """Show FR/EN picker on very first launch (before settings exist)."""
+    try:
+        from src.core.settings import SettingsManager
+        s = SettingsManager()
+        if s.get("language", ""):
+            return  # Already chosen
+        import tkinter as tk
+        result = {'lang': 'fr'}
+        root = tk.Tk()
+        root.title("Universal SR Studio")
+        root.geometry("360x190")
+        root.resizable(False, False)
+        root.configure(bg="#1a1a2e")
+        root.update_idletasks()
+        x = (root.winfo_screenwidth()  - 360) // 2
+        y = (root.winfo_screenheight() - 190) // 2
+        root.geometry(f"360x190+{x}+{y}")
+        tk.Label(root, text="Universal SR Studio",
+                 font=("Arial", 14, "bold"), fg="white", bg="#1a1a2e").pack(pady=(22, 4))
+        tk.Label(root, text="Choose your language / Choisissez votre langue",
+                 font=("Arial", 10), fg="#aaaaaa", bg="#1a1a2e").pack()
+        frame = tk.Frame(root, bg="#1a1a2e")
+        frame.pack(pady=22)
+        def pick(lang):
+            result['lang'] = lang
+            root.destroy()
+        tk.Button(frame, text="🇫🇷  Français",  command=lambda: pick('fr'),
+                  width=13, height=2, bg="#2d6a4f", fg="white",
+                  font=("Arial", 11, "bold"), relief="flat", cursor="hand2").pack(side="left", padx=12)
+        tk.Button(frame, text="🇬🇧  English",   command=lambda: pick('en'),
+                  width=13, height=2, bg="#1d3557", fg="white",
+                  font=("Arial", 11, "bold"), relief="flat", cursor="hand2").pack(side="left", padx=12)
+        root.protocol("WM_DELETE_WINDOW", lambda: pick('fr'))
+        root.mainloop()
+        s.set("language", result['lang'])
+    except Exception:
+        pass
+
+
 if __name__ == "__main__":
     check_first_launch()
+    _ask_language_first_launch()
 
     # ─── Windows: Set AppUserModelID for proper taskbar icon ───
     if sys.platform == "win32":
@@ -139,7 +180,7 @@ if __name__ == "__main__":
     import customtkinter as ctk
     from src.app import App
     ctk.set_appearance_mode("Dark")
-    ctk.set_default_color_theme("blue")
+    ctk.set_default_color_theme("green")
     app = App()
 
     # Set window icon

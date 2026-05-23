@@ -62,9 +62,9 @@ class App(ctk.CTk):
         mode = self.settings.get("appearance_mode", "System")
         ctk.set_appearance_mode(mode)
         
-        theme_name = self.settings.get("theme_color", "blue")
+        theme_name = self.settings.get("theme_color", "green")
         standard_themes = ["blue", "green", "dark-blue"]
-        
+
         if theme_name in standard_themes:
             ctk.set_default_color_theme(theme_name)
         else:
@@ -74,10 +74,10 @@ class App(ctk.CTk):
                     ctk.set_default_color_theme(theme_path)
                     print(f"[App] Thème chargé : {theme_name}")
                 except Exception as e:
-                    print(f"[App] Thème invalide ({e}), fallback blue")
-                    ctk.set_default_color_theme("blue")
+                    print(f"[App] Thème invalide ({e}), fallback green")
+                    ctk.set_default_color_theme("green")
             else:
-                ctk.set_default_color_theme("blue")
+                ctk.set_default_color_theme("green")
 
         # 3. CRÉATION DE LA FENÊTRE PRINCIPALE
         super().__init__()
