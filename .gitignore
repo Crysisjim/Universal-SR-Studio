@@ -1,0 +1,66 @@
+# ─── Secrets & credentials ────────────────────────────────────────────────────
+API KEYS/
+*.key
+*.secret
+secrets.json
+credentials.json
+
+# ─── User-specific settings & logs ───────────────────────────────────────────
+user_settings.json
+crash_log.txt
+.first_launch_done
+
+# ─── Python compiled files ────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# ─── Virtual environments ─────────────────────────────────────────────────────
+.venv/
+venv/
+env/
+ENV/
+.env
+
+# ─── Build / distribution ─────────────────────────────────────────────────────
+build/
+dist/
+*.egg-info/
+*.egg
+MANIFEST
+
+# ─── PyInstaller ──────────────────────────────────────────────────────────────
+# Keep *.spec files if you want to ship the packaging recipe, delete this line.
+# *.spec
+
+# ─── graphify output (local knowledge graph) ──────────────────────────────────
+graphify-out/
+
+# ─── Claude Code local settings ───────────────────────────────────────────────
+.claude/settings.local.json
+
+# ─── IDE & OS ─────────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.suo
+*.user
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ─── Temporary / test files ───────────────────────────────────────────────────
+*.tmp
+*.bak
+*.swp
+*~
+temp_*.py
+
+# ─── Benchmark & training outputs (large, user-specific) ──────────────────────
+# Uncomment if you don't want benchmark results tracked:
+# benchmark_results/
+
+# ─── LMDB datasets (binary, large) ───────────────────────────────────────────
+*.lmdb
+*.mdb

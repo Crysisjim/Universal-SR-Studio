@@ -1,0 +1,16 @@
+# Normalize line endings
+* text=auto
+*.py text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.toml text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.bat text eol=crlf
+*.spec text eol=lf
+# Binaries
+*.ico binary
+*.png binary
+*.jpg binary
+*.wav binary
+*.WAV binary

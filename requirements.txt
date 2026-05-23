@@ -1,0 +1,30 @@
+# ─── Universal SR Studio — Python dependencies ────────────────────────────────
+# Install: pip install -r requirements.txt
+#
+# Notes:
+#   - Python 3.11+ recommended (tomllib built-in, no `toml` fallback needed)
+#   - torch/torchvision NOT listed here: install from https://pytorch.org/
+#     matching your CUDA version BEFORE running the training engines.
+
+# ─── GUI ──────────────────────────────────────────────────────────────────────
+customtkinter>=5.2.0
+
+# ─── Image processing ────────────────────────────────────────────────────────
+Pillow>=10.0.0
+numpy>=1.24.0
+
+# ─── Config file parsing ──────────────────────────────────────────────────────
+PyYAML>=6.0
+toml>=0.10.2          # fallback for Python < 3.11 (tomllib built-in since 3.11)
+tomli-w>=1.0.0        # writing TOML files
+
+# ─── System monitoring ────────────────────────────────────────────────────────
+psutil>=5.9.0
+pynvml>=11.5.0        # GPU stats (NVIDIA only)
+
+# ─── Optional — install for extra features ────────────────────────────────────
+# win11toast>=0.9      # Windows 11 toast notifications
+# safetensors>=0.4.0   # Model export (.safetensors format)
+# comtypes>=1.2.0      # Windows taskbar progress bar
+# qrcode[pil]>=7.4     # QR code generation for remote gallery
+# lmdb>=1.4.0          # LMDB dataset support
