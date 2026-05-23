@@ -32,6 +32,17 @@ try:
 except ImportError:
     PSUTIL_AVAILABLE = False
 
+def _t(fr: str, en: str) -> str:
+    """Return FR or EN string based on active language."""
+    try:
+        from src.core.translations import get_translator
+        tr = get_translator()
+        if tr and getattr(tr, 'language', 'fr') == 'en':
+            return en
+    except Exception:
+        pass
+    return fr
+
 # ─── Windows Taskbar Progress (pure ctypes COM VTable, no comtypes) ────────────────
 # Adapted from proven working implementation (PyAudioCodingTools)
 
@@ -239,19 +250,19 @@ class RunTab(ctk.CTkFrame):
         
         self.f_cons_head = ctk.CTkFrame(self.frame_console, fg_color="transparent", height=20)
         self.f_cons_head.pack(fill="x")
-        self.lbl_progress = ctk.CTkLabel(self.f_cons_head, text="Progression: 0%", font=("Roboto", 10))
+        self.lbl_progress = ctk.CTkLabel(self.f_cons_head, text=_t("Progression: 0%", "Progress: 0%"), font=("Roboto", 10))
         self.lbl_progress.pack(side="left", padx=5)
         
         self.btn_clear = ctk.CTkButton(self.f_cons_head, text="♻", width=30, height=20, fg_color="#444", command=self.clear_logs)
         self.btn_clear.pack(side="right", padx=5)
-        ToolTip(self.btn_clear, "Effacer les logs de la console")
+        ToolTip(self.btn_clear, _t("Effacer les logs de la console", "Clear console logs"))
         _EMOJI_FONT = ("Segoe UI Emoji", 11, "bold")
         self.btn_preview_val = ctk.CTkButton(self.f_cons_head, text="🔍 Validation",
                                               width=90, height=26, fg_color="#8e44ad",
                                               font=_EMOJI_FONT,
                                               command=self.show_validation_preview)
         self.btn_preview_val.pack(side="right", padx=5)
-        ToolTip(self.btn_preview_val, "Afficher la derniere image de validation (LQ vs SR) avec comparaison")
+        ToolTip(self.btn_preview_val, _t("Afficher la derniere image de validation (LQ vs SR) avec comparaison", "Show last validation image (LQ vs SR) with comparison"))
 
         # Metrics graph button
         self.btn_metrics = ctk.CTkButton(self.f_cons_head, text="📊 Metriques",
@@ -282,9 +293,9 @@ class RunTab(ctk.CTkFrame):
         f_opts.pack(fill="x", pady=(0, 2))
         import tkinter as tk
         self._auto_resume = tk.BooleanVar(value=True)
-        ctk.CTkCheckBox(f_opts, text="Auto-resume (reprendre si crash)", variable=self._auto_resume,
+        ctk.CTkCheckBox(f_opts, text=_t("Auto-resume (reprendre si crash)", "Auto-resume (restart on crash)"), variable=self._auto_resume,
                         height=20, font=("Roboto", 11)).pack(side="left", padx=5)
-        ToolTip(f_opts.winfo_children()[-1], "Si active, detecte le dernier checkpoint et reprend automatiquement l'entrainement")
+        ToolTip(f_opts.winfo_children()[-1], _t("Si active, detecte le dernier checkpoint et reprend automatiquement l'entrainement", "If enabled, detects the last checkpoint and automatically resumes training"))
 
         self.progress_bar = ctk.CTkProgressBar(self.frame_console, height=10, progress_color="#2ecc71")
         self.progress_bar.pack(fill="x", pady=(0, 2))
@@ -300,13 +311,13 @@ class RunTab(ctk.CTkFrame):
         self.frame_btns = ctk.CTkFrame(self, fg_color="transparent")
         self.frame_btns.grid(row=4, column=0, sticky="ew", padx=10, pady=5)
         
-        self.btn_start = ctk.CTkButton(self.frame_btns, text="▶  DÉMARRER", fg_color="green", height=40, font=("Roboto", 14, "bold"), command=self.on_start)
+        self.btn_start = ctk.CTkButton(self.frame_btns, text=_t("▶  DÉMARRER", "▶  START"), fg_color="green", height=40, font=("Roboto", 14, "bold"), command=self.on_start)
         self.btn_start.pack(side="left", fill="x", expand=True, padx=(0, 10))
 
         self.btn_stop = ctk.CTkButton(self.frame_btns, text="⏹  STOP & SAVE", fg_color="#D35B58", height=40, font=("Roboto", 14, "bold"), state="disabled", command=self.on_stop)
         self.btn_stop.pack(side="right", fill="x", expand=True, padx=(10, 0))
         
-        self.chk_shutdown = ctk.CTkCheckBox(self.frame_btns, text="Éteindre PC à la fin", font=("Arial", 11), fg_color="#e74c3c", hover_color="#c0392b")
+        self.chk_shutdown = ctk.CTkCheckBox(self.frame_btns, text=_t("Éteindre PC à la fin", "Shutdown PC when done"), font=("Arial", 11), fg_color="#e74c3c", hover_color="#c0392b")
         self.chk_shutdown.pack(side="right", padx=10)
 
         # (Live preview removed — OTF images not accessible during training)
@@ -1845,7 +1856,7 @@ class RunTab(ctk.CTkFrame):
         self.apply_runtime_patch(sc)
         self.update_config_preview(cf)
         
-        self.btn_start.configure(state="disabled", text="En cours...")
+        self.btn_start.configure(state="disabled", text=_t("En cours...", "Running..."))
         self.btn_stop.configure(state="normal")
         self.chk_shutdown.configure(state="normal")
         self.progress_bar.set(0)
@@ -2717,7 +2728,7 @@ class RunTab(ctk.CTkFrame):
             ch = canvas.winfo_height()
             if not losses and not psnrs:
                 canvas.create_text(canvas.winfo_width() // 2, ch // 2,
-                                   text="Aucune métrique — en attente de l'entraînement...",
+                                   text=_t("Aucune métrique — en attente de l'entraînement...", "No metrics yet — waiting for training..."),
                                    fill="#555", font=("Roboto", 12))
                 return
             if losses and psnrs:
@@ -3028,17 +3039,17 @@ class RunTab(ctk.CTkFrame):
         if tb_alive:
             _make_qr_widget(frb, tb_url, tb_url)
         else:
-            ctk.CTkLabel(frb, text="TensorBoard non démarré — cliquez Lancer",
+            ctk.CTkLabel(frb, text=_t("TensorBoard non démarré — cliquez Lancer", "TensorBoard not started — click Launch"),
                          text_color="#888", font=("Roboto", 9)).pack(pady=6)
 
         def _launch_tb():
             win.destroy()
             self._open_tensorboard()
 
-        ctk.CTkButton(frb, text="▶ Lancer / Relancer TensorBoard", width=230, height=28,
+        ctk.CTkButton(frb, text=_t("▶ Lancer / Relancer TensorBoard", "▶ Launch / Restart TensorBoard"), width=230, height=28,
                       fg_color="#e67e22", command=_launch_tb).pack(pady=(4, 10))
 
-        ctk.CTkButton(scroll, text="Fermer", width=120, fg_color="#444",
+        ctk.CTkButton(scroll, text=_t("Fermer", "Close"), width=120, fg_color="#444",
                       command=win.destroy).pack(pady=8)
 
     def on_finished(self):
@@ -3485,14 +3496,14 @@ class RunTab(ctk.CTkFrame):
         # Mode toggle + auto-reload
         import tkinter as tk
         self._val_compare_mode = tk.BooleanVar(value=False)
-        ctk.CTkCheckBox(header, text="Comparaison par balayage", variable=self._val_compare_mode,
+        ctk.CTkCheckBox(header, text=_t("Comparaison par balayage", "Swipe comparison"), variable=self._val_compare_mode,
                         command=lambda: self._toggle_val_mode(win)).pack(side="right", padx=10)
         self._val_auto_reload_var = tk.BooleanVar(value=False)
-        _ar_cb = ctk.CTkCheckBox(header, text="Auto-reload", variable=self._val_auto_reload_var,
+        _ar_cb = ctk.CTkCheckBox(header, text=_t("Auto-reload", "Auto-reload"), variable=self._val_auto_reload_var,
                                   font=("Arial", 13))
         _ar_cb.pack(side="right", padx=(0, 4))
         from src.ui.components.tooltip import ToolTip as _TT
-        _TT(_ar_cb, "Recharge automatiquement la dernière image\nà chaque fin de validation.")
+        _TT(_ar_cb, _t("Recharge automatiquement la dernière image\nà chaque fin de validation.", "Automatically reloads the latest image\nafter each validation pass."))
 
         # Load images
         pil_sr = Image.open(sr_image)
@@ -3513,9 +3524,9 @@ class RunTab(ctk.CTkFrame):
         self._val_canvas_sr = tk.Canvas(self._val_side_frame, bg="#2B2B2B", highlightthickness=0)
 
         # Labels and canvas layout — stored refs for dynamic re-grid on image switch
-        self._val_lbl_lq = ctk.CTkLabel(self._val_side_frame, text="LQ (Entrée)",
+        self._val_lbl_lq = ctk.CTkLabel(self._val_side_frame, text=_t("LQ (Entrée)", "LQ (Input)"),
                                         font=("Roboto", 11, "bold"), text_color="#e67e22")
-        self._val_lbl_sr = ctk.CTkLabel(self._val_side_frame, text="SR (Sortie)",
+        self._val_lbl_sr = ctk.CTkLabel(self._val_side_frame, text=_t("SR (Sortie)", "SR (Output)"),
                                         font=("Roboto", 11, "bold"), text_color="#2ecc71")
 
         def _apply_side_grid(has_lq: bool):
@@ -3642,7 +3653,7 @@ class RunTab(ctk.CTkFrame):
             info += f"  |  LQ: {os.path.basename(lq_image)}"
         self._val_info_label = ctk.CTkLabel(win, text=info, text_color="#888", font=("Roboto", 9))
         self._val_info_label.pack(pady=(0, 2))
-        ctk.CTkButton(win, text="Fermer", width=100, fg_color="#666", command=win.destroy).pack(pady=(0, 8))
+        ctk.CTkButton(win, text=_t("Fermer", "Close"), width=100, fg_color="#666", command=win.destroy).pack(pady=(0, 8))
 
     def _draw_val_slider(self):
         """Draw slider comparison in validation preview."""
@@ -3666,7 +3677,7 @@ class RunTab(ctk.CTkFrame):
             self._val_tk_slider = ImageTk.PhotoImage(img)
             canvas.delete("all")
             canvas.create_image(w // 2, h // 2, image=self._val_tk_slider, anchor="center")
-            canvas.create_text(w // 2, 10, text="SR only (pas d'image LQ)", fill="#888",
+            canvas.create_text(w // 2, 10, text=_t("SR only (pas d'image LQ)", "SR only (no LQ image)"), fill="#888",
                                font=("Roboto", 9), anchor="n")
             return
         w = canvas.winfo_width()
@@ -3876,7 +3887,7 @@ class RunTab(ctk.CTkFrame):
             gh = h - margin_t - margin_b
 
             # Title
-            canvas.create_text(w // 2, 12, text="Evolution du Learning Rate", fill="#3498db", font=("Roboto", 12, "bold"))
+            canvas.create_text(w // 2, 12, text=_t("Evolution du Learning Rate", "Learning Rate Schedule"), fill="#3498db", font=("Roboto", 12, "bold"))
 
             # Axes
             canvas.create_line(margin_l, margin_t, margin_l, h - margin_b, fill="#555")
@@ -3889,7 +3900,7 @@ class RunTab(ctk.CTkFrame):
             # X axis labels
             canvas.create_text(margin_l, h - margin_b + 12, text="0", fill="#AAA", font=("Roboto", 8))
             canvas.create_text(w - margin_r, h - margin_b + 12, text=f"{total_iter//1000}K", fill="#AAA", font=("Roboto", 8))
-            canvas.create_text(w // 2, h - margin_b + 25, text="Iterations", fill="#888", font=("Roboto", 9))
+            canvas.create_text(w // 2, h - margin_b + 25, text=_t("Iterations", "Iterations"), fill="#888", font=("Roboto", 9))
 
             # Plot MultiStepLR
             pts_step = []
@@ -3924,7 +3935,7 @@ class RunTab(ctk.CTkFrame):
                 canvas.create_text(mx, h - margin_b + 12, text=f"{m//1000}K", fill="#666", font=("Roboto", 7))
 
         canvas.bind("<Configure>", draw)
-        ctk.CTkButton(win, text="Fermer", width=100, fg_color="#666", command=win.destroy).pack(pady=5)
+        ctk.CTkButton(win, text=_t("Fermer", "Close"), width=100, fg_color="#666", command=win.destroy).pack(pady=5)
 
     def parse_metrics(self, line):
         # Redux logs via rich are wrapped onto MANY lines. The actual record looks like:

@@ -9,6 +9,18 @@ import os
 from src.ui.components.tooltip import ToolTip
 
 
+def _t(fr: str, en: str) -> str:
+    """Pick FR or EN string based on active language."""
+    try:
+        from src.core.translations import get_translator
+        tr = get_translator()
+        if tr and getattr(tr, 'language', 'fr') == 'en':
+            return en
+    except Exception:
+        pass
+    return fr
+
+
 class DistributedTab(ctk.CTkFrame):
     def __init__(self, master, **kwargs):
         super().__init__(master, fg_color="transparent", **kwargs)
@@ -20,20 +32,27 @@ class DistributedTab(ctk.CTkFrame):
         header = ctk.CTkFrame(self, fg_color="transparent")
         header.pack(fill="x", padx=15, pady=(15, 5))
 
-        ctk.CTkLabel(header, text="Entrainement Partage",
+        ctk.CTkLabel(header, text=_t("Entrainement Partage", "Distributed Training"),
                      font=("Roboto", 20, "bold"), text_color="#9b59b6").pack(side="left")
 
         # Info
         info = ctk.CTkFrame(self, fg_color="#1a1a2e", corner_radius=8)
         info.pack(fill="x", padx=15, pady=5)
-        ctk.CTkLabel(info, text=(
+        ctk.CTkLabel(info, text=_t(
             "L'entrainement partage permet de repartir le travail sur plusieurs machines du reseau.\n"
             "Chaque machine 'slave' execute neo_sr_slave.py et attend les instructions du master.\n\n"
             "Etapes :\n"
             "  1. Lancez neo_sr_slave.py sur chaque machine du reseau (meme sous-reseau)\n"
             "  2. Cliquez 'Rechercher' ci-dessous pour decouvrir les slaves disponibles\n"
             "  3. Lancez un benchmark pour evaluer les performances GPU de chaque slave\n"
-            "  4. Utilisez 'Lancer Entrainement' pour partager le travail"
+            "  4. Utilisez 'Lancer Entrainement' pour partager le travail",
+            "Distributed training splits the workload across multiple network machines.\n"
+            "Each 'slave' machine runs neo_sr_slave.py and waits for instructions from the master.\n\n"
+            "Steps:\n"
+            "  1. Launch neo_sr_slave.py on each machine (same subnet)\n"
+            "  2. Click 'Discover' below to find available slaves\n"
+            "  3. Run a benchmark to evaluate each slave's GPU performance\n"
+            "  4. Use 'Launch Distributed Training' to share the workload"
         ), text_color="#AAA", font=("Roboto", 11), justify="left", anchor="w",
             wraplength=800).pack(padx=15, pady=10, fill="x")
 
@@ -41,34 +60,34 @@ class DistributedTab(ctk.CTkFrame):
         ctrl = ctk.CTkFrame(self, fg_color="transparent")
         ctrl.pack(fill="x", padx=15, pady=5)
 
-        self.btn_discover = ctk.CTkButton(ctrl, text="🔍 Rechercher Slaves",
+        self.btn_discover = ctk.CTkButton(ctrl, text=_t("🔍 Rechercher Slaves", "🔍 Discover Slaves"),
                                            fg_color="#8e44ad", width=180, height=35,
                                            command=self._discover_slaves)
         self.btn_discover.pack(side="left", padx=5)
-        ToolTip(self.btn_discover, "Scanner le reseau local pour trouver les machines slaves executant neo_sr_slave.py")
+        ToolTip(self.btn_discover, _t("Scanner le reseau local pour trouver les machines slaves executant neo_sr_slave.py", "Scan the local network to find slave machines running neo_sr_slave.py"))
 
         self.btn_benchmark = ctk.CTkButton(ctrl, text="⚡ Benchmark",
                                             fg_color="#2980b9", width=130, height=35,
                                             command=self._run_benchmark,
                                             state="disabled")
         self.btn_benchmark.pack(side="left", padx=5)
-        ToolTip(self.btn_benchmark, "Lancer un benchmark GPU sur chaque slave pour evaluer les performances")
+        ToolTip(self.btn_benchmark, _t("Lancer un benchmark GPU sur chaque slave pour evaluer les performances", "Run a GPU benchmark on each slave to evaluate performance"))
 
         self.btn_sync = ctk.CTkButton(ctrl, text="🔄 Test Sync",
                                          fg_color="#e67e22", width=120, height=35,
                                          command=self._sync_test,
                                          state="disabled")
         self.btn_sync.pack(side="left", padx=5)
-        ToolTip(self.btn_sync, "Tester la communication reseau entre le master et chaque slave (ping + latence)")
+        ToolTip(self.btn_sync, _t("Tester la communication reseau entre le master et chaque slave (ping + latence)", "Test network communication between master and each slave (ping + latency)"))
 
-        self.btn_launch = ctk.CTkButton(ctrl, text="🚀 Lancer Entrainement Partage",
+        self.btn_launch = ctk.CTkButton(ctrl, text=_t("🚀 Lancer Entrainement Partage", "🚀 Launch Distributed Training"),
                                          fg_color="#27ae60", width=250, height=35,
                                          command=self._launch_distributed,
                                          state="disabled")
         self.btn_launch.pack(side="left", padx=5)
-        ToolTip(self.btn_launch, "Lancer l'entrainement distribue via PyTorch DDP sur toutes les machines connectees")
+        ToolTip(self.btn_launch, _t("Lancer l'entrainement distribue via PyTorch DDP sur toutes les machines connectees", "Launch distributed training via PyTorch DDP on all connected machines"))
 
-        self.lbl_status = ctk.CTkLabel(ctrl, text="0 slave(s) detecte(s)",
+        self.lbl_status = ctk.CTkLabel(ctrl, text=_t("0 slave(s) detecte(s)", "0 slave(s) detected"),
                                         text_color="#888", font=("Roboto", 12))
         self.lbl_status.pack(side="right", padx=15)
 
@@ -90,7 +109,8 @@ class DistributedTab(ctk.CTkFrame):
         for w in self.slaves_frame.winfo_children():
             w.destroy()
         ctk.CTkLabel(self.slaves_frame,
-                     text="Aucun slave detecte.\n\nLancez neo_sr_slave.py sur les machines du reseau,\npuis cliquez 'Rechercher Slaves'.",
+                     text=_t("Aucun slave detecte.\n\nLancez neo_sr_slave.py sur les machines du reseau,\npuis cliquez 'Rechercher Slaves'.",
+                             "No slave detected.\n\nRun neo_sr_slave.py on network machines,\nthen click 'Discover Slaves'."),
                      text_color="#666", font=("Roboto", 12), justify="center").pack(pady=40)
 
     def _log(self, msg):
@@ -173,7 +193,7 @@ class DistributedTab(ctk.CTkFrame):
 
     def _run_benchmark(self):
         if not self._slaves:
-            messagebox.showinfo("Benchmark", "Aucun slave disponible.")
+            messagebox.showinfo(_t("Benchmark", "Benchmark"), _t("Aucun slave disponible.", "No slave available."))
             return
         self._log("[Benchmark] Lancement du benchmark sur tous les slaves...")
         self.btn_benchmark.configure(state="disabled", text="⏳ Benchmark...")
@@ -203,7 +223,7 @@ class DistributedTab(ctk.CTkFrame):
     def _sync_test(self):
         """Run a quick sync test between master and slaves."""
         if not self._slaves:
-            messagebox.showinfo("Test Sync", "Aucun slave disponible.")
+            messagebox.showinfo(_t("Test Sync", "Sync Test"), _t("Aucun slave disponible.", "No slave available."))
             return
         self._log("[Sync Test] Verification de la synchronisation...")
         self.btn_sync.configure(state="disabled", text="Test en cours...")
@@ -234,23 +254,31 @@ class DistributedTab(ctk.CTkFrame):
             self._log(f"  → {r['host']}: {status} (latence: {r['latency']}ms)")
         if all_ok:
             self._log("[Sync Test] Tous les slaves repondent correctement !")
-            messagebox.showinfo("Test Sync", f"Synchronisation OK\n{len(results)} slave(s) pret(s)")
+            messagebox.showinfo(_t("Test Sync", "Sync Test"), _t(f"Synchronisation OK\n{len(results)} slave(s) pret(s)", f"Synchronization OK\n{len(results)} slave(s) ready"))
         else:
             fails = sum(1 for r in results if not r["ok"])
             self._log(f"[Sync Test] {fails} slave(s) en echec")
-            messagebox.showwarning("Test Sync", f"{fails}/{len(results)} slave(s) ne repondent pas")
+            messagebox.showwarning(_t("Test Sync", "Sync Test"), _t(f"{fails}/{len(results)} slave(s) ne repondent pas", f"{fails}/{len(results)} slave(s) not responding"))
 
     def _launch_distributed(self):
         if not self._slaves:
-            messagebox.showinfo("Partage", "Aucun slave disponible.")
+            messagebox.showinfo(_t("Partage", "Distributed Training"), _t("Aucun slave disponible.", "No slave available."))
             return
         self._log("[Partage] Fonctionnalite en cours de developpement...")
-        messagebox.showinfo("Partage",
-                            f"{len(self._slaves)} slave(s) pret(s).\n\n"
-                            "Configuration a utiliser :\n"
-                            "- Le fichier .toml/.yml genere par le Configurateur\n"
-                            "  ou le fichier genere par le Pipeline PSNR->GAN\n\n"
-                            "L'entrainement sera lance via PyTorch DDP\n"
-                            "sur toutes les machines connectees.\n\n"
-                            "Conseil : Faites un Test Sync avant de lancer\n"
-                            "pour verifier la communication entre les machines.")
+        messagebox.showinfo(_t("Partage", "Distributed Training"),
+                            _t(f"{len(self._slaves)} slave(s) pret(s).\n\n"
+                               "Configuration a utiliser :\n"
+                               "- Le fichier .toml/.yml genere par le Configurateur\n"
+                               "  ou le fichier genere par le Pipeline PSNR->GAN\n\n"
+                               "L'entrainement sera lance via PyTorch DDP\n"
+                               "sur toutes les machines connectees.\n\n"
+                               "Conseil : Faites un Test Sync avant de lancer\n"
+                               "pour verifier la communication entre les machines.",
+                               f"{len(self._slaves)} slave(s) ready.\n\n"
+                               "Configuration to use:\n"
+                               "- The .toml/.yml file generated by the Configurator\n"
+                               "  or the file generated by the PSNR->GAN Pipeline\n\n"
+                               "Training will be launched via PyTorch DDP\n"
+                               "on all connected machines.\n\n"
+                               "Tip: Run a Sync Test before launching\n"
+                               "to verify communication between machines."))

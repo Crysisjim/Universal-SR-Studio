@@ -37,6 +37,18 @@ except ImportError:
     def t(key, **kw): return key
 
 
+def _t(fr: str, en: str) -> str:
+    """Pick FR or EN string based on active language."""
+    try:
+        from src.core.translations import get_translator
+        tr = get_translator()
+        if tr and getattr(tr, 'language', 'fr') == 'en':
+            return en
+    except Exception:
+        pass
+    return fr
+
+
 def _write_toml(data: dict, filepath: str):
     """Write a dict as TOML file, using available library."""
     if tomli_w:
@@ -128,7 +140,7 @@ class WizardTab(ctk.CTkScrollableFrame):
         header = ctk.CTkFrame(self, fg_color="#1a1a2e", corner_radius=10)
         header.pack(fill="x", padx=10, pady=(10, 5))
 
-        ctk.CTkLabel(header, text="😊 Assistant de Configuration",
+        ctk.CTkLabel(header, text=_t("😊 Assistant de Configuration", "😊 Configuration Assistant"),
                      font=("Arial", 20, "bold"),
                      text_color="#e0e0ff").pack(pady=(10, 5))
 
@@ -142,7 +154,7 @@ class WizardTab(ctk.CTkScrollableFrame):
                 gpu_text += " — ⚠️ AMP non supporté (sm_61)"
             color = "#2ecc71" if (suitable and amp_ok) else "#e67e22" if suitable else "#e74c3c"
         else:
-            gpu_text = "⚠️ Aucun GPU NVIDIA détecté — training impossible"
+            gpu_text = _t("⚠️ Aucun GPU NVIDIA détecté — training impossible", "⚠️ No NVIDIA GPU detected — training impossible")
             color = "#e74c3c"
 
         ctk.CTkLabel(header, text=gpu_text,
@@ -196,21 +208,21 @@ class WizardTab(ctk.CTkScrollableFrame):
         nav.pack(fill="x", padx=10, pady=10)
 
         self.btn_prev = ctk.CTkButton(
-            nav, text="◀  Précédent", width=120,
+            nav, text=_t("◀  Précédent", "◀  Previous"), width=120,
             fg_color="#34495e", hover_color="#2c3e50",
             command=self._prev_step
         )
         self.btn_prev.pack(side="left", padx=5)
 
         self.btn_next = ctk.CTkButton(
-            nav, text="Suivant  ▶", width=120,
+            nav, text=_t("Suivant  ▶", "Next  ▶"), width=120,
             fg_color="#2980b9", hover_color="#2471a3",
             command=self._next_step
         )
         self.btn_next.pack(side="right", padx=5)
 
         self.btn_generate = ctk.CTkButton(
-            nav, text="✨ Générer la Config", width=180,
+            nav, text=_t("✨ Générer la Config", "✨ Generate Config"), width=180,
             fg_color="#27ae60", hover_color="#219a52",
             command=self._generate_config
         )

@@ -27,6 +27,18 @@ from src.core.descriptions import TOOLTIPS
 from src.core.settings import SettingsManager
 
 
+def _t(fr: str, en: str) -> str:
+    """Pick FR or EN string based on active language."""
+    try:
+        from src.core.translations import get_translator
+        tr = get_translator()
+        if tr and getattr(tr, 'language', 'fr') == 'en':
+            return en
+    except Exception:
+        pass
+    return fr
+
+
 class ToolsTab(ctk.CTkFrame):
     def __init__(self, master, **kwargs):
         super().__init__(master, **kwargs)
@@ -50,23 +62,23 @@ class ToolsTab(ctk.CTkFrame):
         # (row 13 is the first row after the 12 nav buttons)
         self.frame_nav.grid_rowconfigure(13, weight=1)
 
-        ctk.CTkLabel(self.frame_nav, text="BOÎTE À OUTILS", font=("Roboto", 20, "bold")).grid(row=0, column=0, padx=20, pady=20)
+        ctk.CTkLabel(self.frame_nav, text=_t("BOÎTE À OUTILS", "TOOLBOX"), font=("Roboto", 20, "bold")).grid(row=0, column=0, padx=20, pady=20)
 
         # ── Section 1: Visualisation ──
-        self.create_nav_btn("📊 Comparateur", 1, "comp")
+        self.create_nav_btn(_t("📊 Comparateur", "📊 Comparator"), 1, "comp")
         self.create_nav_btn("🔎 Quick Upscale", 2, "upscale")
         # ── Section 2: Datasets ──
-        self.create_nav_btn("⚡ Générateur LQ", 3, "gen")
-        self.create_nav_btn("🔄 Convertisseur", 4, "conv")
-        self.create_nav_btn("💾 Créateur LMDB", 5, "lmdb")
-        self.create_nav_btn("🧐 Check Dataset", 6, "chk")
+        self.create_nav_btn(_t("⚡ Générateur LQ", "⚡ LQ Generator"), 3, "gen")
+        self.create_nav_btn(_t("🔄 Convertisseur", "🔄 Converter"), 4, "conv")
+        self.create_nav_btn(_t("💾 Créateur LMDB", "💾 LMDB Creator"), 5, "lmdb")
+        self.create_nav_btn(_t("🧐 Check Dataset", "🧐 Check Dataset"), 6, "chk")
         # ── Section 3: Modèles ──
-        self.create_nav_btn("📏 Métriques", 7, "met")
-        self.create_nav_btn("ℹ Info Modèle", 8, "model_info")
+        self.create_nav_btn(_t("📏 Métriques", "📏 Metrics"), 7, "met")
+        self.create_nav_btn(_t("ℹ Info Modèle", "ℹ Model Info"), 8, "model_info")
         # ── Section 4: Suivi entraînements ──
-        self.create_nav_btn("📜 Historique", 9, "history")
+        self.create_nav_btn(_t("📜 Historique", "📜 History"), 9, "history")
         self.create_nav_btn("♻ Resume Failed", 10, "resume")
-        self.create_nav_btn("📦 Publier Modèle", 11, "export")
+        self.create_nav_btn(_t("📦 Publier Modèle", "📦 Publish Model"), 11, "export")
         # ── Section 5: Performance ──
         self.create_nav_btn("📈 Benchmark", 12, "bench")
 
@@ -289,7 +301,7 @@ class ToolsTab(ctk.CTkFrame):
         """Request abort of current upscale batch."""
         if hasattr(self, "_ups_stop_flag"):
             self._ups_stop_flag.set()
-        self.widgets["ups_stop_btn"].configure(state="disabled", text="Arrêt...")
+        self.widgets["ups_stop_btn"].configure(state="disabled", text=_t("Arrêt...", "Stopping..."))
 
     def add_header(self, parent, text, desc=""):
         f = ctk.CTkFrame(parent, fg_color="transparent")
@@ -325,15 +337,15 @@ class ToolsTab(ctk.CTkFrame):
     # ==========================================
     def create_page_comparator(self):
         f = ctk.CTkFrame(self.right_panel, fg_color="transparent")
-        self.add_header(f, "Comparateur Visuel", "Glissez pour comparer LQ (gauche) et HQ (droite).")
+        self.add_header(f, _t("Comparateur Visuel", "Visual Comparator"), _t("Glissez pour comparer LQ (gauche) et HQ (droite).", "Drag to compare LQ (left) and HQ (right)."))
 
         ctrl = ctk.CTkFrame(f)
         ctrl.pack(fill="x", pady=10, padx=10)
-        ctk.CTkButton(ctrl, text="Ouvrir Image LQ (Avant)", command=lambda: self.load_comp_img("before")).pack(side="left", padx=10, pady=10)
-        ctk.CTkButton(ctrl, text="Ouvrir Image HQ (Après)", command=lambda: self.load_comp_img("after")).pack(side="left", padx=10, pady=10)
+        ctk.CTkButton(ctrl, text=_t("Ouvrir Image LQ (Avant)", "Open LQ Image (Before)"), command=lambda: self.load_comp_img("before")).pack(side="left", padx=10, pady=10)
+        ctk.CTkButton(ctrl, text=_t("Ouvrir Image HQ (Après)", "Open HQ Image (After)"), command=lambda: self.load_comp_img("after")).pack(side="left", padx=10, pady=10)
 
         # Auto-load checkbox
-        self.comp_auto_load = ctk.CTkCheckBox(ctrl, text="Auto-charger dernière image traitée")
+        self.comp_auto_load = ctk.CTkCheckBox(ctrl, text=_t("Auto-charger dernière image traitée", "Auto-load last processed image"))
         self.comp_auto_load.pack(side="left", padx=15)
 
         self.canvas_frame = ctk.CTkFrame(f, fg_color="#101010")
@@ -369,7 +381,7 @@ class ToolsTab(ctk.CTkFrame):
             self._comp_new_size = None
             self._update_comparator()
         except Exception as e:
-            messagebox.showerror("Erreur", f"Impossible d'ouvrir l'image : {e}")
+            messagebox.showerror(_t("Erreur", "Error"), f"{_t('Impossible d\'ouvrir l\'image : ', 'Cannot open image: ')}{e}")
 
     def _update_comparator(self):
         _ensure_pil()
@@ -552,13 +564,13 @@ class ToolsTab(ctk.CTkFrame):
         _hdr.pack(side="left", fill="x", expand=True)
         ctk.CTkLabel(_hdr, text="Quick Upscale", font=("Roboto", 24, "bold"),
                      text_color="#3B8ED0", anchor="w").pack(fill="x")
-        ctk.CTkLabel(_hdr, text="Upscaler une image ou un dossier avec un modele entraine.",
+        ctk.CTkLabel(_hdr, text=_t("Upscaler une image ou un dossier avec un modele entraine.", "Upscale an image or folder with a trained model."),
                      font=("Arial", 12), text_color="gray", anchor="w").pack(fill="x")
 
         # --- Model ---
         mrow = ctk.CTkFrame(f, fg_color="transparent")
         mrow.pack(fill="x", pady=5)
-        ctk.CTkLabel(mrow, text="Modele (.pth/.safetensors/.onnx) :", width=220, anchor="w").pack(side="left")
+        ctk.CTkLabel(mrow, text=_t("Modele (.pth/.safetensors/.onnx) :", "Model (.pth/.safetensors/.onnx):"), width=220, anchor="w").pack(side="left")
         self._ups_model_var = StringVar(value=self.settings.get("ups_last_model", ""))
         self._ups_model_entry = ctk.CTkEntry(mrow, textvariable=self._ups_model_var)
         self._ups_model_entry.pack(side="left", fill="x", expand=True, padx=5)
@@ -568,18 +580,18 @@ class ToolsTab(ctk.CTkFrame):
         # --- Input ---
         irow = ctk.CTkFrame(f, fg_color="transparent")
         irow.pack(fill="x", pady=5)
-        ctk.CTkLabel(irow, text="Source (image ou dossier) :", width=200, anchor="w").pack(side="left")
+        ctk.CTkLabel(irow, text=_t("Source (image ou dossier) :", "Source (image or folder):"), width=200, anchor="w").pack(side="left")
         self._ups_input_var = StringVar(value=self.settings.get("ups_last_input", ""))
         self._ups_input_entry = ctk.CTkEntry(irow, textvariable=self._ups_input_var)
         self._ups_input_entry.pack(side="left", fill="x", expand=True, padx=5)
         self.widgets["ups_input"] = self._ups_input_entry
-        ctk.CTkButton(irow, text="Image", width=60, command=self._ups_pick_image).pack(side="left", padx=(0, 2))
-        ctk.CTkButton(irow, text="Dossier", width=70, command=self._ups_pick_input_folder).pack(side="left")
+        ctk.CTkButton(irow, text=_t("Image", "Image"), width=60, command=self._ups_pick_image).pack(side="left", padx=(0, 2))
+        ctk.CTkButton(irow, text=_t("Dossier", "Folder"), width=70, command=self._ups_pick_input_folder).pack(side="left")
 
         # --- Output ---
         orow = ctk.CTkFrame(f, fg_color="transparent")
         orow.pack(fill="x", pady=5)
-        ctk.CTkLabel(orow, text="Dossier sortie :", width=200, anchor="w").pack(side="left")
+        ctk.CTkLabel(orow, text=_t("Dossier sortie :", "Output folder:"), width=200, anchor="w").pack(side="left")
         self._ups_output_var = StringVar(value=self.settings.get("ups_last_output", ""))
         self._ups_output_entry = ctk.CTkEntry(orow, textvariable=self._ups_output_var)
         self._ups_output_entry.pack(side="left", fill="x", expand=True, padx=5)
@@ -591,18 +603,18 @@ class ToolsTab(ctk.CTkFrame):
         optrow = ctk.CTkFrame(f, fg_color="transparent")
         optrow.pack(fill="x", pady=(0, 5))
         self._ups_same_folder = ctk.CTkCheckBox(
-            optrow, text="Meme dossier que la source",
+            optrow, text=_t("Meme dossier que la source", "Same folder as source"),
             command=self._ups_on_same_folder_toggle)
         self._ups_same_folder.pack(side="left", padx=(200, 15))
         if self.settings.get("ups_same_folder", False):
             self._ups_same_folder.select()
         self._ups_subfolder = ctk.CTkCheckBox(
-            optrow, text='Sous-dossier "upscaled/" (garde le nom original)')
+            optrow, text=_t('Sous-dossier "upscaled/" (garde le nom original)', '"upscaled/" subfolder (keeps original name)'))
         self._ups_subfolder.pack(side="left", padx=(0, 15))
         if self.settings.get("ups_subfolder", True):
             self._ups_subfolder.select()
         self._ups_modelname = ctk.CTkCheckBox(
-            optrow, text="Nom du modele dans le fichier")
+            optrow, text=_t("Nom du modele dans le fichier", "Model name in filename"))
         self._ups_modelname.pack(side="left")
         if self.settings.get("ups_modelname", False):
             self._ups_modelname.select()
@@ -638,16 +650,16 @@ class ToolsTab(ctk.CTkFrame):
         self.widgets["ups_scale"].set(self.settings.get("ups_scale", "Auto"))
         ctk.CTkLabel(opts, text="Tile:").pack(side="left", padx=(15, 0))
         self.widgets["ups_tile"] = ctk.CTkOptionMenu(
-            opts, values=["Auto", "128", "192", "256", "384", "512", "768", "1024", "0 (pas de tile)"], width=100)
+            opts, values=["Auto", "128", "192", "256", "384", "512", "768", "1024", _t("0 (pas de tile)", "0 (no tiling)")], width=100)
         self.widgets["ups_tile"].pack(side="left", padx=5)
         self.widgets["ups_tile"].set(self.settings.get("ups_tile", "Auto"))
-        ToolTip(self.widgets["ups_tile"], "Taille des tuiles. Auto = selon VRAM. 0 = pas de tiling.")
+        ToolTip(self.widgets["ups_tile"], _t("Taille des tuiles. Auto = selon VRAM. 0 = pas de tiling.", "Tile size. Auto = based on VRAM. 0 = no tiling."))
         ctk.CTkLabel(opts, text="Tile Pad:").pack(side="left", padx=(15, 0))
         self.widgets["ups_tile_pad"] = ctk.CTkOptionMenu(
             opts, values=["Auto", "8", "16", "32", "48", "64"], width=80)
         self.widgets["ups_tile_pad"].pack(side="left", padx=5)
         self.widgets["ups_tile_pad"].set(self.settings.get("ups_tile_pad", "Auto"))
-        ToolTip(self.widgets["ups_tile_pad"], "Overlap entre les tuiles. Auto = tile/8.")
+        ToolTip(self.widgets["ups_tile_pad"], _t("Overlap entre les tuiles. Auto = tile/8.", "Overlap between tiles. Auto = tile/8."))
         self.widgets["ups_amp"] = ctk.CTkCheckBox(opts, text="AMP (FP16)")
         self.widgets["ups_amp"].pack(side="left", padx=15)
         if self.settings.get("ups_amp", True):
@@ -656,31 +668,31 @@ class ToolsTab(ctk.CTkFrame):
         # --- Output format / bit depth / quality ---
         fmtrow = ctk.CTkFrame(f, fg_color="transparent")
         fmtrow.pack(fill="x", pady=(0, 8))
-        ctk.CTkLabel(fmtrow, text="Format sortie :").pack(side="left")
+        ctk.CTkLabel(fmtrow, text=_t("Format sortie :", "Output format:")).pack(side="left")
         self.widgets["ups_format"] = ctk.CTkOptionMenu(
             fmtrow, values=["PNG", "JPEG", "WEBP", "TIFF", "BMP"],
             width=90, command=self._ups_on_format_change)
         self.widgets["ups_format"].pack(side="left", padx=(5, 20))
         self.widgets["ups_format"].set(self.settings.get("ups_format", "PNG"))
-        ctk.CTkLabel(fmtrow, text="Bits/canal :").pack(side="left")
+        ctk.CTkLabel(fmtrow, text=_t("Bits/canal :", "Bits/channel:")).pack(side="left")
         self.widgets["ups_bitdepth"] = ctk.CTkOptionMenu(
-            fmtrow, values=["8 bits", "16 bits"], width=90)
+            fmtrow, values=[_t("8 bits", "8 bits"), _t("16 bits", "16 bits")], width=90)
         self.widgets["ups_bitdepth"].pack(side="left", padx=(5, 20))
-        self.widgets["ups_bitdepth"].set(self.settings.get("ups_bitdepth", "8 bits"))
-        ToolTip(self.widgets["ups_bitdepth"], "16 bits uniquement pour PNG et TIFF.")
-        ctk.CTkLabel(fmtrow, text="Qualité (JPEG/WEBP) :").pack(side="left")
+        self.widgets["ups_bitdepth"].set(self.settings.get("ups_bitdepth", _t("8 bits", "8 bits")))
+        ToolTip(self.widgets["ups_bitdepth"], _t("16 bits uniquement pour PNG et TIFF.", "16-bit only for PNG and TIFF."))
+        ctk.CTkLabel(fmtrow, text=_t("Qualité (JPEG/WEBP) :", "Quality (JPEG/WEBP):")).pack(side="left")
         self.widgets["ups_quality"] = ctk.CTkOptionMenu(
             fmtrow, values=["70", "75", "80", "85", "90", "95", "100"], width=70)
         self.widgets["ups_quality"].pack(side="left", padx=5)
         self.widgets["ups_quality"].set(self.settings.get("ups_quality", "95"))
-        ToolTip(self.widgets["ups_quality"], "Qualité de compression pour JPEG et WEBP.")
+        ToolTip(self.widgets["ups_quality"], _t("Qualité de compression pour JPEG et WEBP.", "Compression quality for JPEG and WEBP."))
         # Initial state
         self._ups_on_format_change(self.widgets["ups_format"].get())
 
         # --- Run / Stop / progress / log ---
         run_row = ctk.CTkFrame(f, fg_color="transparent")
         run_row.pack(fill="x", pady=15)
-        ctk.CTkButton(run_row, text="⚡ Lancer Upscale", fg_color="#2ecc71",
+        ctk.CTkButton(run_row, text=_t("⚡ Lancer Upscale", "⚡ Run Upscale"), fg_color="#2ecc71",
                       command=self.run_upscale).pack(side="left", fill="x", expand=True, padx=(0, 5))
         self.widgets["ups_stop_btn"] = ctk.CTkButton(
             run_row, text="⏹ Stop", fg_color="#e74c3c", hover_color="#c0392b",
@@ -716,8 +728,8 @@ class ToolsTab(ctk.CTkFrame):
         # Bottom pane: side-by-side preview
         prev_frame = ctk.CTkFrame(paned, fg_color="#111827", corner_radius=6)
         paned.add(prev_frame, minsize=80)
-        for side, key, label in [("left", "ups_prev_in", "Source"),
-                                  ("right", "ups_prev_out", "Resultat")]:
+        for side, key, label in [("left", "ups_prev_in", _t("Source", "Source")),
+                                  ("right", "ups_prev_out", _t("Resultat", "Result"))]:
             col = ctk.CTkFrame(prev_frame, fg_color="transparent")
             col.pack(side=side, fill="both", expand=True, padx=4, pady=4)
             ctk.CTkLabel(col, text=label, font=("Arial", 10), text_color="gray").pack()
@@ -745,13 +757,13 @@ class ToolsTab(ctk.CTkFrame):
         actual_out = os.path.join(base_out, "upscaled") if use_subfolder else base_out
 
         if not model:
-            messagebox.showerror("Erreur", "Selectionnez un modele.")
+            messagebox.showerror(_t("Erreur", "Error"), _t("Selectionnez un modele.", "Select a model."))
             return
         if not inp:
-            messagebox.showerror("Erreur", "Selectionnez une source.")
+            messagebox.showerror(_t("Erreur", "Error"), _t("Selectionnez une source.", "Select a source."))
             return
         if not base_out:
-            messagebox.showerror("Erreur", "Selectionnez un dossier de sortie.")
+            messagebox.showerror(_t("Erreur", "Error"), _t("Selectionnez un dossier de sortie.", "Select an output folder."))
             return
 
         add_model_name = bool(self._ups_modelname.get())
@@ -854,13 +866,13 @@ class ToolsTab(ctk.CTkFrame):
                         callback(f"-> {out_path}")
                         self._ups_update_preview(inp, out_path)
                         self._ui_update(self._show_toast,
-                                        "Upscale terminé",
+                                        _t("Upscale terminé", "Upscale complete"),
                                         os.path.basename(out_path),
                                         True, 4500, "notif_win11_upscale")
                     else:
-                        callback(f"ERREUR : {msg}")
+                        callback(f"{_t('ERREUR : ', 'ERROR: ')}{msg}")
                         self._play_sound("error", "sound_error_enabled")
-                        self._ui_update(self._show_toast, "Upscale échoué", msg,
+                        self._ui_update(self._show_toast, _t("Upscale échoué", "Upscale failed"), msg,
                                         False, 4500, "notif_win11_errors")
 
                 elif os.path.isdir(inp):
@@ -869,10 +881,10 @@ class ToolsTab(ctk.CTkFrame):
                                     if os.path.splitext(fn)[1].lower() in exts])
                     total = len(files)
                     if total == 0:
-                        callback("Aucune image trouvee dans le dossier.")
+                        callback(_t("Aucune image trouvee dans le dossier.", "No images found in folder."))
                         self._play_sound("warning", "sound_warning_enabled")
                         self._ui_update(self._show_toast,
-                                        "Aucune image trouvée", inp,
+                                        _t("Aucune image trouvée", "No images found"), inp,
                                         False, 4500, "notif_win11_errors")
                         return
                     success = 0
@@ -898,9 +910,9 @@ class ToolsTab(ctk.CTkFrame):
                             return (f"{h}h{m:02d}m{sec:02d}s" if h
                                     else f"{m}m{sec:02d}s" if m
                                     else f"{sec}s")
-                        txt = (f"Écoulé : {_fmt(elapsed_s)}   "
+                        txt = (f"{_t('Écoulé', 'Elapsed')} : {_fmt(elapsed_s)}   "
                                f"ETA : {_fmt(eta_s)}   "
-                               f"Vitesse : {fps:.2f} img/s   "
+                               f"{_t('Vitesse', 'Speed')} : {fps:.2f} img/s   "
                                f"[{done}/{total_imgs}]")
                         self._ui_update(self.widgets["ups_timing"].configure, text=txt)
 
@@ -909,7 +921,7 @@ class ToolsTab(ctk.CTkFrame):
 
                     for i, fname in enumerate(files):
                         if self._ups_stop_flag.is_set():
-                            callback("Arrêt demandé par l'utilisateur.")
+                            callback(_t("Arrêt demandé par l'utilisateur.", "Stop requested by user."))
                             break
                         in_path = os.path.join(inp, fname)
                         base_name = os.path.splitext(fname)[0]
@@ -947,28 +959,28 @@ class ToolsTab(ctk.CTkFrame):
                                else f"{_elapsed_s2}s")
                     _fps_final = success / _total_elapsed if _total_elapsed > 0 else 0
                     self._ui_update(self.widgets["ups_timing"].configure,
-                                    text=f"Terminé — {_el_str} total, {_fps_final:.2f} img/s moy.")
+                                    text=f"{_t('Terminé', 'Done')} — {_el_str} total, {_fps_final:.2f} img/s {_t('moy.', 'avg.')}")
 
-                    summary = f"Termine : {success}/{total} images traitees."
+                    summary = f"{_t('Termine', 'Done')} : {success}/{total} {_t('images traitees.', 'images processed.')}"
                     callback(summary)
                     for err in errors:
-                        callback(f"  ERREUR : {err}")
-                    toast_sub = f"{len(errors)} erreur(s)" if errors else ""
+                        callback(f"  {_t('ERREUR : ', 'ERROR: ')}{err}")
+                    toast_sub = f"{len(errors)} {_t('erreur(s)', 'error(s)')}" if errors else ""
                     self._ui_update(self._show_toast,
                                     f"Batch : {success}/{total} OK",
                                     toast_sub,
                                     success == total, 4500, "notif_win11_batch")
                 else:
-                    callback(f"Chemin introuvable : {inp}")
+                    callback(f"{_t('Chemin introuvable : ', 'Path not found: ')}{inp}")
                     self._play_sound("error", "sound_error_enabled")
                     self._ui_update(self._show_toast,
-                                    "Chemin introuvable", inp,
+                                    _t("Chemin introuvable", "Path not found"), inp,
                                     False, 4500, "notif_win11_errors")
             except ImportError:
-                callback("Module quick_upscale non disponible (PyTorch requis)")
+                callback(_t("Module quick_upscale non disponible (PyTorch requis)", "Module quick_upscale not available (PyTorch required)"))
                 self._play_sound("error", "sound_error_enabled")
                 self._ui_update(self._show_toast,
-                                "Module manquant", "PyTorch requis",
+                                _t("Module manquant", "Missing module"), _t("PyTorch requis", "PyTorch required"),
                                 False, 4500, "notif_win11_errors")
             except Exception as e:
                 _err = str(e)  # capture before Python 3.12+ deletes 'e'

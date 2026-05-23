@@ -12,6 +12,17 @@ import glob
 from src.core.settings import SettingsManager
 from src.core.compute_estimator import detect_gpu_name, get_pytorch_recommendation
 
+def _t(fr: str, en: str) -> str:
+    """Return FR or EN string based on active language."""
+    try:
+        from src.core.translations import get_translator
+        tr = get_translator()
+        if tr and getattr(tr, 'language', 'fr') == 'en':
+            return en
+    except Exception:
+        pass
+    return fr
+
 # --- FENÊTRE DE PROGRESSION (CONSOLE LIVE) ---
 class ConsolePopup(ctk.CTkToplevel):
     def __init__(self, master, title, command, cwd, on_close_callback=None):
@@ -37,7 +48,7 @@ class ConsolePopup(ctk.CTkToplevel):
         self.textbox.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
         self.textbox.insert("0.0", f"--- SEQUENCE D'OPERATION ---\n> Cible : {cwd}\n> Action : {title}\n\n")
         
-        self.btn_close = ctk.CTkButton(self, text="En cours...", state="disabled", command=self.close_and_refresh, fg_color="#555")
+        self.btn_close = ctk.CTkButton(self, text=_t("En cours...", "Running..."), state="disabled", command=self.close_and_refresh, fg_color="#555")
         self.btn_close.grid(row=1, column=0, pady=10)
 
         self.command = command
@@ -68,15 +79,15 @@ class ConsolePopup(ctk.CTkToplevel):
             process.wait()
             
             if process.returncode == 0:
-                self.textbox.insert("end", "\n\n[SUCCES] Operation terminee.\n")
-                self.btn_close.configure(state="normal", text="Fermer & Actualiser", fg_color="green")
+                self.textbox.insert("end", _t("\n\n[SUCCES] Operation terminee.\n", "\n\n[SUCCESS] Operation completed.\n"))
+                self.btn_close.configure(state="normal", text=_t("Fermer & Actualiser", "Close & Refresh"), fg_color="green")
             else:
-                self.textbox.insert("end", f"\n\n[ERREUR] Une etape a echoue (Code {process.returncode}).\n")
-                self.btn_close.configure(state="normal", text="Fermer", fg_color="#e74c3c")
+                self.textbox.insert("end", _t(f"\n\n[ERREUR] Une etape a echoue (Code {process.returncode}).\n", f"\n\n[ERROR] A step failed (Code {process.returncode}).\n"))
+                self.btn_close.configure(state="normal", text=_t("Fermer", "Close"), fg_color="#e74c3c")
 
         except Exception as e:
-            self.textbox.insert("end", f"\n\n[CRASH CRITIQUE] {str(e)}\n")
-            self.btn_close.configure(state="normal", text="Fermer (Crash)", fg_color="#e74c3c")
+            self.textbox.insert("end", _t(f"\n\n[CRASH CRITIQUE] {str(e)}\n", f"\n\n[CRITICAL CRASH] {str(e)}\n"))
+            self.btn_close.configure(state="normal", text=_t("Fermer (Crash)", "Close (Crash)"), fg_color="#e74c3c")
 
     def close_and_refresh(self):
         self.destroy()
@@ -367,7 +378,7 @@ log("[OK] TERMINE !")
     def setup_engines_tab(self):
         for w in self.tab_engines.winfo_children(): w.destroy()
         self.tab_engines.grid_columnconfigure(0, weight=1)
-        ctk.CTkLabel(self.tab_engines, text="CENTRE D'INSTALLATION DES MOTEURS", font=("Roboto", 20, "bold"), text_color="#3B8ED0").pack(pady=15)
+        ctk.CTkLabel(self.tab_engines, text=_t("CENTRE D'INSTALLATION DES MOTEURS", "ENGINE INSTALLATION CENTER"), font=("Roboto", 20, "bold"), text_color="#3B8ED0").pack(pady=15)
         self.create_engine_block(self.tab_engines, "NeoSR", self.repos["NeoSR"], self.neosr_path).pack(fill="x", pady=10, padx=15)
         self.create_engine_block(self.tab_engines, "TraiNNer-Redux", self.repos["TraiNNer-Redux"], self.redux_path).pack(fill="x", pady=10, padx=15)
 
@@ -611,7 +622,7 @@ log("[OK] TERMINE !")
         self.tab_sys.grid_columnconfigure(0, weight=1); self.tab_sys.grid_columnconfigure(1, weight=1)
 
         f_top = ctk.CTkFrame(self.tab_sys); f_top.grid(row=0, column=0, columnspan=2, sticky="ew", padx=10, pady=10)
-        ctk.CTkLabel(f_top, text="Configuration Système & Runtime", font=("Arial", 14, "bold")).pack(anchor="w", padx=10, pady=5)
+        ctk.CTkLabel(f_top, text=_t("Configuration Système & Runtime", "System & Runtime Configuration"), font=("Arial", 14, "bold")).pack(anchor="w", padx=10, pady=5)
         
         row_1 = ctk.CTkFrame(f_top, fg_color="transparent"); row_1.pack(fill="x", padx=10, pady=5)
         
@@ -623,17 +634,17 @@ log("[OK] TERMINE !")
         # THEMES PERSONNALISÉS
         theme_list = self.get_available_themes()
 
-        ctk.CTkLabel(row_1, text="Mode :").pack(side="left")
+        ctk.CTkLabel(row_1, text=_t("Mode :", "Mode:")).pack(side="left")
         opt_mode = ctk.CTkOptionMenu(row_1, values=["System", "Dark", "Light"], width=100, command=self.change_appearance)
         opt_mode.set(curr_mode)
         opt_mode.pack(side="left", padx=5)
 
-        ctk.CTkLabel(row_1, text="Thème :").pack(side="left")
+        ctk.CTkLabel(row_1, text=_t("Thème :", "Theme:")).pack(side="left")
         opt_col = ctk.CTkOptionMenu(row_1, values=theme_list, width=150, command=self.change_color)
         opt_col.set(curr_theme)
         opt_col.pack(side="left", padx=5)
 
-        self.chk_aida = ctk.CTkCheckBox(row_1, text="Activer AIDA64", command=self.save_aida)
+        self.chk_aida = ctk.CTkCheckBox(row_1, text=_t("Activer AIDA64", "Enable AIDA64"), command=self.save_aida)
         if use_aida: self.chk_aida.select()
         else: self.chk_aida.deselect()
         self.chk_aida.pack(side="right", padx=10)
@@ -651,7 +662,7 @@ log("[OK] TERMINE !")
                      font=("Roboto", 13, "bold"), text_color="#3B8ED0").pack(anchor="w", padx=12, pady=(8, 2))
         self._gpu_advisory_body = ctk.CTkFrame(self._gpu_advisory_frame, fg_color="transparent")
         self._gpu_advisory_body.pack(fill="x", padx=12, pady=(0, 8))
-        ctk.CTkLabel(self._gpu_advisory_body, text="Détection GPU…", text_color="gray").pack(anchor="w")
+        ctk.CTkLabel(self._gpu_advisory_body, text=_t("Détection GPU…", "Detecting GPU…"), text_color="gray").pack(anchor="w")
         threading.Thread(target=self._load_gpu_advisory, daemon=True).start()
 
         self.create_dashboard_card(self.tab_sys, "NeoSR", self.neosr_path, 0)
@@ -780,24 +791,24 @@ except ImportError:
     # ─── LANGUAGE TAB ────────────────────────────────────────
     def setup_notifications_tab(self):
         f = self.tab_lang
-        ctk.CTkLabel(f, text="Notifications & Son", font=("Roboto", 18, "bold")).pack(pady=(20, 5))
-        ctk.CTkLabel(f, text="Configure les alertes sonores et visuelles.", text_color="#AAA").pack(pady=(0, 10))
+        ctk.CTkLabel(f, text=_t("Notifications & Son", "Notifications & Sound"), font=("Roboto", 18, "bold")).pack(pady=(20, 5))
+        ctk.CTkLabel(f, text=_t("Configure les alertes sonores et visuelles.", "Configure sound and visual alerts."), text_color="#AAA").pack(pady=(0, 10))
 
         # ── Windows 11 notifications section ──────────────────────────
         import tkinter as tk
         win_frame = ctk.CTkFrame(f, fg_color="#1a1a2e", corner_radius=8)
         win_frame.pack(fill="x", padx=20, pady=(0, 10))
-        ctk.CTkLabel(win_frame, text="Notifications Windows 11",
+        ctk.CTkLabel(win_frame, text=_t("Notifications Windows 11", "Windows 11 Notifications"),
                      font=("Roboto", 14, "bold"), text_color="#3498db").pack(
                      anchor="w", padx=15, pady=(10, 2))
-        ctk.CTkLabel(win_frame, text="Afficher des notifications systeme pour :",
+        ctk.CTkLabel(win_frame, text=_t("Afficher des notifications systeme pour :", "Show system notifications for:"),
                      text_color="#AAA", font=("Arial", 11)).pack(anchor="w", padx=15, pady=(0, 8))
 
         _notif_items = [
-            ("notif_win11_upscale",  "Upscale image termine"),
-            ("notif_win11_batch",    "Batch upscale termine"),
-            ("notif_win11_errors",   "Erreurs & crashes"),
-            ("notif_win11_training", "Fin d'entrainement"),
+            ("notif_win11_upscale",  _t("Upscale image termine", "Image upscale finished")),
+            ("notif_win11_batch",    _t("Batch upscale termine", "Batch upscale finished")),
+            ("notif_win11_errors",   _t("Erreurs & crashes", "Errors & crashes")),
+            ("notif_win11_training", _t("Fin d'entrainement", "Training finished")),
         ]
         self._notif_vars = {}
         for key, label in _notif_items:
@@ -820,20 +831,20 @@ except ImportError:
             except Exception as e:
                 messagebox.showerror("Notification", str(e))
 
-        ctk.CTkButton(win_frame, text="Tester une notification",
+        ctk.CTkButton(win_frame, text=_t("Tester une notification", "Test notification"),
                       fg_color="#2980b9", hover_color="#1a6fa0", width=200,
                       command=_test_win11).pack(anchor="w", padx=15, pady=(8, 12))
 
         # Sound section
         snd_frame = ctk.CTkFrame(f, fg_color="#1a1a2e", corner_radius=8)
         snd_frame.pack(fill="x", padx=20, pady=5)
-        ctk.CTkLabel(snd_frame, text="Son de fin d'entrainement", font=("Roboto", 14, "bold"),
+        ctk.CTkLabel(snd_frame, text=_t("Son de fin d'entrainement", "Training completion sound"), font=("Roboto", 14, "bold"),
                      text_color="#3498db").pack(anchor="w", padx=15, pady=(10, 5))
 
         # Checkbox
         import tkinter as tk
         self._sound_enabled = tk.BooleanVar(value=self.settings.get("sound_enabled", True))
-        chk = ctk.CTkCheckBox(snd_frame, text="Jouer un son quand un entrainement se termine",
+        chk = ctk.CTkCheckBox(snd_frame, text=_t("Jouer un son quand un entrainement se termine", "Play a sound when training finishes"),
                                variable=self._sound_enabled,
                                command=lambda: self.settings.set("sound_enabled", self._sound_enabled.get()))
         chk.pack(anchor="w", padx=15, pady=5)
@@ -841,7 +852,7 @@ except ImportError:
         # Volume slider
         vol_frame = ctk.CTkFrame(snd_frame, fg_color="transparent")
         vol_frame.pack(fill="x", padx=15, pady=5)
-        ctk.CTkLabel(vol_frame, text="Volume :", width=80, anchor="w").pack(side="left")
+        ctk.CTkLabel(vol_frame, text=_t("Volume :", "Volume:"), width=80, anchor="w").pack(side="left")
         self._volume_val = tk.IntVar(value=int(self.settings.get("sound_volume", 70)))
         self._vol_label = ctk.CTkLabel(vol_frame, text=f"{self._volume_val.get()}%", width=40)
         self._vol_label.pack(side="right", padx=5)
@@ -850,7 +861,7 @@ except ImportError:
         self._vol_slider.pack(side="left", fill="x", expand=True, padx=10)
 
         # Test button
-        ctk.CTkButton(snd_frame, text="🔊 Tester le son", fg_color="#27ae60", width=150,
+        ctk.CTkButton(snd_frame, text=_t("🔊 Tester le son", "🔊 Test sound"), fg_color="#27ae60", width=150,
                       command=self._test_sound).pack(anchor="w", padx=15, pady=(5, 15))
 
         # Sound file info
@@ -949,8 +960,9 @@ except ImportError:
 
     def setup_apikeys_tab(self):
         f = self.tab_apikeys
-        ctk.CTkLabel(f, text="Cles API pour la Verification AI", font=("Roboto", 18, "bold")).pack(pady=(20, 5))
-        ctk.CTkLabel(f, text="Entrez vos cles API ici. Elles seront sauvegardees localement\net chargees automatiquement dans Configuration > Verification AI.",
+        ctk.CTkLabel(f, text=_t("Cles API pour la Verification AI", "API Keys for AI Review"), font=("Roboto", 18, "bold")).pack(pady=(20, 5))
+        ctk.CTkLabel(f, text=_t("Entrez vos cles API ici. Elles seront sauvegardees localement\net chargees automatiquement dans Configuration > Verification AI.",
+                                "Enter your API keys here. They are saved locally\nand auto-loaded in Configuration > AI Review."),
                      text_color="#AAA").pack(pady=(0, 15))
 
         self._api_key_entries = {}
@@ -993,18 +1005,20 @@ except ImportError:
                     # Clear the key if empty
                     self.settings.set(f"api_key_{prov}", "")
             from tkinter import messagebox
-            messagebox.showinfo("Cles API", "Cles API sauvegardees avec succes !")
+            messagebox.showinfo(_t("Cles API", "API Keys"), _t("Cles API sauvegardees avec succes !", "API keys saved successfully!"))
 
-        ctk.CTkButton(f, text="Sauvegarder les cles API", fg_color="#27ae60", height=35,
+        ctk.CTkButton(f, text=_t("Sauvegarder les cles API", "Save API keys"), fg_color="#27ae60", height=35,
                       font=("Roboto", 13, "bold"), command=save_all_keys).pack(pady=15)
 
-        ctk.CTkLabel(f, text="Les cles sont stockees localement dans user_settings.json.\nElles ne sont jamais envoyees ailleurs qu'au fournisseur AI choisi.",
+        ctk.CTkLabel(f, text=_t("Les cles sont stockees localement dans user_settings.json.\nElles ne sont jamais envoyees ailleurs qu'au fournisseur AI choisi.",
+                                "Keys are stored locally in user_settings.json.\nThey are never sent anywhere except to the chosen AI provider."),
                      text_color="#666", font=("Roboto", 9)).pack(pady=(0, 10))
 
     def setup_language_tab(self):
         f = self.tab_lang
         ctk.CTkLabel(f, text="Langue / Language", font=("Roboto", 18, "bold")).pack(pady=(20, 10))
-        ctk.CTkLabel(f, text="Choisissez la langue du programme.\nLes options, infobulles et descriptions seront traduites.",
+        ctk.CTkLabel(f, text=_t("Choisissez la langue du programme.\nLes options, infobulles et descriptions seront traduites.",
+                                "Choose the interface language.\nOptions, tooltips and descriptions will be translated."),
                      text_color="#AAA").pack(pady=(0, 15))
 
         lang_frame = ctk.CTkFrame(f, fg_color="transparent")
@@ -1056,25 +1070,27 @@ except ImportError:
         scroll = ctk.CTkScrollableFrame(self.tab_gallery, fg_color="transparent")
         scroll.pack(fill="both", expand=True, padx=5, pady=5)
 
-        ctk.CTkLabel(scroll, text="Galerie HTTP & Patch TensorBoard",
+        ctk.CTkLabel(scroll, text=_t("Galerie HTTP & Patch TensorBoard", "HTTP Gallery & TensorBoard Patch"),
                      font=("Roboto", 16, "bold"), text_color="#3498db"
                      ).pack(anchor="w", padx=10, pady=(5, 10))
 
         # ─── Section A: HTTP Gallery ───
         sec_a = ctk.CTkFrame(scroll, fg_color="#1a1a2e", corner_radius=8)
         sec_a.pack(fill="x", padx=5, pady=8)
-        ctk.CTkLabel(sec_a, text="A. Serveur Galerie Web (sans modifier NeoSR)",
+        ctk.CTkLabel(sec_a, text=_t("A. Serveur Galerie Web (sans modifier NeoSR)", "A. Web Gallery Server (no NeoSR changes needed)"),
                      font=("Roboto", 13, "bold"), text_color="#3498db"
                      ).pack(anchor="w", padx=10, pady=(8, 5))
         ctk.CTkLabel(sec_a,
-                     text="Lance un mini-serveur HTTP sur un dossier d'images. Compatible mobile, "
-                          "auto-refresh, zoom au clic. Tunnel Ngrok optionnel pour accès distant.",
+                     text=_t("Lance un mini-serveur HTTP sur un dossier d'images. Compatible mobile, "
+                             "auto-refresh, zoom au clic. Tunnel Ngrok optionnel pour accès distant.",
+                             "Starts a mini HTTP server on an image folder. Mobile-friendly, "
+                             "auto-refresh, click-to-zoom. Optional Ngrok tunnel for remote access."),
                      text_color="#AAA", font=("Roboto", 10), justify="left", wraplength=900
                      ).pack(anchor="w", padx=10, pady=(0, 10))
 
         # Directory picker — auto-fill from settings, then fall back to last experiment's visualization
         dir_row = ctk.CTkFrame(sec_a, fg_color="transparent"); dir_row.pack(fill="x", padx=10, pady=3)
-        ctk.CTkLabel(dir_row, text="Dossier :", width=80, anchor="w").pack(side="left")
+        ctk.CTkLabel(dir_row, text=_t("Dossier :", "Folder:"), width=80, anchor="w").pack(side="left")
         self._gal_dir_entry = ctk.CTkEntry(dir_row, width=600)
         self._gal_dir_entry.pack(side="left", padx=5)
         _saved_gal_dir = self.settings.get("gallery_auto_dir", "")

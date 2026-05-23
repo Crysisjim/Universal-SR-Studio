@@ -11,6 +11,18 @@ from src.ui.components.tooltip import ToolTip
 from src.core.settings import SettingsManager
 
 
+def _t(fr: str, en: str) -> str:
+    """Pick FR or EN string based on active language."""
+    try:
+        from src.core.translations import get_translator
+        tr = get_translator()
+        if tr and getattr(tr, 'language', 'fr') == 'en':
+            return en
+    except Exception:
+        pass
+    return fr
+
+
 class QueueTab(ctk.CTkFrame):
     def __init__(self, master, **kwargs):
         super().__init__(master, fg_color="transparent", **kwargs)
@@ -24,28 +36,31 @@ class QueueTab(ctk.CTkFrame):
         # Header
         header = ctk.CTkFrame(self, fg_color="transparent")
         header.pack(fill="x", padx=15, pady=(10, 5))
-        ctk.CTkLabel(header, text="File d'Attente d'Entrainements",
+        ctk.CTkLabel(header, text=_t("File d'Attente d'Entrainements", "Training Queue"),
                      font=("Roboto", 20, "bold"), text_color="#e67e22").pack(side="left")
 
         # Info
         info = ctk.CTkFrame(self, fg_color="#1a1a2e", corner_radius=8)
         info.pack(fill="x", padx=15, pady=5)
-        ctk.CTkLabel(info, text=(
+        ctk.CTkLabel(info, text=_t(
             "Enchainez plusieurs configurations d'entrainement automatiquement.\n"
             "Ajoutez des fichiers .toml ou .yml, ordonnez-les, puis lancez la queue.\n"
-            "Chaque config sera executee sequentiellement — la suivante demarre quand la precedente finit."
+            "Chaque config sera executee sequentiellement — la suivante demarre quand la precedente finit.",
+            "Chain multiple training configurations automatically.\n"
+            "Add .toml or .yml files, reorder them, then launch the queue.\n"
+            "Each config runs sequentially — the next one starts when the previous finishes."
         ), text_color="#AAA", font=("Roboto", 11), justify="left", wraplength=800).pack(padx=15, pady=10)
 
         # Controls
         ctrl = ctk.CTkFrame(self, fg_color="transparent")
         ctrl.pack(fill="x", padx=15, pady=5)
 
-        self.btn_add = ctk.CTkButton(ctrl, text="➕ Ajouter Config", fg_color="#27ae60",
+        self.btn_add = ctk.CTkButton(ctrl, text=_t("➕ Ajouter Config", "➕ Add Config"), fg_color="#27ae60",
                                       width=150, height=35, command=self._add_config)
         self.btn_add.pack(side="left", padx=3)
-        ToolTip(self.btn_add, "Ajouter un fichier de configuration (.toml, .yml) a la queue")
+        ToolTip(self.btn_add, _t("Ajouter un fichier de configuration (.toml, .yml) a la queue", "Add a configuration file (.toml, .yml) to the queue"))
 
-        self.btn_add_folder = ctk.CTkButton(ctrl, text="📁 Dossier", fg_color="#2980b9",
+        self.btn_add_folder = ctk.CTkButton(ctrl, text=_t("📁 Dossier", "📁 Folder"), fg_color="#2980b9",
                                              width=100, height=35, command=self._add_folder)
         self.btn_add_folder.pack(side="left", padx=3)
         ToolTip(self.btn_add_folder, "Ajouter tous les fichiers config d'un dossier")
