@@ -124,7 +124,7 @@ a = Analysis(
     ],
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[],
+    runtime_hooks=['runtime_hooks/pyi_rth_compat312.py'],
     excludes=[
         # Training engines — too large, users install separately
         'torch',
