@@ -1,6 +1,18 @@
-# Universal SR Studio
+<div align="center">
+  <img src="assets/icon.png" alt="Universal SR Studio" width="140"/>
+  <h1>Universal SR Studio</h1>
+  <p>Graphical interface for training super-resolution AI models<br>with <strong>NeoSR</strong> and <strong>traiNNer-Redux</strong> engines.</p>
 
-> 🇬🇧 [English](#english) | 🇫🇷 [Français](#français)
+  <a href="https://github.com/Crysisjim/Universal-SR-Studio/releases"><img src="https://img.shields.io/badge/Version-2.4-blue" alt="Version"/></a>
+  <a href="https://github.com/Crysisjim/Universal-SR-Studio/wiki"><img src="https://img.shields.io/badge/📖_Wiki-Documentation-informational" alt="Wiki"/></a>
+  <img src="https://img.shields.io/badge/Platform-Windows-lightgrey" alt="Platform"/>
+  <img src="https://img.shields.io/badge/License-MIT-green" alt="License"/>
+  <img src="https://img.shields.io/badge/GPU-NVIDIA%20required-brightgreen" alt="GPU"/>
+
+  <br/><br/>
+
+  > 🇬🇧 [English](#english) | 🇫🇷 [Français](#français)
+</div>
 
 ---
 
@@ -9,10 +21,7 @@
 
 A graphical interface for training and managing super-resolution AI models with **NeoSR** and **traiNNer-Redux** engines.
 
-![Version](https://img.shields.io/badge/Version-2.4-blue)
-![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey)
-![License](https://img.shields.io/badge/License-MIT-green)
-![GPU](https://img.shields.io/badge/GPU-NVIDIA%20required-brightgreen)
+[![📖 Wiki — Full Documentation](https://img.shields.io/badge/📖_Wiki-Full_Documentation-blue?style=for-the-badge)](https://github.com/Crysisjim/Universal-SR-Studio/wiki)
 
 ### Features
 
@@ -94,6 +103,7 @@ Then use the **⚙️ Settings** tab to install the training engines.
 | 📋 Queue | Schedule multiple training sessions |
 | ⚙️ Settings | Engine installer, paths, language, appearance, API keys |
 | 🌐 Distributed | Multi-machine training (experimental) |
+| 📖 Wiki | Opens the GitHub wiki documentation in your browser |
 
 ### Benchmarks (CLI)
 
@@ -127,6 +137,8 @@ Pull requests welcome. For major changes, open an issue first.
 ## 🇫🇷 Français
 
 Interface graphique pour l'entraînement et la gestion de modèles d'IA super-résolution avec les moteurs **NeoSR** et **traiNNer-Redux**.
+
+[![📖 Wiki — Documentation complète](https://img.shields.io/badge/📖_Wiki-Documentation_complète-blue?style=for-the-badge)](https://github.com/Crysisjim/Universal-SR-Studio/wiki)
 
 ### Fonctionnalités
 
@@ -208,6 +220,7 @@ Puis utiliser l'onglet **⚙️ Paramètres** pour installer les moteurs d'entra
 | 📋 File d'attente | Planifier plusieurs sessions d'entraînement |
 | ⚙️ Paramètres | Installeur moteurs, chemins, langue, apparence, clés API |
 | 🌐 Distribué | Entraînement multi-machines (expérimental) |
+| 📖 Wiki | Ouvre la documentation wiki GitHub dans le navigateur |
 
 ### Contribuer
 
