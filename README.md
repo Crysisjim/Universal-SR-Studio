@@ -1,5 +1,12 @@
 # Universal SR Studio
 
+> 🇬🇧 [English](#english) | 🇫🇷 [Français](#français)
+
+---
+
+<a name="english"></a>
+## 🇬🇧 English
+
 A graphical interface for training and managing super-resolution AI models with **NeoSR** and **traiNNer-Redux** engines.
 
 ![Version](https://img.shields.io/badge/Version-2.4-blue)
@@ -7,9 +14,7 @@ A graphical interface for training and managing super-resolution AI models with 
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![GPU](https://img.shields.io/badge/GPU-NVIDIA%20required-brightgreen)
 
----
-
-## Features
+### Features
 
 - **Configuration wizard** — visual TOML/YAML config editor for NeoSR and traiNNer-Redux
 - **Training monitor** — real-time loss curves, PSNR/SSIM, TensorBoard integration, live GPU stats
@@ -20,21 +25,18 @@ A graphical interface for training and managing super-resolution AI models with 
 - **Distributed training** — multi-machine training coordination
 - **Training queue** — schedule multiple training sessions back-to-back
 - **20+ themes** — customizable UI themes
+- **Bilingual UI** — French / English interface
 
----
-
-## Quick Start — Portable (recommended)
+### Quick Start — Portable (recommended)
 
 1. Download `Universal_SR_Studio_v2.4.0_portable.zip` from [Releases](https://github.com/Crysisjim/Universal-SR-Studio/releases)
 2. Extract anywhere
 3. Run `Universal_SR_Studio.exe`
-4. On first launch, go to **⚙️ Settings** → the built-in installer handles everything else
+4. On first launch, choose your language (FR/EN), then go to **⚙️ Settings** → the built-in installer handles everything else
 
 > No Python installation required. The portable version is fully self-contained.
 
----
-
-## Prerequisites
+### Prerequisites
 
 - **Windows 10/11**
 - **NVIDIA GPU** with CUDA support (8 GB+ VRAM recommended)
@@ -42,11 +44,7 @@ A graphical interface for training and managing super-resolution AI models with 
 
 That's it. Universal SR Studio handles the rest automatically via the **⚙️ Settings** tab.
 
----
-
-## Automatic Setup (via Settings tab)
-
-Universal SR Studio includes a fully automated installer:
+### Automatic Setup (via Settings tab)
 
 | Step | What it does |
 |------|-------------|
@@ -58,11 +56,7 @@ Universal SR Studio includes a fully automated installer:
 
 Just open the **⚙️ Settings** tab, choose which engine(s) to install, and click — the console window shows live progress.
 
----
-
-## Expected folder structure
-
-After installation, engines are placed at:
+### Expected folder structure
 
 ```
 ~/IA_Engine/
@@ -78,9 +72,7 @@ After installation, engines are placed at:
 └── Option Custom/         (custom degradation presets)
 ```
 
----
-
-## Source installation (developers)
+### Source installation (developers)
 
 ```bash
 git clone https://github.com/Crysisjim/Universal-SR-Studio.git
@@ -91,29 +83,7 @@ python main.py
 
 Then use the **⚙️ Settings** tab to install the training engines.
 
----
-
-## Project structure
-
-```
-Universal_SR_Studio/
-├── main.py                    Entry point
-├── requirements.txt
-├── assets/                    Icons, sounds, UI themes
-│   └── themes/                20+ color themes
-├── scripts/
-│   └── install_deps.bat       Engine dependency helper (optional)
-└── src/
-    ├── app.py                 Application root (tab layout)
-    ├── core/                  Backend: config, training, OTF, tools
-    └── ui/
-        ├── components/        Shared UI widgets
-        └── tabs/              Tab panels (config, run, tools, settings…)
-```
-
----
-
-## Tabs overview
+### Tabs overview
 
 | Tab | Description |
 |-----|-------------|
@@ -125,9 +95,7 @@ Universal_SR_Studio/
 | ⚙️ Settings | Engine installer, paths, language, appearance, API keys |
 | 🌐 Distributed | Multi-machine training (experimental) |
 
----
-
-## Benchmarks (CLI)
+### Benchmarks (CLI)
 
 ```bash
 # Architecture benchmark (traiNNer-Redux)
@@ -140,9 +108,7 @@ python src/core/benchmark_runner.py --engine neosr --type feature
 python src/core/benchmark_runner.py --list
 ```
 
----
-
-## Contributing
+### Contributing
 
 Pull requests welcome. For major changes, open an issue first.
 
@@ -151,8 +117,107 @@ Pull requests welcome. For major changes, open an issue first.
 3. Commit your changes
 4. Open a pull request
 
----
-
-## License
+### License
 
 [MIT](LICENSE) — free to use, modify, and distribute.
+
+---
+
+<a name="français"></a>
+## 🇫🇷 Français
+
+Interface graphique pour l'entraînement et la gestion de modèles d'IA super-résolution avec les moteurs **NeoSR** et **traiNNer-Redux**.
+
+### Fonctionnalités
+
+- **Assistant de configuration** — éditeur visuel TOML/YAML pour NeoSR et traiNNer-Redux
+- **Moniteur d'entraînement** — courbes de perte en temps réel, PSNR/SSIM, intégration TensorBoard, stats GPU live
+- **Aperçu OTF** — prévisualisation du pipeline de dégradation à la volée (flou, bruit, JPEG, compression, screentone, dithering, …)
+- **Suite de benchmarks** — benchmarks automatisés d'architectures et de features avec reprise
+- **Outils modèles** — upscale rapide, export modèle (safetensors), packaging
+- **Outils dataset** — découpeur de tuiles, rotation de validation, convertisseur LMDB
+- **Entraînement distribué** — coordination multi-machines
+- **File d'entraînements** — planifier plusieurs sessions à la suite
+- **20+ thèmes** — thèmes UI personnalisables
+- **Interface bilingue** — Français / Anglais
+
+### Démarrage rapide — Portable (recommandé)
+
+1. Télécharger `Universal_SR_Studio_v2.4.0_portable.zip` depuis les [Releases](https://github.com/Crysisjim/Universal-SR-Studio/releases)
+2. Extraire n'importe où
+3. Lancer `Universal_SR_Studio.exe`
+4. Au premier lancement, choisir la langue (FR/EN), puis aller dans **⚙️ Paramètres** → l'installeur intégré gère le reste
+
+> Aucune installation Python requise. La version portable est entièrement autonome.
+
+### Prérequis
+
+- **Windows 10/11**
+- **GPU NVIDIA** avec support CUDA (8 Go+ VRAM recommandé)
+- **Connexion internet** pour le premier setup (téléchargement des moteurs)
+
+C'est tout. Universal SR Studio gère le reste automatiquement via l'onglet **⚙️ Paramètres**.
+
+### Installation automatique (via l'onglet Paramètres)
+
+| Étape | Action |
+|-------|--------|
+| **Détection GPU** | Détecte le GPU et recommande la bonne version PyTorch + CUDA |
+| **Installation moteur** | Télécharge et installe NeoSR et/ou traiNNer-Redux depuis leurs dépôts officiels |
+| **Environnement virtuel** | Crée un `.venv` isolé pour chaque moteur |
+| **PyTorch** | Installe la version compatible CUDA automatiquement |
+| **Dépendances** | Installe tous les packages spécifiques au moteur |
+
+Ouvrir l'onglet **⚙️ Paramètres**, choisir le(s) moteur(s) à installer, et cliquer — la console affiche la progression en direct.
+
+### Structure de dossiers attendue
+
+```
+~/IA_Engine/
+├── traiNNer-redux/        (installé via Paramètres)
+│   └── .venv/
+├── neosr/                 (installé via Paramètres)
+│   └── .venv/
+├── datasets/
+│   ├── train/HR/          (vos images d'entraînement)
+│   └── val/
+│       ├── GT/
+│       └── LQ/
+└── Option Custom/         (presets de dégradation personnalisés)
+```
+
+### Installation source (développeurs)
+
+```bash
+git clone https://github.com/Crysisjim/Universal-SR-Studio.git
+cd Universal-SR-Studio
+pip install -r requirements.txt
+python main.py
+```
+
+Puis utiliser l'onglet **⚙️ Paramètres** pour installer les moteurs d'entraînement.
+
+### Aperçu des onglets
+
+| Onglet | Description |
+|--------|-------------|
+| 😊 Assistant | Wizard de configuration guidée pour débutants |
+| 📝 Configuration | Éditeur TOML/YAML avec prévisualisation OTF live |
+| 🚀 Entraînement | Démarrer/arrêter, courbes live, TensorBoard |
+| 🔧 Outils | Benchmark, upscale rapide, export modèle, outils dataset |
+| 📋 File d'attente | Planifier plusieurs sessions d'entraînement |
+| ⚙️ Paramètres | Installeur moteurs, chemins, langue, apparence, clés API |
+| 🌐 Distribué | Entraînement multi-machines (expérimental) |
+
+### Contribuer
+
+Les pull requests sont les bienvenues. Pour les changements majeurs, ouvrir une issue d'abord.
+
+1. Forker le dépôt
+2. Créer une branche (`git checkout -b feature/ma-feature`)
+3. Commiter les changements
+4. Ouvrir une pull request
+
+### Licence
+
+[MIT](LICENSE) — libre d'utilisation, de modification et de distribution.
