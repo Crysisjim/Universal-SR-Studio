@@ -75,7 +75,6 @@ a = Analysis(
         'psutil._pswindows',
         'pynvml',
         'win11toast',
-        'win11toast.utils',
         'safetensors',
         'safetensors.torch',
         'comtypes',
@@ -131,6 +130,11 @@ a = Analysis(
         'tensorflow',
         'jax',
         'triton',
+        # ONNX Runtime — 300 MB GPU DLL, not used by the UI
+        'onnxruntime',
+        'onnxruntime.capi',
+        # Apache Arrow / PyArrow — pulled in by onnxruntime
+        'pyarrow',
         # Unused heavy packages
         'matplotlib',
         'scipy',
@@ -144,6 +148,8 @@ a = Analysis(
         'black',
         'pylint',
         'flake8',
+        # win11toast internal not needed as separate module
+        'win11toast.utils',
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,

@@ -4,14 +4,23 @@ import traceback
 import datetime
 
 # ─── PyInstaller bundle path resolution ───────────────────────────────────────
-# When frozen (exe), __file__ points inside _MEIPASS (temp extraction).
-# _BASE_DIR is always the directory containing the exe or the script.
+# PyInstaller 6+ places bundled files in _internal/ (= sys._MEIPASS).
+# The exe itself sits one level up (os.path.dirname(sys.executable)).
+#
+#   dist/Universal_SR_Studio/
+#   ├── Universal_SR_Studio.exe   ← sys.executable
+#   └── _internal/                ← sys._MEIPASS
+#       └── assets/               ← bundled assets
+#
+# _BASE_DIR  → exe directory (crash_log, user_settings, .first_launch_done)
+# _ASSETS_DIR → _MEIPASS when frozen, else script dir (assets/, themes/, …)
 if getattr(sys, 'frozen', False):
-    _BASE_DIR = os.path.dirname(sys.executable)
-    # Make os.getcwd() reliable for asset loading in src/app.py (theme paths etc.)
-    os.chdir(_BASE_DIR)
+    _BASE_DIR   = os.path.dirname(sys.executable)
+    _ASSETS_DIR = sys._MEIPASS          # _internal/ contains assets/
+    os.chdir(_ASSETS_DIR)               # makes os.getcwd()/assets/… work in src/app.py
 else:
-    _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    _BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
+    _ASSETS_DIR = _BASE_DIR
 
 # Crash Logger — always written next to the exe / script
 CRASH_LOG = os.path.join(_BASE_DIR, "crash_log.txt")
@@ -85,7 +94,7 @@ def check_first_launch():
             print(f"ERREUR: Packages manquants: {', '.join(missing)}")
         return False
     if warnings:
-        marker = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".first_launch_done")
+        marker = os.path.join(_BASE_DIR, ".first_launch_done")
         if not os.path.exists(marker):
             try:
                 import tkinter as tk
@@ -135,7 +144,7 @@ if __name__ == "__main__":
 
     # Set window icon
     try:
-        icon_path = os.path.join(_BASE_DIR, "assets", "icon.ico")
+        icon_path = os.path.join(_ASSETS_DIR, "assets", "icon.ico")
         if os.path.exists(icon_path):
             app.iconbitmap(icon_path)
             # Also set for alt-tab and taskbar

@@ -38,6 +38,10 @@ MANIFEST
 # ─── graphify output (local knowledge graph) ──────────────────────────────────
 graphify-out/
 
+# ─── PyInstaller build artifacts ──────────────────────────────────────────────
+build/
+dist/
+
 # ─── Claude Code local settings ───────────────────────────────────────────────
 .claude/settings.local.json
 
