@@ -2,7 +2,7 @@
 
 A graphical interface for training and managing super-resolution AI models with **NeoSR** and **traiNNer-Redux** engines.
 
-![Python](https://img.shields.io/badge/Python-3.11%2B-blue)
+![Version](https://img.shields.io/badge/Version-2.4-blue)
 ![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![GPU](https://img.shields.io/badge/GPU-NVIDIA%20required-brightgreen)
@@ -23,66 +23,73 @@ A graphical interface for training and managing super-resolution AI models with 
 
 ---
 
-## Prerequisites
+## Quick Start — Portable (recommended)
 
-### Required
-- **Python 3.11+** — [python.org](https://www.python.org)
-- **NVIDIA GPU** with CUDA support (8 GB+ VRAM recommended)
-- At least one training engine installed in `~/IA_Engine/`:
-  - [traiNNer-Redux](https://github.com/the-database/traiNNer-redux) → `~/IA_Engine/traiNNer-redux/`
-  - [NeoSR](https://github.com/muslll/neosr) → `~/IA_Engine/neosr/`
+1. Download `Universal_SR_Studio_v2.4.0_portable.zip` from [Releases](https://github.com/Crysisjim/Universal-SR-Studio/releases)
+2. Extract anywhere
+3. Run `Universal_SR_Studio.exe`
+4. On first launch, go to **⚙️ Settings** → the built-in installer handles everything else
 
-### Python packages
-```bash
-pip install -r requirements.txt
-```
-
-> **PyTorch** is NOT in `requirements.txt`. Install it separately from [pytorch.org](https://pytorch.org/get-started/locally/) matching your CUDA version **before** installing the training engines.
-
-### Engine dependencies
-Run the helper script to install engine-specific packages:
-```bash
-scripts\install_deps.bat
-```
+> No Python installation required. The portable version is fully self-contained.
 
 ---
 
-## Installation
+## Prerequisites
 
-```bash
-# 1. Clone the repository
-git clone https://github.com/Crysisjim/Universal_SR_Studio.git
-cd Universal_SR_Studio
+- **Windows 10/11**
+- **NVIDIA GPU** with CUDA support (8 GB+ VRAM recommended)
+- **Internet connection** for the first setup (engine download)
 
-# 2. Install Python dependencies
-pip install -r requirements.txt
+That's it. Universal SR Studio handles the rest automatically via the **⚙️ Settings** tab.
 
-# 3. Install engine-specific dependencies (optional but recommended)
-scripts\install_deps.bat
+---
 
-# 4. Launch
-python main.py
-```
+## Automatic Setup (via Settings tab)
+
+Universal SR Studio includes a fully automated installer:
+
+| Step | What it does |
+|------|-------------|
+| **GPU detection** | Detects your GPU and recommends the correct PyTorch + CUDA version |
+| **Engine install** | Downloads and installs NeoSR and/or traiNNer-Redux from their official repositories |
+| **Virtual environment** | Creates an isolated `.venv` for each engine |
+| **PyTorch** | Installs the correct CUDA-compatible version automatically |
+| **Dependencies** | Installs all engine-specific packages |
+
+Just open the **⚙️ Settings** tab, choose which engine(s) to install, and click — the console window shows live progress.
 
 ---
 
 ## Expected folder structure
 
-Universal SR Studio expects the training engines to be installed at:
+After installation, engines are placed at:
 
 ```
 ~/IA_Engine/
-├── traiNNer-redux/        (traiNNer-Redux engine)
-│   └── .venv/             (engine virtual environment)
-├── neosr/                 (NeoSR engine)
+├── traiNNer-redux/        (installed via Settings)
+│   └── .venv/
+├── neosr/                 (installed via Settings)
 │   └── .venv/
 ├── datasets/
-│   ├── train/HR/          (training high-resolution images)
+│   ├── train/HR/          (your training images)
 │   └── val/
-│       ├── GT/            (validation ground truth)
-│       └── LQ/            (validation low-quality)
+│       ├── GT/
+│       └── LQ/
 └── Option Custom/         (custom degradation presets)
 ```
+
+---
+
+## Source installation (developers)
+
+```bash
+git clone https://github.com/Crysisjim/Universal-SR-Studio.git
+cd Universal-SR-Studio
+pip install -r requirements.txt
+python main.py
+```
+
+Then use the **⚙️ Settings** tab to install the training engines.
 
 ---
 
@@ -95,25 +102,19 @@ Universal_SR_Studio/
 ├── assets/                    Icons, sounds, UI themes
 │   └── themes/                20+ color themes
 ├── scripts/
-│   └── install_deps.bat       Engine dependency installer
+│   └── install_deps.bat       Engine dependency helper (optional)
 └── src/
     ├── app.py                 Application root (tab layout)
     ├── core/                  Backend: config, training, OTF, tools
     └── ui/
-        ├── components/        Shared UI widgets (tooltip, bars)
+        ├── components/        Shared UI widgets
         └── tabs/              Tab panels (config, run, tools, settings…)
 ```
 
 ---
 
-## Usage
+## Tabs overview
 
-### Launch
-```bash
-python main.py
-```
-
-### Tabs overview
 | Tab | Description |
 |-----|-------------|
 | 😊 Assistant | Guided setup wizard for beginners |
@@ -121,11 +122,13 @@ python main.py
 | 🚀 Training | Start/stop training, live curves, TensorBoard |
 | 🔧 Tools | Benchmark, quick upscale, model export, dataset tools |
 | 📋 Queue | Schedule multiple training sessions |
-| ⚙️ Settings | Engine paths, language, appearance, API keys |
+| ⚙️ Settings | Engine installer, paths, language, appearance, API keys |
 | 🌐 Distributed | Multi-machine training (experimental) |
 
-### Benchmarks
-Run standalone from the command line:
+---
+
+## Benchmarks (CLI)
+
 ```bash
 # Architecture benchmark (traiNNer-Redux)
 python src/core/benchmark_runner.py --engine redux --type arch
@@ -136,17 +139,6 @@ python src/core/benchmark_runner.py --engine neosr --type feature
 # List available tests
 python src/core/benchmark_runner.py --list
 ```
-
----
-
-## Configuration
-
-On first launch, go to **⚙️ Settings** and set:
-- Path to your NeoSR/traiNNer-Redux installation
-- Training dataset paths
-- (Optional) API keys for AI assistant features
-
-Settings are saved in `user_settings.json` at the project root (excluded from git).
 
 ---
 
