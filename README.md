@@ -11,7 +11,7 @@
 
   <br/><br/>
 
-  > 🇬🇧 [English](#english) | 🇫🇷 [Français](#français)
+   🇬🇧 [English](#english) | 🇫🇷 [Français](#français)
 </div>
 
 ---
