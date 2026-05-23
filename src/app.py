@@ -1,6 +1,7 @@
 import customtkinter as ctk
 import os
 import sys
+import webbrowser
 from tkinter import messagebox
 
 # --- IMPORTS CORE (Le Cerveau) ---
@@ -198,6 +199,21 @@ class App(ctk.CTk):
         except Exception as e:
             print(f"[App] ⚠️ Erreur Distribué: {e}")
 
+        # Wiki shortcut tab
+        WIKI_TAB = "📖 Wiki"
+        self.tab_view.add(WIKI_TAB)
+        ctk.CTkLabel(
+            self.tab_view.tab(WIKI_TAB),
+            text="📖  Ouverture du wiki...\nhttps://github.com/Crysisjim/Universal-SR-Studio/wiki",
+            font=("Roboto", 14), text_color="gray"
+        ).pack(expand=True)
+        created_tabs.append(WIKI_TAB)
+        self._wiki_tab_name = WIKI_TAB
+        self._last_tab = created_tabs[0] if created_tabs else None
+
+        # Wiki tab: intercept selection → open browser → return to previous tab
+        self.tab_view.configure(command=self._on_tab_changed)
+
         # 5b. FONT EMOJI sur chaque bouton de l'onglet (après création de tous les onglets)
         try:
             _seg = self.tab_view._segmented_button
@@ -227,6 +243,17 @@ class App(ctk.CTk):
                 "Erreur Critique",
                 "Aucun onglet n'a pu être créé. L'application ne peut pas démarrer."
             )
+
+    def _on_tab_changed(self):
+        """Intercept Wiki tab selection: open browser and return to previous tab."""
+        current = self.tab_view.get()
+        if current == self._wiki_tab_name:
+            webbrowser.open("https://github.com/Crysisjim/Universal-SR-Studio/wiki")
+            # Return to previous tab after a short delay
+            if self._last_tab and self._last_tab != self._wiki_tab_name:
+                self.after(150, lambda: self.tab_view.set(self._last_tab))
+        else:
+            self._last_tab = current
 
     def switch_to_run_and_start(self, config_path):
         """Change d'onglet et lance l'entraînement."""
