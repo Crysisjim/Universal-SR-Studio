@@ -629,7 +629,7 @@ log("[OK] TERMINE !")
         row_1 = ctk.CTkFrame(f_top, fg_color="transparent"); row_1.pack(fill="x", padx=10, pady=5)
         
         # CHARGEMENT DES PREFERENCES
-        curr_mode = self.settings.get("appearance_mode", "System")
+        curr_mode = self.settings.get("appearance_mode", "Dark")
         curr_theme = self.settings.get("theme_color", "green")
         use_aida = self.settings.get("use_aida64") == "true"
 

@@ -60,7 +60,7 @@ class App(ctk.CTk):
         set_language(lang)
         
         # 2. CONFIGURATION DE L'APPARENCE
-        mode = self.settings.get("appearance_mode", "System")
+        mode = self.settings.get("appearance_mode", "Dark")
         ctk.set_appearance_mode(mode)
         
         theme_name = self.settings.get("theme_color", "green")
