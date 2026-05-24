@@ -29,26 +29,26 @@ def _t(fr: str, en: str) -> str:
 GPU_FEATURES = {
     # Pascal (GTX 10xx) — sm_61
     "6.1": {"amp_fp16": False, "amp_bf16": False, "compile": False, "channels_last": False,
-             "note": _t("Pascal (GTX 10xx) — AMP non supporté, training en FP32 uniquement",
-                        "Pascal (GTX 10xx) — AMP not supported, training in FP32 only")},
+             "note": ("Pascal (GTX 10xx) — AMP non supporté, training en FP32 uniquement",
+                      "Pascal (GTX 10xx) — AMP not supported, training in FP32 only")},
     # Turing (RTX 20xx) — sm_75
     "7.5": {"amp_fp16": True, "amp_bf16": False, "compile": True, "channels_last": True,
-             "note": _t("Turing (RTX 20xx) — AMP FP16 supporté",
-                        "Turing (RTX 20xx) — AMP FP16 supported")},
+             "note": ("Turing (RTX 20xx) — AMP FP16 supporté",
+                      "Turing (RTX 20xx) — AMP FP16 supported")},
     # Ampere (RTX 30xx) — sm_80/86
     "8.0": {"amp_fp16": True, "amp_bf16": True, "compile": True, "channels_last": True,
-             "note": _t("Ampere (RTX 30xx) — AMP FP16 + BF16 supportés",
-                        "Ampere (RTX 30xx) — AMP FP16 + BF16 supported")},
+             "note": ("Ampere (RTX 30xx) — AMP FP16 + BF16 supportés",
+                      "Ampere (RTX 30xx) — AMP FP16 + BF16 supported")},
     "8.6": {"amp_fp16": True, "amp_bf16": True, "compile": True, "channels_last": True,
-             "note": _t("Ampere (RTX 30xx) — AMP FP16 + BF16 supportés",
-                        "Ampere (RTX 30xx) — AMP FP16 + BF16 supported")},
+             "note": ("Ampere (RTX 30xx) — AMP FP16 + BF16 supportés",
+                      "Ampere (RTX 30xx) — AMP FP16 + BF16 supported")},
     "8.9": {"amp_fp16": True, "amp_bf16": True, "compile": True, "channels_last": True,
-             "note": _t("Ada Lovelace (RTX 40xx) — Toutes les optimisations supportées",
-                        "Ada Lovelace (RTX 40xx) — All optimisations supported")},
+             "note": ("Ada Lovelace (RTX 40xx) — Toutes les optimisations supportées",
+                      "Ada Lovelace (RTX 40xx) — All optimisations supported")},
     # Fallback
     "default": {"amp_fp16": False, "amp_bf16": False, "compile": False, "channels_last": False,
-                "note": _t("GPU inconnu — AMP désactivé par précaution",
-                           "Unknown GPU — AMP disabled as a precaution")},
+                "note": ("GPU inconnu — AMP désactivé par précaution",
+                         "Unknown GPU — AMP disabled as a precaution")},
 }
 
 
@@ -105,7 +105,7 @@ class GPUInfo:
             f"AMP BF16 : {'✅' if self.supports_bf16 else '❌'}",
             f"torch.compile : {'✅' if self.supports_compile else '❌'}",
             "",
-            self.features.get("note", ""),
+            _t(*self.features["note"]) if "note" in self.features else "",
         ]
         return "\n".join(lines)
 
@@ -363,43 +363,62 @@ class WizardEngine:
             return gpu.get_gpu_summary()
 
         if question_id == "engine":
-            return ("NeoSR : format TOML, dégradations Real-ESRGAN intégrées, optimiseurs avancés (Adan).\n"
-                    "TraiNNer-Redux : format YAML, plus d'architectures, losses modernes (HSLuv, CoSim).")
+            return _t(
+                "NeoSR : format TOML, dégradations Real-ESRGAN intégrées, optimiseurs avancés (Adan).\n"
+                "TraiNNer-Redux : format YAML, plus d'architectures, losses modernes (HSLuv, CoSim).",
+                "NeoSR: TOML format, built-in Real-ESRGAN degradations, advanced optimisers (Adan).\n"
+                "TraiNNer-Redux: YAML format, more architectures, modern losses (HSLuv, CoSim)."
+            )
 
         if question_id == "batch_size":
             rec = gpu.get_recommended_batch_size() if gpu else 2
-            return f"💡 Recommandé pour {gpu.name if gpu else 'votre GPU'} ({vram:.0f} GB) : {rec}"
+            gpu_lbl = gpu.name if gpu else _t("votre GPU", "your GPU")
+            return f"💡 {_t('Recommandé pour', 'Recommended for')} {gpu_lbl} ({vram:.0f} GB) : {rec}"
 
         if question_id == "patch_size":
             rec = gpu.get_recommended_patch_size() if gpu else 64
             engine = self.get_answer("engine", "NeoSR")
             note = "(= lq_size dans Redux)" if "Redux" in str(engine) else "(= patch_size)"
-            return f"💡 Recommandé : {rec} {note}"
+            return f"💡 {_t('Recommandé', 'Recommended')} : {rec} {note}"
 
         if question_id == "use_amp":
             if gpu and not gpu.supports_amp:
-                return (f"⚠️ ATTENTION : Votre {gpu.name} (sm_{gpu.cc_str.replace('.', '')}) "
-                        f"ne supporte PAS AMP FP16 avec le PyTorch actuel.\n"
-                        f"AMP sera désactivé automatiquement. Training en FP32 (plus lent, plus de VRAM).")
+                return _t(
+                    f"⚠️ ATTENTION : Votre {gpu.name} (sm_{gpu.cc_str.replace('.', '')}) "
+                    f"ne supporte PAS AMP FP16 avec le PyTorch actuel.\n"
+                    f"AMP sera désactivé automatiquement. Training en FP32 (plus lent, plus de VRAM).",
+                    f"⚠️ WARNING: Your {gpu.name} (sm_{gpu.cc_str.replace('.', '')}) "
+                    f"does NOT support AMP FP16 with the current PyTorch.\n"
+                    f"AMP will be disabled automatically. Training in FP32 (slower, more VRAM)."
+                )
             elif gpu and vram < 12:
-                return "💡 Fortement recommandé — réduit la VRAM ~30%"
-            return "💡 Recommandé — accélère le training sans perte de qualité"
+                return _t("💡 Fortement recommandé — réduit la VRAM ~30%",
+                          "💡 Strongly recommended — reduces VRAM ~30%")
+            return _t("💡 Recommandé — accélère le training sans perte de qualité",
+                      "💡 Recommended — speeds up training without quality loss")
 
         if question_id == "use_gan":
             if vram < 8:
-                return "⚠️ GAN déconseillé avec moins de 8 GB VRAM (ajoute ~30%)"
-            return "💡 Le GAN améliore la netteté perçue mais augmente VRAM ~30% et complexité"
+                return _t("⚠️ GAN déconseillé avec moins de 8 GB VRAM (ajoute ~30%)",
+                          "⚠️ GAN not recommended with less than 8 GB VRAM (adds ~30%)")
+            return _t("💡 Le GAN améliore la netteté perçue mais augmente VRAM ~30% et complexité",
+                      "💡 GAN improves perceived sharpness but increases VRAM ~30% and complexity")
 
         if question_id == "arch":
             content = self.get_answer("content_type", "mixte")
             objective = self.get_answer("objective", "equilibre")
             rec = ARCH_RECOMMENDATIONS.get(content, {}).get(objective, "span")
-            return f"💡 Recommandé pour {content}/{objective} : {rec}"
+            return f"💡 {_t('Recommandé pour', 'Recommended for')} {content}/{objective} : {rec}"
 
         if question_id == "dataset_mode":
-            return ("Paired : vous fournissez les images HQ + LQ pré-générées.\n"
-                    "OTF (On-The-Fly) : seules les images HQ sont requises, "
-                    "le moteur génère les dégradations pendant le training.")
+            return _t(
+                "Paired : vous fournissez les images HQ + LQ pré-générées.\n"
+                "OTF (On-The-Fly) : seules les images HQ sont requises, "
+                "le moteur génère les dégradations pendant le training.",
+                "Paired: you provide both HQ + pre-generated LQ images.\n"
+                "OTF (On-The-Fly): only HQ images are needed, "
+                "the engine generates degradations during training."
+            )
 
         return ""
 

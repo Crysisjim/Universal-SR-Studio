@@ -1409,7 +1409,7 @@ class ToolsTab(ctk.CTkFrame):
         self.widgets["conv_opset"].set("17")
         ToolTip(self.widgets["conv_opset"], _t("Version opset ONNX (17 = recommandé, max compatibilité TensorRT 8+).\nBaisser si erreur d'export vers outils anciens.", "ONNX opset version (17 = recommended, max compatibility with TensorRT 8+).\nLower if export fails with older tools."))
 
-        ctk.CTkLabel(params2, text="TF32 :", padx=(15, 0)).pack(side="left", padx=(15, 0))
+        ctk.CTkLabel(params2, text="TF32 :").pack(side="left", padx=(15, 0))
         self.widgets["conv_tf32"] = ctk.CTkCheckBox(params2, text=_t("Activer (matmul rapide RTX 3000+)", "Enable (fast matmul RTX 3000+)"))
         self.widgets["conv_tf32"].pack(side="left", padx=5)
         ToolTip(self.widgets["conv_tf32"], _t("Active torch.backends.cuda.matmul.allow_tf32 pendant la conversion.\n[+] Accélère le traitement sur RTX 3000+ (Ampere) de 5-10%.\n[ℹ] Option CUDA, ne change pas le format du modèle.", "Enables torch.backends.cuda.matmul.allow_tf32 during conversion.\n[+] Speeds up processing on RTX 3000+ (Ampere) by 5-10%.\n[ℹ] CUDA option only — does not change model format."))

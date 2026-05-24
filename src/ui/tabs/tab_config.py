@@ -3115,9 +3115,9 @@ class ConfigTab(ctk.CTkFrame):
                 self.prog_vram.set(min(pct, 1.0))
                 color = "#2ecc71" if pct < 0.6 else "#e67e22" if pct < 0.9 else "#e74c3c"
                 self.prog_vram.configure(progress_color=color)
-                self.lbl_vram.configure(text=f"VRAM Estimée : {base_est:.1f} GB / {self.total_vram_gb:.1f} GB ({int(pct*100)}%)")
+                self.lbl_vram.configure(text=f"{_t('VRAM Estimée', 'Estimated VRAM')} : {base_est:.1f} GB / {self.total_vram_gb:.1f} GB ({int(pct*100)}%)")
             else:
-                self.lbl_vram.configure(text=f"VRAM Estimée : {base_est:.1f} GB")
+                self.lbl_vram.configure(text=f"{_t('VRAM Estimée', 'Estimated VRAM')} : {base_est:.1f} GB")
         except Exception as e: pass
 
     # --- UI HELPERS ---

@@ -49,6 +49,21 @@ def _t(fr: str, en: str) -> str:
     return fr
 
 
+def _opt_display(opt: str) -> str:
+    """Translate known wizard option internal keys to display labels."""
+    _MAP = {
+        "qualite":  (_t("qualite",  "quality")),
+        "vitesse":  (_t("vitesse",  "speed")),
+        "equilibre": (_t("equilibre", "balance")),
+        "anime":    (_t("anime",    "anime")),
+        "photo":    (_t("photo",    "photo")),
+        "mixte":    (_t("mixte",    "mixed")),
+        "otf":      "OTF",
+        "paired":   _t("paired",   "paired"),
+    }
+    return _MAP.get(opt, opt)
+
+
 def _write_toml(data: dict, filepath: str):
     """Write a dict as TOML file, using available library."""
     if tomli_w:
@@ -292,7 +307,7 @@ class WizardTab(ctk.CTkScrollableFrame):
             if len(question.options) <= 5:
                 for opt in question.options:
                     rb = ctk.CTkRadioButton(
-                        self.answer_frame, text=opt, variable=var, value=opt,
+                        self.answer_frame, text=_opt_display(opt), variable=var, value=opt,
                         font=("Arial", 13), text_color="#bdc3c7"
                     )
                     rb.pack(anchor="w", pady=3)
