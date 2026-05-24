@@ -216,19 +216,19 @@ class RunTab(ctk.CTkFrame):
         self.frame_top.grid_columnconfigure(1, weight=1)
 
         # > COLONNE GAUCHE : GPU
-        self.frame_gpu = ctk.CTkFrame(self.frame_top, fg_color="#181818", border_width=2, border_color="#333", width=220)
+        self.frame_gpu = ctk.CTkFrame(self.frame_top, fg_color=("#E8E8E8", "#181818"), border_width=2, border_color=("#AAAAAA", "#333"), width=220)
         self.frame_gpu.grid(row=0, column=0, sticky="ns", padx=(0, 5))
         self.frame_gpu.grid_propagate(False) 
         self.setup_gpu_monitor()
         ToolTip(self.frame_gpu, _t("Moniteur GPU.\nSurveillez la VRAM pour éviter les crashs (OOM).", "GPU Monitor.\nWatch VRAM to avoid crashes (OOM)."))
 
         # > COLONNE MILIEU : FICHIERS (Auto-Config)
-        self.frame_files = ctk.CTkFrame(self.frame_top, fg_color="#2B2B2B")
+        self.frame_files = ctk.CTkFrame(self.frame_top, fg_color=("#E8E8E8", "#2B2B2B"))
         self.frame_files.grid(row=0, column=1, sticky="nsew", padx=5)
         self.setup_file_controls()
 
         # > COLONNE DROITE : CPU
-        self.frame_cpu = ctk.CTkFrame(self.frame_top, fg_color="#181818", border_width=2, border_color="#333", width=220)
+        self.frame_cpu = ctk.CTkFrame(self.frame_top, fg_color=("#E8E8E8", "#181818"), border_width=2, border_color=("#AAAAAA", "#333"), width=220)
         self.frame_cpu.grid(row=0, column=2, sticky="ns", padx=(5, 0))
         self.frame_cpu.grid_propagate(False)
         self.setup_cpu_monitor()
@@ -240,7 +240,7 @@ class RunTab(ctk.CTkFrame):
         self.setup_dashboard()
 
         # 3. INFO BAR
-        self.frame_info = ctk.CTkFrame(self, fg_color="#222", height=40)
+        self.frame_info = ctk.CTkFrame(self, fg_color=("#DEDEDE", "#222"), height=40)
         self.frame_info.grid(row=2, column=0, sticky="ew", padx=10, pady=(0, 5))
         self.setup_info_panel()
 
@@ -2146,7 +2146,7 @@ class RunTab(ctk.CTkFrame):
     def setup_gpu_monitor(self):
         inner = ctk.CTkFrame(self.frame_gpu, fg_color="transparent")
         inner.pack(fill="both", expand=True, padx=12, pady=(6, 4))
-        ctk.CTkLabel(inner, text="GPU", font=("Roboto", 12, "bold"), text_color="#AAA").pack(pady=(0, 2))
+        ctk.CTkLabel(inner, text="GPU", font=("Roboto", 12, "bold"), text_color=("gray30", "#AAA")).pack(pady=(0, 2))
         self.lbl_gpu_name = ctk.CTkLabel(inner, text="...", font=("Arial", 11, "bold"),
                                           text_color="#2ecc71", wraplength=170)
         self.lbl_gpu_name.pack(pady=(0, 5))
@@ -2161,7 +2161,7 @@ class RunTab(ctk.CTkFrame):
     def setup_cpu_monitor(self):
         inner = ctk.CTkFrame(self.frame_cpu, fg_color="transparent")
         inner.pack(fill="both", expand=True, padx=12, pady=(6, 4))
-        ctk.CTkLabel(inner, text=_t("SYSTÈME", "SYSTEM"), font=("Roboto", 12, "bold"), text_color="#AAA").pack(pady=(0, 2))
+        ctk.CTkLabel(inner, text=_t("SYSTÈME", "SYSTEM"), font=("Roboto", 12, "bold"), text_color=("gray30", "#AAA")).pack(pady=(0, 2))
         col_cpu = "#9b59b6"
         nm = self.cpu_model_name.upper()
         if "AMD" in nm or "RYZEN" in nm: col_cpu = "#e67e22"
@@ -2376,7 +2376,7 @@ class RunTab(ctk.CTkFrame):
                         except Exception:
                             pass
                         tmp = int(d[4].strip())
-                        self.lbl_temp.configure(text=f"{tmp} °C", text_color="#e74c3c" if tmp > 80 else "white")
+                        self.lbl_temp.configure(text=f"{tmp} °C", text_color="#e74c3c" if tmp > 80 else ("gray10", "white"))
         except Exception:
             pass
         self.after(2000, self.poll_gpu_stats)
@@ -2605,7 +2605,7 @@ class RunTab(ctk.CTkFrame):
         self.lbl_inf_acc = mk_info(4, "Accumulate", "Gradient accumulation.")
 
     def create_card(self, r, c, title, val, color, tip=""):
-        f = ctk.CTkFrame(self.frame_stats, fg_color="#222", corner_radius=4)
+        f = ctk.CTkFrame(self.frame_stats, fg_color=("#DEDEDE", "#222"), corner_radius=4)
         f.grid(row=r, column=c, padx=3, pady=3, sticky="ew")
         ctk.CTkLabel(f, text=title, font=("Arial", 8, "bold"), text_color="gray").pack(pady=(2,0))
         l = ctk.CTkLabel(f, text=val, font=("Roboto", 12, "bold"), text_color=color)
@@ -3529,7 +3529,7 @@ class RunTab(ctk.CTkFrame):
 
         # Image selector dropdown
         if len(val_names) > 1:
-            ctk.CTkLabel(header, text=f"  {_t('Image', 'Image')}:", text_color="#AAA").pack(side="left", padx=(15, 3))
+            ctk.CTkLabel(header, text=f"  {_t('Image', 'Image')}:", text_color=("gray30", "#AAA")).pack(side="left", padx=(15, 3))
             self._val_all_images = all_val_images
             self._val_selector = ctk.CTkOptionMenu(header, values=val_names, width=180,
                 command=lambda name: self._on_val_image_select(name, win))

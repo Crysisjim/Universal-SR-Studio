@@ -36,7 +36,7 @@ class DistributedTab(ctk.CTkFrame):
                      font=("Roboto", 20, "bold"), text_color="#9b59b6").pack(side="left")
 
         # Info
-        info = ctk.CTkFrame(self, fg_color="#1a1a2e", corner_radius=8)
+        info = ctk.CTkFrame(self, fg_color=("#E8E8E8", "#1a1a2e"), corner_radius=8)
         info.pack(fill="x", padx=15, pady=5)
         ctk.CTkLabel(info, text=_t(
             "L'entrainement partage permet de repartir le travail sur plusieurs machines du reseau.\n"
@@ -53,7 +53,7 @@ class DistributedTab(ctk.CTkFrame):
             "  2. Click 'Discover' below to find available slaves\n"
             "  3. Run a benchmark to evaluate each slave's GPU performance\n"
             "  4. Use 'Launch Distributed Training' to share the workload"
-        ), text_color="#AAA", font=("Roboto", 11), justify="left", anchor="w",
+        ), text_color=("gray30", "#AAA"), font=("Roboto", 11), justify="left", anchor="w",
             wraplength=800).pack(padx=15, pady=10, fill="x")
 
         # Controls
@@ -92,7 +92,7 @@ class DistributedTab(ctk.CTkFrame):
         self.lbl_status.pack(side="right", padx=15)
 
         # Slaves list
-        self.slaves_frame = ctk.CTkScrollableFrame(self, fg_color="#1a1a2e",
+        self.slaves_frame = ctk.CTkScrollableFrame(self, fg_color=("#E8E8E8", "#1a1a2e"),
                                                      corner_radius=8, height=300)
         self.slaves_frame.pack(fill="both", expand=True, padx=15, pady=10)
 
@@ -164,15 +164,15 @@ class DistributedTab(ctk.CTkFrame):
             return
 
         # Header row
-        hdr = ctk.CTkFrame(self.slaves_frame, fg_color="#2B2B4B", corner_radius=5)
+        hdr = ctk.CTkFrame(self.slaves_frame, fg_color=("#D8D8D8", "#2B2B4B"), corner_radius=5)
         hdr.pack(fill="x", pady=(0, 5))
         for col, w in [("Hostname", 140), ("GPU", 220), ("VRAM", 80),
                        ("IP", 130), ("Status", 80), ("Perf", 80)]:
             ctk.CTkLabel(hdr, text=col, font=("Roboto", 10, "bold"),
-                         text_color="#AAA", width=w, anchor="w").pack(side="left", padx=5)
+                         text_color=("gray30", "#AAA"), width=w, anchor="w").pack(side="left", padx=5)
 
         for s in slaves:
-            row = ctk.CTkFrame(self.slaves_frame, fg_color="#2B2B2B", corner_radius=5)
+            row = ctk.CTkFrame(self.slaves_frame, fg_color=("#E0E0E0", "#2B2B2B"), corner_radius=5)
             row.pack(fill="x", pady=2)
             hostname = s.get("hostname", "?")
             gpu = s.get("gpu_name", "GPU?")
@@ -183,9 +183,9 @@ class DistributedTab(ctk.CTkFrame):
 
             ctk.CTkLabel(row, text=hostname, font=("Roboto", 11, "bold"),
                          text_color="#3498db", width=140, anchor="w").pack(side="left", padx=5)
-            ctk.CTkLabel(row, text=gpu, text_color="#CCC", width=220, anchor="w").pack(side="left", padx=5)
-            ctk.CTkLabel(row, text=vram, text_color="#CCC", width=80, anchor="w").pack(side="left", padx=5)
-            ctk.CTkLabel(row, text=ip, text_color="#888", width=130, anchor="w").pack(side="left", padx=5)
+            ctk.CTkLabel(row, text=gpu, text_color=("gray20", "#CCC"), width=220, anchor="w").pack(side="left", padx=5)
+            ctk.CTkLabel(row, text=vram, text_color=("gray20", "#CCC"), width=80, anchor="w").pack(side="left", padx=5)
+            ctk.CTkLabel(row, text=ip, text_color=("gray40", "#888"), width=130, anchor="w").pack(side="left", padx=5)
             ctk.CTkLabel(row, text=status, text_color=status_color, width=80, anchor="w").pack(side="left", padx=5)
             ctk.CTkLabel(row, text="--", text_color="#888", width=80, anchor="w").pack(side="left", padx=5)
 

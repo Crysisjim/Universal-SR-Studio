@@ -40,7 +40,7 @@ class QueueTab(ctk.CTkFrame):
                      font=("Roboto", 20, "bold"), text_color="#e67e22").pack(side="left")
 
         # Info
-        info = ctk.CTkFrame(self, fg_color="#1a1a2e", corner_radius=8)
+        info = ctk.CTkFrame(self, fg_color=("#E8E8E8", "#1a1a2e"), corner_radius=8)
         info.pack(fill="x", padx=15, pady=5)
         ctk.CTkLabel(info, text=_t(
             "Enchainez plusieurs configurations d'entrainement automatiquement.\n"
@@ -49,7 +49,7 @@ class QueueTab(ctk.CTkFrame):
             "Chain multiple training configurations automatically.\n"
             "Add .toml or .yml files, reorder them, then launch the queue.\n"
             "Each config runs sequentially — the next one starts when the previous finishes."
-        ), text_color="#AAA", font=("Roboto", 11), justify="left", wraplength=800).pack(padx=15, pady=10)
+        ), text_color=("gray30", "#AAA"), font=("Roboto", 11), justify="left", wraplength=800).pack(padx=15, pady=10)
 
         # Controls
         ctrl = ctk.CTkFrame(self, fg_color="transparent")
@@ -88,7 +88,7 @@ class QueueTab(ctk.CTkFrame):
         self.lbl_count.pack(side="right", padx=10)
 
         # Queue list
-        self.queue_frame = ctk.CTkScrollableFrame(self, fg_color="#1a1a2e", corner_radius=8, height=250)
+        self.queue_frame = ctk.CTkScrollableFrame(self, fg_color=("#E8E8E8", "#1a1a2e"), corner_radius=8, height=250)
         self.queue_frame.pack(fill="both", expand=True, padx=15, pady=5)
         self._show_empty()
 
@@ -140,10 +140,10 @@ class QueueTab(ctk.CTkFrame):
         self.lbl_count.configure(text=f"{len(self._queue)} config(s)")
 
         # Header
-        hdr = ctk.CTkFrame(self.queue_frame, fg_color="#2B2B4B", corner_radius=4, height=25)
+        hdr = ctk.CTkFrame(self.queue_frame, fg_color=("#D8D8D8", "#2B2B4B"), corner_radius=4, height=25)
         hdr.pack(fill="x", pady=(0, 3))
         for txt, w in [("#", 30), (_t("Nom", "Name"), 200), (_t("Fichier", "File"), 350), (_t("Statut", "Status"), 80)]:
-            ctk.CTkLabel(hdr, text=txt, font=("Roboto", 9, "bold"), text_color="#AAA",
+            ctk.CTkLabel(hdr, text=txt, font=("Roboto", 9, "bold"), text_color=("gray30", "#AAA"),
                          width=w, anchor="w").pack(side="left", padx=4)
 
         for i, item in enumerate(self._queue):
@@ -156,7 +156,7 @@ class QueueTab(ctk.CTkFrame):
             row.pack(fill="x", pady=1)
             row.bind("<Button-1>", lambda e, idx=i: self._select(idx))
 
-            ctk.CTkLabel(row, text=str(i + 1), width=30, text_color="#AAA", anchor="w").pack(side="left", padx=4)
+            ctk.CTkLabel(row, text=str(i + 1), width=30, text_color=("gray30", "#AAA"), anchor="w").pack(side="left", padx=4)
             name_lbl = ctk.CTkLabel(row, text=item["name"], width=200, font=("Roboto", 11, "bold"),
                                      text_color="#3498db", anchor="w")
             name_lbl.pack(side="left", padx=4)

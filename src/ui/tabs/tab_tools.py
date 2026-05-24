@@ -183,7 +183,7 @@ class ToolsTab(ctk.CTkFrame):
         Frame auto-dimensionnée au contenu (pas de pack_propagate(False) ni width fixe).
         Barres identiques : width=130, height=8.
         """
-        gf = ctk.CTkFrame(parent, fg_color="#111827", corner_radius=8)
+        gf = ctk.CTkFrame(parent, fg_color=("#E8E8E8", "#111827"), corner_radius=8)
         panel: dict = {}
 
         row = ctk.CTkFrame(gf, fg_color="transparent")
@@ -201,11 +201,12 @@ class ToolsTab(ctk.CTkFrame):
                          anchor="w").pack(side="left")
             bar = ctk.CTkProgressBar(g, height=8, width=130,
                                      progress_color=bar_color,
-                                     fg_color="#1e293b")
+                                     fg_color=("#D0D0D0", "#1e293b"))
             bar.set(0)
             bar.pack(side="left", padx=(3, 4))
             lbl = ctk.CTkLabel(g, text="—", font=("Consolas", 9),
-                               width=val_width, anchor="w")
+                               width=val_width, anchor="w",
+                               text_color=("gray20", "#CBD5E1"))
             lbl.pack(side="left")
             panel[bar_key] = bar
             panel[val_key]  = lbl
@@ -772,14 +773,14 @@ class ToolsTab(ctk.CTkFrame):
         self.widgets["log_ups"].pack(fill="both", expand=True)
 
         # Bottom pane: side-by-side preview
-        prev_frame = ctk.CTkFrame(paned, fg_color="#111827", corner_radius=6)
+        prev_frame = ctk.CTkFrame(paned, fg_color=("#E8E8E8", "#111827"), corner_radius=6)
         paned.add(prev_frame, minsize=80)
         for side, key, label in [("left", "ups_prev_in", _t("Source", "Source")),
                                   ("right", "ups_prev_out", _t("Resultat", "Result"))]:
             col = ctk.CTkFrame(prev_frame, fg_color="transparent")
             col.pack(side=side, fill="both", expand=True, padx=4, pady=4)
             ctk.CTkLabel(col, text=label, font=("Arial", 10), text_color="gray").pack()
-            lbl = ctk.CTkLabel(col, text="—", fg_color="#1e293b", corner_radius=4)
+            lbl = ctk.CTkLabel(col, text="—", fg_color=("#D0D0D0", "#1e293b"), corner_radius=4)
             lbl.pack(fill="both", expand=True)
             self.widgets[key] = lbl
         self._ups_preview_refs = []  # keep CTkImage refs alive
@@ -1896,7 +1897,7 @@ except Exception as e: print(f"ERROR:{{e}}")
                       command=self._delete_all_history).pack(side="right", padx=5)
 
         # Scrollable list
-        self.widgets["history_list"] = ctk.CTkScrollableFrame(f, fg_color="#1a1a2e", height=400)
+        self.widgets["history_list"] = ctk.CTkScrollableFrame(f, fg_color=("#E8E8E8", "#1a1a2e"), height=400)
         self.widgets["history_list"].pack(fill="both", expand=True, pady=10)
 
         self._refresh_history()
@@ -1917,15 +1918,15 @@ except Exception as e: print(f"ERROR:{{e}}")
             return
 
         # Header
-        hdr = ctk.CTkFrame(self.widgets["history_list"], fg_color="#2B2B4B", corner_radius=4)
+        hdr = ctk.CTkFrame(self.widgets["history_list"], fg_color=("#D8D8D8", "#2B2B4B"), corner_radius=4)
         hdr.pack(fill="x", pady=(0, 3))
         for txt, w in [(_t("Nom", "Name"), 190), ("Arch", 90), ("Iter", 80), ("PSNR", 70),
                        (_t("Vitesse", "Speed"), 80), (_t("Duree", "Duration"), 80), (_t("Date", "Date"), 120), ("Status", 80), ("", 30)]:
             ctk.CTkLabel(hdr, text=txt, font=("Roboto", 9, "bold"),
-                         text_color="#AAA", width=w, anchor="w").pack(side="left", padx=4)
+                         text_color=("gray30", "#AAA"), width=w, anchor="w").pack(side="left", padx=4)
 
         for t in trainings:
-            row = ctk.CTkFrame(self.widgets["history_list"], fg_color="#2B2B3B", corner_radius=4)
+            row = ctk.CTkFrame(self.widgets["history_list"], fg_color=("#E0E0E0", "#2B2B3B"), corner_radius=4)
             row.pack(fill="x", pady=1)
             status_colors = {"running": "#f39c12", "completed": "#2ecc71",
                              "interrupted": "#e74c3c", "failed": "#c0392b"}
@@ -1943,7 +1944,7 @@ except Exception as e: print(f"ERROR:{{e}}")
             ctk.CTkLabel(row, text=f"{spd:.2f} it/s" if spd else "—", width=80,
                          text_color="#f39c12" if spd else "#666", anchor="w").pack(side="left", padx=4)
             ctk.CTkLabel(row, text=format_duration(t.get("duration_seconds", 0)),
-                         width=80, text_color="#AAA", anchor="w").pack(side="left", padx=4)
+                         width=80, text_color=("gray30", "#AAA"), anchor="w").pack(side="left", padx=4)
             ctk.CTkLabel(row, text=format_timestamp(t.get("started_at", 0)),
                          width=120, text_color="#888", font=("Roboto", 9), anchor="w").pack(side="left", padx=4)
             status = t.get("status", "?")
@@ -2015,12 +2016,12 @@ except Exception as e: print(f"ERROR:{{e}}")
             return
 
         for s in stats:
-            row = ctk.CTkFrame(win, fg_color="#1a1a2e", corner_radius=6)
+            row = ctk.CTkFrame(win, fg_color=("#E8E8E8", "#1a1a2e"), corner_radius=6)
             row.pack(fill="x", padx=20, pady=3)
             ctk.CTkLabel(row, text=s["architecture"], font=("Roboto", 12, "bold"),
                          text_color="#3498db", width=150, anchor="w").pack(side="left", padx=10, pady=5)
             ctk.CTkLabel(row, text=f"{_t('Trainings', 'Trainings')}: {s['count']}", width=100,
-                         text_color="#AAA").pack(side="left", padx=5)
+                         text_color=("gray30", "#AAA")).pack(side="left", padx=5)
             ctk.CTkLabel(row, text=f"{_t('PSNR moy', 'Avg PSNR')}: {s['avg_psnr']:.2f}", width=130,
                          text_color="#2ecc71").pack(side="left", padx=5)
             ctk.CTkLabel(row, text=f"{_t('PSNR max', 'Max PSNR')}: {s['max_psnr']:.2f}", width=130,
@@ -2039,7 +2040,7 @@ except Exception as e: print(f"ERROR:{{e}}")
         ctk.CTkButton(f, text=_t("🔍 Scanner experiments/", "🔍 Scan experiments/"), fg_color="#e67e22", width=200,
                       command=self._scan_resume).pack(pady=10)
 
-        self.widgets["resume_list"] = ctk.CTkScrollableFrame(f, fg_color="#1a1a2e", height=400)
+        self.widgets["resume_list"] = ctk.CTkScrollableFrame(f, fg_color=("#E8E8E8", "#1a1a2e"), height=400)
         self.widgets["resume_list"].pack(fill="both", expand=True, pady=10)
 
         ctk.CTkLabel(self.widgets["resume_list"],
@@ -2083,7 +2084,7 @@ except Exception as e: print(f"ERROR:{{e}}")
 
         for item in interrupted:
             cfg = find_associated_config(item["path"])
-            row = ctk.CTkFrame(self.widgets["resume_list"], fg_color="#2B2B3B", corner_radius=6)
+            row = ctk.CTkFrame(self.widgets["resume_list"], fg_color=("#E0E0E0", "#2B2B3B"), corner_radius=6)
             row.pack(fill="x", padx=5, pady=3)
 
             top = ctk.CTkFrame(row, fg_color="transparent")
@@ -2097,7 +2098,7 @@ except Exception as e: print(f"ERROR:{{e}}")
             mid = ctk.CTkFrame(row, fg_color="transparent")
             mid.pack(fill="x", padx=10, pady=2)
             ctk.CTkLabel(mid, text=f"{_t('Iter atteinte', 'Iter reached')} : {item['last_iter']}",
-                         text_color="#AAA").pack(side="left")
+                         text_color=("gray30", "#AAA")).pack(side="left")
             if item["state_file"]:
                 ctk.CTkLabel(mid, text=f"  ✓ {_t('State file disponible', 'State file available')}",
                              text_color="#2ecc71").pack(side="left", padx=10)
@@ -2180,7 +2181,7 @@ except Exception as e: print(f"ERROR:{{e}}")
         ctk.CTkButton(ctrl2, text=_t("🎲 Generer Apercu", "🎲 Generate Preview"), fg_color="#9b59b6", width=200,
                       command=self._otf_generate_preview).pack(side="left", padx=15)
 
-        self.widgets["otf_preview_area"] = ctk.CTkScrollableFrame(f, fg_color="#1a1a2e", height=500)
+        self.widgets["otf_preview_area"] = ctk.CTkScrollableFrame(f, fg_color=("#E8E8E8", "#1a1a2e"), height=500)
         self.widgets["otf_preview_area"].pack(fill="both", expand=True, pady=10)
 
         self._otf_config = {}
@@ -2249,12 +2250,12 @@ except Exception as e: print(f"ERROR:{{e}}")
         from PIL import Image
 
         for i, s in enumerate(samples):
-            row = ctk.CTkFrame(self.widgets["otf_preview_area"], fg_color="#2B2B3B", corner_radius=6)
+            row = ctk.CTkFrame(self.widgets["otf_preview_area"], fg_color=("#E0E0E0", "#2B2B3B"), corner_radius=6)
             row.pack(fill="x", padx=5, pady=5)
             ctk.CTkLabel(row, text=f"{_t('Echantillon', 'Sample')} {i+1}", font=("Roboto", 11, "bold"),
                          text_color="#9b59b6").pack(anchor="w", padx=10, pady=(5, 0))
             log_text = " | ".join(s["log"]) if s["log"] else _t("(aucune degradation appliquee)", "(no degradation applied)")
-            ctk.CTkLabel(row, text=log_text, text_color="#AAA",
+            ctk.CTkLabel(row, text=log_text, text_color=("gray30", "#AAA"),
                          font=("Roboto", 9), wraplength=900).pack(anchor="w", padx=10)
 
             img_row = ctk.CTkFrame(row, fg_color="transparent")
@@ -2361,7 +2362,7 @@ except Exception as e: print(f"ERROR:{{e}}")
         ToolTip(conv, _t("Convertit un .pth en .safetensors (plus securise, charge plus vite)", "Converts a .pth to .safetensors (more secure, faster loading)"))
 
         self.widgets["mi_output"] = ctk.CTkTextbox(f, height=480, font=("Consolas", 11),
-                                                     fg_color="#0d0d1a", text_color="#dcdcdc")
+                                                     fg_color=("#F5F5F5", "#0d0d1a"), text_color=("gray10", "#dcdcdc"))
         self.widgets["mi_output"].pack(fill="both", expand=True, pady=10)
         self.widgets["mi_output"].insert(
             "1.0",
@@ -2428,7 +2429,7 @@ except Exception as e: print(f"ERROR:{{e}}")
                         "Visualisez les images de validation a distance OU activez l'affichage dans TensorBoard.")
 
         # ─── Section A: HTTP Gallery Server ───
-        section_a = ctk.CTkFrame(f, fg_color="#1a1a2e", corner_radius=8)
+        section_a = ctk.CTkFrame(f, fg_color=("#E8E8E8", "#1a1a2e"), corner_radius=8)
         section_a.pack(fill="x", padx=5, pady=8)
         ctk.CTkLabel(section_a, text=_t("A. Serveur Galerie Web (sans toucher a NeoSR)", "A. Web Gallery Server (without touching NeoSR)"),
                      font=("Roboto", 13, "bold"), text_color="#3498db"
@@ -2438,7 +2439,7 @@ except Exception as e: print(f"ERROR:{{e}}")
                              "Compatible mobile, auto-refresh, zoom click. Optionnel : tunnel Ngrok pour acces distant.",
                              "Launches a mini HTTP server pointing to an image folder.\n"
                              "Mobile-compatible, auto-refresh, zoom click. Optional: Ngrok tunnel for remote access."),
-                     text_color="#AAA", font=("Roboto", 10), justify="left"
+                     text_color=("gray30", "#AAA"), font=("Roboto", 10), justify="left"
                      ).pack(anchor="w", padx=10, pady=(0, 10))
 
         # Directory picker
@@ -2518,7 +2519,7 @@ except Exception as e: print(f"ERROR:{{e}}")
         self.widgets["gal_qr_frame"].pack(fill="x", padx=10, pady=5)
 
         # ─── Section B: NeoSR/Redux TB image patch ───
-        section_b = ctk.CTkFrame(f, fg_color="#1a1a2e", corner_radius=8)
+        section_b = ctk.CTkFrame(f, fg_color=("#E8E8E8", "#1a1a2e"), corner_radius=8)
         section_b.pack(fill="x", padx=5, pady=8)
         ctk.CTkLabel(section_b, text=_t("B. Patch NeoSR/Redux pour images TensorBoard", "B. NeoSR/Redux Patch for TensorBoard images"),
                      font=("Roboto", 13, "bold"), text_color="#9b59b6"
@@ -2530,7 +2531,7 @@ except Exception as e: print(f"ERROR:{{e}}")
                              "Injects a tb_logger.add_image() call after each imwrite() in nondist_validation.\n"
                              "Maximum 4 images per validation to avoid bloating .tfevents.\n"
                              "Idempotent (marker-based detection), reversible (backup .usr_bak created)."),
-                     text_color="#AAA", font=("Roboto", 10), justify="left"
+                     text_color=("gray30", "#AAA"), font=("Roboto", 10), justify="left"
                      ).pack(anchor="w", padx=10, pady=(0, 10))
 
         # Engine selection
@@ -2769,7 +2770,7 @@ except Exception as e: print(f"ERROR:{{e}}")
         body.grid_rowconfigure(0, weight=1)
 
         # ── LEFT COLUMN : sélecteur de modèle ──────────────────
-        left = ctk.CTkFrame(body, fg_color="#1a1a2e", corner_radius=8)
+        left = ctk.CTkFrame(body, fg_color=("#E8E8E8", "#1a1a2e"), corner_radius=8)
         left.grid(row=0, column=0, sticky="nsew", padx=(0, 5), pady=5)
 
         ctk.CTkLabel(left, text=_t("📂 Sélectionner le Modèle", "📂 Select Model"),
@@ -2790,7 +2791,7 @@ except Exception as e: print(f"ERROR:{{e}}")
         ctk.CTkButton(flt_row, text=_t("🔄 Scanner", "🔄 Scan"), width=100,
                       command=self._export_scan).pack(side="left", padx=3)
 
-        self._exp_list_frame = ctk.CTkScrollableFrame(left, height=260, fg_color="#111")
+        self._exp_list_frame = ctk.CTkScrollableFrame(left, height=260, fg_color=("#EBEBEB", "#111"))
         self._exp_list_frame.pack(fill="both", expand=True, padx=10, pady=5)
         ctk.CTkLabel(self._exp_list_frame,
                      text=_t("(cliquez 🔄 Scanner pour charger)", "(click 🔄 Scan to load)"),
@@ -2806,7 +2807,7 @@ except Exception as e: print(f"ERROR:{{e}}")
                       command=self._export_browse_model).pack(side="left")
 
         # ── RIGHT COLUMN : métadonnées + fiche ─────────────────
-        right = ctk.CTkFrame(body, fg_color="#1a1a2e", corner_radius=8)
+        right = ctk.CTkFrame(body, fg_color=("#E8E8E8", "#1a1a2e"), corner_radius=8)
         right.grid(row=0, column=1, sticky="nsew", padx=(5, 0), pady=5)
 
         ctk.CTkLabel(right, text=_t("📝 Métadonnées & Fiche Technique", "📝 Metadata & Technical Sheet"),
@@ -2834,7 +2835,7 @@ except Exception as e: print(f"ERROR:{{e}}")
 
         ctk.CTkLabel(right, text=_t("Notes personnelles :", "Personal notes:"),
                      anchor="w").pack(anchor="w", padx=10, pady=(6, 0))
-        self.widgets["exp_notes"] = ctk.CTkTextbox(right, height=60, fg_color="#111")
+        self.widgets["exp_notes"] = ctk.CTkTextbox(right, height=60, fg_color=("#EBEBEB", "#111"))
         self.widgets["exp_notes"].pack(fill="x", padx=10, pady=3)
 
         self.widgets["exp_config_info"] = ctk.CTkLabel(
@@ -2847,11 +2848,11 @@ except Exception as e: print(f"ERROR:{{e}}")
         ctk.CTkLabel(right, text=_t("📄 Fiche Technique du Modèle :", "📄 Model Technical Sheet:"),
                      anchor="w", font=("Roboto", 11, "bold")).pack(
             anchor="w", padx=10, pady=(6, 0))
-        self.widgets["exp_fiche"] = ctk.CTkTextbox(right, height=200, fg_color="#111")
+        self.widgets["exp_fiche"] = ctk.CTkTextbox(right, height=200, fg_color=("#EBEBEB", "#111"))
         self.widgets["exp_fiche"].pack(fill="x", padx=10, pady=3)
 
         # ── IA config row ──────────────────────────────────
-        ia_row = ctk.CTkFrame(right, fg_color="#111827", corner_radius=6)
+        ia_row = ctk.CTkFrame(right, fg_color=("#E8E8E8", "#111827"), corner_radius=6)
         ia_row.pack(fill="x", padx=10, pady=(4, 2))
         ctk.CTkLabel(ia_row, text="🤖 IA :", width=42, anchor="w",
                      font=("Roboto", 10)).pack(side="left", padx=(8, 2))
@@ -3054,7 +3055,7 @@ except Exception as e: print(f"ERROR:{{e}}")
                        if os.path.isfile(d["model_path"]) else 0)
 
             card = ctk.CTkFrame(self._exp_list_frame,
-                                fg_color="#1a1a2e", corner_radius=6)
+                                fg_color=("#E8E8E8", "#1a1a2e"), corner_radius=6)
             card.pack(fill="x", pady=3, padx=2)
 
             ctk.CTkRadioButton(
@@ -3571,6 +3572,7 @@ except Exception as e: print(f"ERROR:{{e}}")
             r.pack(fill="x", pady=3)
             ctk.CTkLabel(r, text=label, width=170, anchor="w").pack(side="left")
             w = widget_fn(r)
+            w.pack(side="left")   # fix: widget was created but never placed
             if tip:
                 ToolTip(w, tip)
             return w
@@ -3769,8 +3771,8 @@ except Exception as e: print(f"ERROR:{{e}}")
 
         # ── Live log ──
         self.widgets["bench_log"] = ctk.CTkTextbox(
-            f, font=("Consolas", 10), fg_color="#0a0a0a",
-            text_color="#cccccc", state="disabled")
+            f, font=("Consolas", 10), fg_color=("#F5F5F5", "#0a0a0a"),
+            text_color=("gray10", "#cccccc"), state="disabled")
         self.widgets["bench_log"].pack(fill="both", expand=True)
 
         return f

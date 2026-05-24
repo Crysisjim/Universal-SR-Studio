@@ -44,7 +44,7 @@ class ConsolePopup(ctk.CTkToplevel):
         self.geometry(f"{w}x{h}+{x}+{y}")
         self.grid_columnconfigure(0, weight=1); self.grid_rowconfigure(0, weight=1)
         
-        self.textbox = ctk.CTkTextbox(self, font=("Consolas", 10), text_color="#ecf0f1", fg_color="#101010")
+        self.textbox = ctk.CTkTextbox(self, font=("Consolas", 10), text_color=("gray10", "#ecf0f1"), fg_color=("#F5F5F5", "#101010"))
         self.textbox.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
         self.textbox.insert("0.0", f"--- SEQUENCE D'OPERATION ---\n> Cible : {cwd}\n> Action : {title}\n\n")
         
@@ -453,7 +453,7 @@ log("[OK] TERMINE !")
         r1.pack(fill="x", pady=(2, 0))
         ctk.CTkLabel(r1, text=f"🖥️  {rec['gpu_name']}", font=("Consolas", 11, "bold")).pack(side="left")
         ctk.CTkLabel(r1, text=f"  {tc_tag}", text_color=gpu_col, font=("Arial", 10)).pack(side="left", padx=6)
-        ctk.CTkLabel(r1, text=rec.get("gpu_gen", ""), text_color="#aaa", font=("Arial", 10)).pack(side="right")
+        ctk.CTkLabel(r1, text=rec.get("gpu_gen", ""), text_color=("gray30", "#aaa"), font=("Arial", 10)).pack(side="right")
 
         # Row 2 : Recommended version
         r2 = ctk.CTkFrame(self._gpu_advisory_body, fg_color="transparent")
@@ -657,7 +657,7 @@ log("[OK] TERMINE !")
         if not py: ctk.CTkButton(row_py, text=_t("📥 Télécharger", "📥 Download"), height=24, fg_color="#8e44ad", command=self.install_portable_python).pack(side="right")
 
         # ── GPU & PyTorch advisory ──────────────────────────────────────────
-        self._gpu_advisory_frame = ctk.CTkFrame(f_top, fg_color="#1a1a2e", corner_radius=8)
+        self._gpu_advisory_frame = ctk.CTkFrame(f_top, fg_color=("#E8E8E8", "#1a1a2e"), corner_radius=8)
         self._gpu_advisory_frame.pack(fill="x", padx=10, pady=(0, 12))
         ctk.CTkLabel(self._gpu_advisory_frame, text="GPU & PyTorch",
                      font=("Roboto", 13, "bold"), text_color="#3B8ED0").pack(anchor="w", padx=12, pady=(8, 2))
@@ -793,17 +793,17 @@ except ImportError:
     def setup_notifications_tab(self):
         f = self.tab_lang
         ctk.CTkLabel(f, text=_t("Notifications & Son", "Notifications & Sound"), font=("Roboto", 18, "bold")).pack(pady=(20, 5))
-        ctk.CTkLabel(f, text=_t("Configure les alertes sonores et visuelles.", "Configure sound and visual alerts."), text_color="#AAA").pack(pady=(0, 10))
+        ctk.CTkLabel(f, text=_t("Configure les alertes sonores et visuelles.", "Configure sound and visual alerts."), text_color=("gray30", "#AAA")).pack(pady=(0, 10))
 
         # ── Windows 11 notifications section ──────────────────────────
         import tkinter as tk
-        win_frame = ctk.CTkFrame(f, fg_color="#1a1a2e", corner_radius=8)
+        win_frame = ctk.CTkFrame(f, fg_color=("#E8E8E8", "#1a1a2e"), corner_radius=8)
         win_frame.pack(fill="x", padx=20, pady=(0, 10))
         ctk.CTkLabel(win_frame, text=_t("Notifications Windows 11", "Windows 11 Notifications"),
                      font=("Roboto", 14, "bold"), text_color="#3498db").pack(
                      anchor="w", padx=15, pady=(10, 2))
         ctk.CTkLabel(win_frame, text=_t("Afficher des notifications systeme pour :", "Show system notifications for:"),
-                     text_color="#AAA", font=("Arial", 11)).pack(anchor="w", padx=15, pady=(0, 8))
+                     text_color=("gray40", "#AAA"), font=("Arial", 11)).pack(anchor="w", padx=15, pady=(0, 8))
 
         _notif_items = [
             ("notif_win11_upscale",  _t("Upscale image termine", "Image upscale finished")),
@@ -837,7 +837,7 @@ except ImportError:
                       command=_test_win11).pack(anchor="w", padx=15, pady=(8, 12))
 
         # Sound section
-        snd_frame = ctk.CTkFrame(f, fg_color="#1a1a2e", corner_radius=8)
+        snd_frame = ctk.CTkFrame(f, fg_color=("#E8E8E8", "#1a1a2e"), corner_radius=8)
         snd_frame.pack(fill="x", padx=20, pady=5)
         ctk.CTkLabel(snd_frame, text=_t("Son de fin d'entrainement", "Training completion sound"), font=("Roboto", 14, "bold"),
                      text_color="#3498db").pack(anchor="w", padx=15, pady=(10, 5))
@@ -877,7 +877,7 @@ except ImportError:
                          text_color="#e74c3c", font=("Roboto", 10)).pack(pady=5)
 
         # ── Sons d'événements (error / warning / about) ───────────────
-        evt_frame = ctk.CTkFrame(f, fg_color="#1a1a2e", corner_radius=8)
+        evt_frame = ctk.CTkFrame(f, fg_color=("#E8E8E8", "#1a1a2e"), corner_radius=8)
         evt_frame.pack(fill="x", padx=20, pady=(5, 15))
         ctk.CTkLabel(evt_frame, text=_t("Sons d'evenements", "Event sounds"),
                      font=("Roboto", 14, "bold"), text_color="#3498db").pack(
@@ -964,7 +964,7 @@ except ImportError:
         ctk.CTkLabel(f, text=_t("Cles API pour la Verification AI", "API Keys for AI Review"), font=("Roboto", 18, "bold")).pack(pady=(20, 5))
         ctk.CTkLabel(f, text=_t("Entrez vos cles API ici. Elles seront sauvegardees localement\net chargees automatiquement dans Configuration > Verification AI.",
                                 "Enter your API keys here. They are saved locally\nand auto-loaded in Configuration > AI Review."),
-                     text_color="#AAA").pack(pady=(0, 15))
+                     text_color=("gray30", "#AAA")).pack(pady=(0, 15))
 
         self._api_key_entries = {}
         providers = [
@@ -977,7 +977,7 @@ except ImportError:
             ("DeepSeek", "https://platform.deepseek.com/api_keys"),
         ]
         for provider, url in providers:
-            frame = ctk.CTkFrame(f, fg_color="#1a1a2e", corner_radius=8)
+            frame = ctk.CTkFrame(f, fg_color=("#E8E8E8", "#1a1a2e"), corner_radius=8)
             frame.pack(fill="x", padx=20, pady=5)
 
             row = ctk.CTkFrame(frame, fg_color="transparent"); row.pack(fill="x", padx=10, pady=8)
@@ -1020,7 +1020,7 @@ except ImportError:
         ctk.CTkLabel(f, text=_t("Langue / Language", "Language / Langue"), font=("Roboto", 18, "bold")).pack(pady=(20, 10))
         ctk.CTkLabel(f, text=_t("Choisissez la langue du programme.\nLes options, infobulles et descriptions seront traduites.",
                                 "Choose the interface language.\nOptions, tooltips and descriptions will be translated."),
-                     text_color="#AAA").pack(pady=(0, 15))
+                     text_color=("gray30", "#AAA")).pack(pady=(0, 15))
 
         lang_frame = ctk.CTkFrame(f, fg_color="transparent")
         lang_frame.pack(pady=10)
@@ -1078,7 +1078,7 @@ except ImportError:
                      ).pack(anchor="w", padx=10, pady=(5, 10))
 
         # ─── Section A: HTTP Gallery ───
-        sec_a = ctk.CTkFrame(scroll, fg_color="#1a1a2e", corner_radius=8)
+        sec_a = ctk.CTkFrame(scroll, fg_color=("#E8E8E8", "#1a1a2e"), corner_radius=8)
         sec_a.pack(fill="x", padx=5, pady=8)
         ctk.CTkLabel(sec_a, text=_t("A. Serveur Galerie Web (sans modifier NeoSR)", "A. Web Gallery Server (no NeoSR changes needed)"),
                      font=("Roboto", 13, "bold"), text_color="#3498db"
@@ -1088,7 +1088,7 @@ except ImportError:
                              "auto-refresh, zoom au clic. Tunnel Ngrok optionnel pour accès distant.",
                              "Starts a mini HTTP server on an image folder. Mobile-friendly, "
                              "auto-refresh, click-to-zoom. Optional Ngrok tunnel for remote access."),
-                     text_color="#AAA", font=("Roboto", 10), justify="left", wraplength=900
+                     text_color=("gray30", "#AAA"), font=("Roboto", 10), justify="left", wraplength=900
                      ).pack(anchor="w", padx=10, pady=(0, 10))
 
         # Directory picker — auto-fill from settings, then fall back to last experiment's visualization
@@ -1243,7 +1243,7 @@ except ImportError:
                          text_color="#666", font=("Roboto", 9)).pack(anchor="w")
 
         # ─── Section B: NeoSR/Redux TB image patch ───
-        sec_b = ctk.CTkFrame(scroll, fg_color="#1a1a2e", corner_radius=8)
+        sec_b = ctk.CTkFrame(scroll, fg_color=("#E8E8E8", "#1a1a2e"), corner_radius=8)
         sec_b.pack(fill="x", padx=5, pady=8)
         ctk.CTkLabel(sec_b, text=_t("B. Patch NeoSR/Redux pour images TensorBoard", "B. NeoSR/Redux patch for TensorBoard images"),
                      font=("Roboto", 13, "bold"), text_color="#9b59b6"
@@ -1259,7 +1259,7 @@ except ImportError:
                              "→ Point to the engine ROOT folder (e.g. C:/Users/.../IA_Engine/neosr),\n"
                              "  not an experiment/logs folder.\n"
                              "Idempotent and reversible (backup .usr_bak created). Max 4 images per validation."),
-                     text_color="#AAA", font=("Roboto", 10), justify="left", wraplength=900
+                     text_color=("gray30", "#AAA"), font=("Roboto", 10), justify="left", wraplength=900
                      ).pack(anchor="w", padx=10, pady=(0, 10))
 
         # Engine path picker

@@ -214,7 +214,7 @@ class ConfigTab(ctk.CTkFrame):
         self.right_panel = ctk.CTkFrame(self, fg_color="transparent")
         self.right_panel.grid(row=0, column=1, sticky="nsew", padx=20, pady=20)
         self.right_panel.grid_rowconfigure(1, weight=1); self.right_panel.grid_columnconfigure(0, weight=1)
-        self.frame_vram = ctk.CTkFrame(self.right_panel, fg_color="#2B2B2B"); self.frame_vram.grid(row=0, column=0, sticky="ew", pady=(0, 15))
+        self.frame_vram = ctk.CTkFrame(self.right_panel, fg_color=("#E8E8E8", "#2B2B2B")); self.frame_vram.grid(row=0, column=0, sticky="ew", pady=(0, 15))
         self.lbl_vram = ctk.CTkLabel(self.frame_vram, text=_t("VRAM : Calcul...", "VRAM : Computing..."), font=("Roboto", 12, "bold")); self.lbl_vram.pack(anchor="w", padx=15, pady=(10, 0))
         self.prog_vram = ctk.CTkProgressBar(self.frame_vram); self.prog_vram.pack(fill="x", padx=15, pady=(5, 10)); self.prog_vram.set(0)
 
@@ -635,7 +635,7 @@ class ConfigTab(ctk.CTkFrame):
         
         # --- METRIQUES STRICTES NEOSR ---
         f_metrics = ctk.CTkFrame(f, fg_color="transparent"); f_metrics.pack(fill="x", padx=5, pady=5)
-        ctk.CTkLabel(f_metrics, text=_t("Métriques :", "Metrics:"), font=("Roboto", 10, "bold"), text_color="#AAA").pack(anchor="w")
+        ctk.CTkLabel(f_metrics, text=_t("Métriques :", "Metrics:"), font=("Roboto", 10, "bold"), text_color=("gray30", "#AAA")).pack(anchor="w")
         for m, txt in NEOSR_METRICS:
             chk = ctk.CTkCheckBox(f_metrics, text=txt, onvalue="true", offvalue="false", width=80); chk.pack(side="left", padx=5)
             self.widgets[f"metric_{m}"] = chk; ToolTip(chk, METRIC_DESCS.get(m, get_tooltip(f"metric_{m}")))
@@ -717,7 +717,7 @@ class ConfigTab(ctk.CTkFrame):
                 chk.configure(command=toggle)
 
         # ─── Tab view: Stage 1 | Stage 2 | Custom ───
-        tabview = ctk.CTkTabview(f, fg_color="#1e1e2e", corner_radius=6)
+        tabview = ctk.CTkTabview(f, fg_color=("#E8E8E8", "#1e1e2e"), corner_radius=6)
         tabview.grid(row=1, column=0, sticky="nsew", padx=5, pady=2)
 
         t1 = tabview.add("  Stage 1  ")
@@ -963,7 +963,7 @@ class ConfigTab(ctk.CTkFrame):
         f.grid_rowconfigure(0, weight=0)
         f.grid_rowconfigure(1, weight=1, minsize=245)  # tabview — adaptatif, min 245px
         f.grid_rowconfigure(2, weight=4)               # preview — 4x l'espace restant
-        f_preview = ctk.CTkFrame(f, fg_color="#1a1a2e", corner_radius=8)
+        f_preview = ctk.CTkFrame(f, fg_color=("#E8E8E8", "#1a1a2e"), corner_radius=8)
         f_preview.grid(row=2, column=0, sticky="nsew", padx=5, pady=(6, 5))
         ctk.CTkLabel(f_preview, text=_t("🔍 Aperçu en direct des dégradations", "🔍 Live degradation preview"),
                      font=("Roboto", 13, "bold"), text_color="#9b59b6"
@@ -973,7 +973,7 @@ class ConfigTab(ctk.CTkFrame):
                               "Cliquez sur l'image pour zoomer (molette = zoom, glisser = pan).",
                               "Load a source image, then apply the parameters above to see the result. "
                               "Click the image to zoom (scroll wheel = zoom, drag = pan)."),
-                     text_color="#AAA", font=("Roboto", 10)
+                     text_color=("gray30", "#AAA"), font=("Roboto", 10)
                      ).pack(anchor="w", padx=10, pady=(0, 5))
 
         prev_ctrl = ctk.CTkFrame(f_preview, fg_color="transparent")
@@ -1006,7 +1006,7 @@ class ConfigTab(ctk.CTkFrame):
                       command=self._deg_generate_otf_batch).pack(side="left", padx=(8, 2))
 
         # Image display area (expands with frame)
-        self.widgets["deg_preview_area"] = ctk.CTkFrame(f_preview, fg_color="#0d0d1a")
+        self.widgets["deg_preview_area"] = ctk.CTkFrame(f_preview, fg_color=("#EBEBEB", "#0d0d1a"))
         self.widgets["deg_preview_area"].pack(fill="both", expand=True, padx=10, pady=(5, 10))
         self.widgets["deg_preview_area"].pack_propagate(False)
         self._deg_preview_refs = {"hq": None, "lq": None, "hq_orig": None, "lq_orig": None}
@@ -1044,7 +1044,7 @@ class ConfigTab(ctk.CTkFrame):
         # ── Conteneur horizontal : colonne gauche (normal) | colonne droite (Redux-only) ──
         # pack anchor="w" → l'outer ne s'étend pas à pleine largeur, les deux blocs restent côte à côte
         # ── Conteneur pleine largeur fond sombre ──────────────────────────────────
-        f_loss_adv_outer = ctk.CTkFrame(f, fg_color="#0d1117", corner_radius=8)
+        f_loss_adv_outer = ctk.CTkFrame(f, fg_color=("#EBEBEB", "#0d1117"), corner_radius=8)
         f_loss_adv_outer.pack(fill="x", pady=5)
         # Wrapper interne avec padding
         _f_inner = ctk.CTkFrame(f_loss_adv_outer, fg_color="transparent")
@@ -1053,7 +1053,7 @@ class ConfigTab(ctk.CTkFrame):
         f_loss_left = ctk.CTkFrame(_f_inner, fg_color="transparent")
         f_loss_left.pack(side="left", fill="y", padx=(0, 12))
         # Droite : Redux uniquement — largeur fixe 430px, fond légèrement plus clair
-        f_loss_right = ctk.CTkFrame(_f_inner, fg_color="#111827", corner_radius=6, width=430)
+        f_loss_right = ctk.CTkFrame(_f_inner, fg_color=("#DEDEDE", "#111827"), corner_radius=6, width=430)
         f_loss_right.pack(side="left", fill="y")
         f_loss_right.pack_propagate(False)
         ctk.CTkLabel(f_loss_right, text=_t("⚡ Redux uniquement", "⚡ Redux only"), text_color="#3B8ED0",
@@ -1108,7 +1108,7 @@ class ConfigTab(ctk.CTkFrame):
         _vgg_win.withdraw()
         _vgg_win.wm_overrideredirect(True)
         _vgg_win.attributes("-topmost", True)
-        _vgg_win.configure(fg_color="#1a1a2e")
+        _vgg_win.configure(fg_color=("#E8E8E8", "#1a1a2e"))
         # Header
         _vgg_hdr = ctk.CTkFrame(_vgg_win, fg_color="#0d1117", corner_radius=0)
         _vgg_hdr.pack(fill="x")
@@ -1183,7 +1183,7 @@ class ConfigTab(ctk.CTkFrame):
             _win.withdraw()
             _win.wm_overrideredirect(True)
             _win.attributes("-topmost", True)
-            _win.configure(fg_color="#1a1a2e")
+            _win.configure(fg_color=("#E8E8E8", "#1a1a2e"))
             _btn_ref = [None]
             _hdr = ctk.CTkFrame(_win, fg_color="#0d1117", corner_radius=0); _hdr.pack(fill="x")
             ctk.CTkLabel(_hdr, text=f"  {title}", font=("Arial", 10, "bold"), text_color="#ccc").pack(side="left", padx=4, pady=4)
@@ -1350,16 +1350,16 @@ class ConfigTab(ctk.CTkFrame):
         self.add_header(f, _t("Vérification de Configuration par IA", "AI Configuration Check"))
         ctk.CTkLabel(f, text=_t("Envoyez votre configuration à une IA pour analyse avant l'entraînement.",
                                  "Send your configuration to an AI for analysis before training."),
-                     text_color="#AAA").pack(anchor="w", padx=10, pady=(0, 10))
+                     text_color=("gray30", "#AAA")).pack(anchor="w", padx=10, pady=(0, 10))
 
         # Templates section
-        f_tpl = ctk.CTkFrame(f, fg_color="#1a1a2e", corner_radius=8)
+        f_tpl = ctk.CTkFrame(f, fg_color=("#E8E8E8", "#1a1a2e"), corner_radius=8)
         f_tpl.pack(fill="x", padx=5, pady=5)
         ctk.CTkLabel(f_tpl, text=_t("Templates de Configuration", "Configuration Templates"), font=("Roboto", 13, "bold"),
                      text_color="#9b59b6").pack(anchor="w", padx=10, pady=(8, 5))
         ctk.CTkLabel(f_tpl, text=_t("Charge une configuration pre-reglee pour des cas d'usage typiques.",
                                      "Load a pre-configured setup for typical use cases."),
-                     text_color="#AAA", font=("Roboto", 10)).pack(anchor="w", padx=10, pady=(0, 5))
+                     text_color=("gray30", "#AAA"), font=("Roboto", 10)).pack(anchor="w", padx=10, pady=(0, 5))
 
         row_tpl = ctk.CTkFrame(f_tpl, fg_color="transparent")
         row_tpl.pack(fill="x", padx=10, pady=(0, 10))
@@ -1399,7 +1399,7 @@ class ConfigTab(ctk.CTkFrame):
         }
 
         # API Selection
-        f_api = ctk.CTkFrame(f, fg_color="#1a1a2e", corner_radius=8); f_api.pack(fill="x", padx=5, pady=5)
+        f_api = ctk.CTkFrame(f, fg_color=("#E8E8E8", "#1a1a2e"), corner_radius=8); f_api.pack(fill="x", padx=5, pady=5)
         ctk.CTkLabel(f_api, text=_t("Configuration API", "API Configuration"), font=("Roboto", 13, "bold"),
                      text_color="#3498db").pack(anchor="w", padx=10, pady=(8, 5))
 
@@ -1476,7 +1476,7 @@ class ConfigTab(ctk.CTkFrame):
         ctk.CTkLabel(f_api, text="", height=5).pack()
 
         # Scope
-        f_scope = ctk.CTkFrame(f, fg_color="#1a1a2e", corner_radius=8); f_scope.pack(fill="x", padx=5, pady=5)
+        f_scope = ctk.CTkFrame(f, fg_color=("#E8E8E8", "#1a1a2e"), corner_radius=8); f_scope.pack(fill="x", padx=5, pady=5)
         ctk.CTkLabel(f_scope, text=_t("L'IA vérifiera :", "The AI will check:"), font=("Roboto", 13, "bold"),
                      text_color="#e67e22").pack(anchor="w", padx=10, pady=(8, 5))
         for c in [_t("Cohérence architecture / scale / batch / patch",
@@ -1491,7 +1491,7 @@ class ConfigTab(ctk.CTkFrame):
                       "PSNR vs GAN best practices"),
                   _t("Erreurs courantes et pièges",
                       "Common mistakes and pitfalls")]:
-            ctk.CTkLabel(f_scope, text=f"  {c}", text_color="#CCC", anchor="w").pack(anchor="w", padx=15, pady=1)
+            ctk.CTkLabel(f_scope, text=f"  {c}", text_color=("gray30", "#CCC"), anchor="w").pack(anchor="w", padx=15, pady=1)
         ctk.CTkLabel(f_scope, text="", height=5).pack()
 
         # Mode
@@ -1501,7 +1501,7 @@ class ConfigTab(ctk.CTkFrame):
         self.widgets["ai_send_mode"].set(_t("Config complète (détaillé)", "Full config (detailed)"))
 
         # Context & Questions
-        f_ctx = ctk.CTkFrame(f, fg_color="#1a1a2e", corner_radius=8); f_ctx.pack(fill="x", padx=5, pady=5)
+        f_ctx = ctk.CTkFrame(f, fg_color=("#E8E8E8", "#1a1a2e"), corner_radius=8); f_ctx.pack(fill="x", padx=5, pady=5)
         ctk.CTkLabel(f_ctx, text=_t("Contexte supplémentaire (optionnel)", "Additional context (optional)"), font=("Roboto", 13, "bold"),
                      text_color="#27ae60").pack(anchor="w", padx=10, pady=(8, 3))
 
@@ -1540,7 +1540,7 @@ class ConfigTab(ctk.CTkFrame):
         ToolTip(self.widgets["ai_ctx_ds_size"], _t("Taille du dataset d'entraînement. Cliquez 'Auto' pour compter les images dans le dossier Train HQ.",
                                                      "Training dataset size. Click 'Auto' to count images in the Train HQ folder."))
 
-        ctk.CTkLabel(f_ctx, text=_t("Questions / notes supplémentaires :", "Questions / additional notes:"), text_color="#AAA",
+        ctk.CTkLabel(f_ctx, text=_t("Questions / notes supplémentaires :", "Questions / additional notes:"), text_color=("gray30", "#AAA"),
                      font=("Roboto", 11)).pack(anchor="w", padx=10, pady=(5, 2))
         self.widgets["ai_ctx_notes"] = ctk.CTkTextbox(f_ctx, height=60, font=("Roboto", 11))
         self.widgets["ai_ctx_notes"].pack(fill="x", padx=10, pady=(0, 8))
@@ -1569,7 +1569,7 @@ class ConfigTab(ctk.CTkFrame):
         self.add_header(f, _t("Pipeline Automatisé PSNR -> GAN", "Automated Pipeline PSNR -> GAN"))
 
         # Explanation
-        f_info = ctk.CTkFrame(f, fg_color="#1a1a2e", corner_radius=8); f_info.pack(fill="x", padx=5, pady=5)
+        f_info = ctk.CTkFrame(f, fg_color=("#E8E8E8", "#1a1a2e"), corner_radius=8); f_info.pack(fill="x", padx=5, pady=5)
         ctk.CTkLabel(f_info, text=_t("Comment ça marche :", "How it works:"), font=("Roboto", 13, "bold"),
                      text_color="#3498db").pack(anchor="w", padx=10, pady=(8, 3))
         for txt in [
@@ -1584,11 +1584,11 @@ class ConfigTab(ctk.CTkFrame):
             _t("5. Vous pouvez aussi charger des fichiers .toml/.yml existants pour chaque phase.",
                "5. You can also load existing .toml/.yml files for each phase.")
         ]:
-            ctk.CTkLabel(f_info, text=f"  {txt}", text_color="#AAA", anchor="w", wraplength=700).pack(anchor="w", padx=15, pady=1)
+            ctk.CTkLabel(f_info, text=f"  {txt}", text_color=("gray30", "#AAA"), anchor="w", wraplength=700).pack(anchor="w", padx=15, pady=1)
         ctk.CTkLabel(f_info, text="", height=3).pack()
 
         # Phase 1: PSNR
-        f_p1 = ctk.CTkFrame(f, fg_color="#1a2e1a", corner_radius=8); f_p1.pack(fill="x", padx=5, pady=5)
+        f_p1 = ctk.CTkFrame(f, fg_color=("#E8E8E8", "#1a2e1a"), corner_radius=8); f_p1.pack(fill="x", padx=5, pady=5)
         h1 = ctk.CTkFrame(f_p1, fg_color="transparent"); h1.pack(fill="x", padx=10, pady=(8, 3))
         ctk.CTkLabel(h1, text=_t("Phase 1 -- PSNR (Fidélité)", "Phase 1 -- PSNR (Fidelity)"), font=("Roboto", 14, "bold"),
                      text_color="#2ecc71").pack(side="left")
@@ -1632,7 +1632,7 @@ class ConfigTab(ctk.CTkFrame):
         ctk.CTkLabel(f_p1, text="", height=3).pack()
 
         # Phase 2: GAN
-        f_p2 = ctk.CTkFrame(f, fg_color="#2e1a1a", corner_radius=8); f_p2.pack(fill="x", padx=5, pady=5)
+        f_p2 = ctk.CTkFrame(f, fg_color=("#E8E8E8", "#2e1a1a"), corner_radius=8); f_p2.pack(fill="x", padx=5, pady=5)
         h2 = ctk.CTkFrame(f_p2, fg_color="transparent"); h2.pack(fill="x", padx=10, pady=(8, 3))
         ctk.CTkLabel(h2, text=_t("Phase 2 -- GAN (Textures Réalistes)", "Phase 2 -- GAN (Realistic Textures)"), font=("Roboto", 14, "bold"),
                      text_color="#e74c3c").pack(side="left")
@@ -1680,7 +1680,7 @@ class ConfigTab(ctk.CTkFrame):
         ctk.CTkLabel(f_p2, text="", height=3).pack()
 
         # Current config summary (auto-populated from main pages)
-        f_sum = ctk.CTkFrame(f, fg_color="#1a1a2e", corner_radius=8); f_sum.pack(fill="x", padx=5, pady=5)
+        f_sum = ctk.CTkFrame(f, fg_color=("#E8E8E8", "#1a1a2e"), corner_radius=8); f_sum.pack(fill="x", padx=5, pady=5)
         ctk.CTkLabel(f_sum, text=_t("Config actuelle (depuis les pages principales) :", "Current config (from main pages):"), font=("Roboto", 12, "bold"),
                      text_color="#f39c12").pack(anchor="w", padx=10, pady=(8, 3))
         self.lbl_pipe_summary = ctk.CTkLabel(f_sum, text=_t("Cliquez 'Actualiser' pour voir le résumé.", "Click 'Refresh' to see the summary."), text_color="#888",
@@ -1690,7 +1690,7 @@ class ConfigTab(ctk.CTkFrame):
                       command=self._refresh_pipeline_summary).pack(anchor="w", padx=10, pady=(3, 8))
 
         # Options
-        f_adv = ctk.CTkFrame(f, fg_color="#1a1a2e", corner_radius=8); f_adv.pack(fill="x", padx=5, pady=5)
+        f_adv = ctk.CTkFrame(f, fg_color=("#E8E8E8", "#1a1a2e"), corner_radius=8); f_adv.pack(fill="x", padx=5, pady=5)
         ctk.CTkLabel(f_adv, text="Options", font=("Roboto", 13, "bold"),
                      text_color="#f39c12").pack(anchor="w", padx=10, pady=(8, 5))
         self.widgets["pipe_use_amp"] = ctk.CTkCheckBox(f_adv, text=_t("AMP (FP16) pour les deux phases", "AMP (FP16) for both phases"))
@@ -1787,7 +1787,7 @@ class ConfigTab(ctk.CTkFrame):
                 f"Batch: {batch.get()}  |  Patch GT: {patch.get()}  |  Optimizer: {optim.get()}\n"
                 f"Dataset GT: {ds_gt.get()}"
             )
-            self.lbl_pipe_summary.configure(text=summary, text_color="#CCC")
+            self.lbl_pipe_summary.configure(text=summary, text_color=("gray30", "#CCC"))
         except Exception:
             self.lbl_pipe_summary.configure(text=_t("Erreur lecture config.", "Error reading config."), text_color="#e74c3c")
 
@@ -2757,7 +2757,7 @@ class ConfigTab(ctk.CTkFrame):
         log_text = " | ".join(log) if log else _t("(aucune dégradation appliquée — vérifiez les probabilités)",
                                                     "(no degradation applied — check the probabilities)")
         ctk.CTkLabel(self.widgets["deg_preview_area"], text=log_text,
-                     text_color="#AAA", font=("Roboto", 9), wraplength=900
+                     text_color=("gray30", "#AAA"), font=("Roboto", 9), wraplength=900
                      ).pack(pady=(0, 8))
 
     def _deg_zoom_preview(self, which: str = "lq"):
@@ -2788,7 +2788,7 @@ class ConfigTab(ctk.CTkFrame):
             "ref": ref,
         }
 
-        info = ctk.CTkLabel(win, text="", text_color="#AAA", font=("Consolas", 10))
+        info = ctk.CTkLabel(win, text="", text_color=("gray30", "#AAA"), font=("Consolas", 10))
         info.pack(pady=4)
 
         canvas = tk.Canvas(win, bg="#0d0d1a", highlightthickness=0)
