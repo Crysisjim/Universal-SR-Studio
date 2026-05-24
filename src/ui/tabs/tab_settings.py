@@ -451,7 +451,8 @@ log("[OK] TERMINE !")
         # Row 1 : GPU name + generation
         r1 = ctk.CTkFrame(self._gpu_advisory_body, fg_color="transparent")
         r1.pack(fill="x", pady=(2, 0))
-        ctk.CTkLabel(r1, text=f"🖥️  {rec['gpu_name']}", font=("Consolas", 11, "bold")).pack(side="left")
+        ctk.CTkLabel(r1, text=f"🖥️  {rec['gpu_name']}", font=("Consolas", 11, "bold"),
+                     text_color=("gray10", "gray90")).pack(side="left")
         ctk.CTkLabel(r1, text=f"  {tc_tag}", text_color=gpu_col, font=("Arial", 10)).pack(side="left", padx=6)
         ctk.CTkLabel(r1, text=rec.get("gpu_gen", ""), text_color=("gray30", "#aaa"), font=("Arial", 10)).pack(side="right")
 
@@ -460,7 +461,7 @@ log("[OK] TERMINE !")
         r2.pack(fill="x", pady=(2, 0))
         ctk.CTkLabel(r2,
                      text=_t(f"PyTorch recommandé : {rec['torch_version']} + CUDA {rec['cuda_tag']}", f"Recommended PyTorch: {rec['torch_version']} + CUDA {rec['cuda_tag']}"),
-                     font=("Consolas", 11), text_color="#ddd").pack(side="left")
+                     font=("Consolas", 11), text_color=("gray20", "#ddd")).pack(side="left")
 
         # Row 3 : Features (green) + Limitations (orange)
         r3 = ctk.CTkFrame(self._gpu_advisory_body, fg_color="transparent")
@@ -670,7 +671,7 @@ log("[OK] TERMINE !")
         self.create_dashboard_card(self.tab_sys, "TraiNNer-Redux", self.redux_path, 1)
 
     def create_dashboard_card(self, parent, name, path, col):
-        f = ctk.CTkFrame(parent, border_width=2, border_color="#333")
+        f = ctk.CTkFrame(parent, border_width=2, border_color=("#AAAAAA", "#333"))
         f.grid(row=1, column=col, sticky="nsew", padx=10, pady=10)
         
         head = ctk.CTkFrame(f, fg_color="transparent"); head.pack(fill="x", padx=10, pady=10)
@@ -705,10 +706,11 @@ log("[OK] TERMINE !")
         full = self.system_tools + self.python_modules
         for i, mod in enumerate(full):
             r, c = i // 2, i % 2
-            f = ctk.CTkFrame(grid, fg_color="#222", corner_radius=6)
+            f = ctk.CTkFrame(grid, fg_color=("#DEDEDE", "#222"), corner_radius=6)
             f.grid(row=r, column=c, sticky="ew", padx=5, pady=5)
             grid.grid_columnconfigure(c, weight=1)
-            ctk.CTkLabel(f, text=mod.upper(), font=("Consolas", 11, "bold")).pack(side="left", padx=10)
+            ctk.CTkLabel(f, text=mod.upper(), font=("Consolas", 11, "bold"),
+                         text_color=("gray10", "gray90")).pack(side="left", padx=10)
             txt, col = ("...", "gray")
             if mod in self.system_tools:
                 ok = shutil.which(mod) is not None

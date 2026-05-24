@@ -29,7 +29,8 @@ class PerformanceBars(ctk.CTkFrame):
         self.bars = []
 
         for i, text in enumerate(self.labels):
-            lbl = ctk.CTkLabel(self, text=text, font=("Roboto", 10, "bold"), anchor="w", width=120)
+            lbl = ctk.CTkLabel(self, text=text, font=("Roboto", 10, "bold"), anchor="w", width=120,
+                               text_color=("gray10", "gray90"))
             lbl.grid(row=i, column=0, padx=5, pady=2)
             bar = ctk.CTkProgressBar(self, height=12, corner_radius=2)
             bar.grid(row=i, column=1, padx=5, pady=2, sticky="ew")

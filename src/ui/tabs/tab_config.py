@@ -427,7 +427,7 @@ class ConfigTab(ctk.CTkFrame):
         self.widgets["arch"] = _ScrollableOptionMenu(f_left, values=sorted(list(ARCH_FIELDS.keys())), command=self.on_arch_change, width=200)
         self.widgets["arch"].pack(anchor="w", pady=(5,0))
         
-        f_right = ctk.CTkFrame(f_top, fg_color="#222", corner_radius=6); f_right.pack(side="right", padx=10, fill="both", expand=True)
+        f_right = ctk.CTkFrame(f_top, fg_color=("#DEDEDE", "#222"), corner_radius=6); f_right.pack(side="right", padx=10, fill="both", expand=True)
         self.perf_bars = PerformanceBars(f_right, fg_color="transparent"); self.perf_bars.pack(padx=10, pady=5, fill="x", expand=True)
         self.frame_dynamic_g = ctk.CTkFrame(f, border_width=1, border_color="#3B8ED0"); self.frame_dynamic_g.pack(fill="x", pady=10, ipady=5)
         self.add_header(f, _t("Discriminateur (GAN)", "Discriminator (GAN)"))
@@ -1114,7 +1114,7 @@ class ConfigTab(ctk.CTkFrame):
         _vgg_hdr.pack(fill="x")
         ctk.CTkLabel(_vgg_hdr, text=_t("  Poids couches VGG  (0.0 = désactivée)",
                                         "  VGG layer weights  (0.0 = disabled)"),
-                     font=("Arial", 10, "bold"), text_color="#ccc").pack(side="left", padx=4, pady=4)
+                     font=("Arial", 10, "bold"), text_color=("gray30", "#ccc")).pack(side="left", padx=4, pady=4)
         ctk.CTkButton(_vgg_hdr, text="✕", width=24, height=20, fg_color="#333", hover_color="#555",
                       command=lambda: (_vgg_win.withdraw(), btn_vgg.configure(text=_t("▾ Couches VGG", "▾ VGG Layers")))
                       ).pack(side="right", padx=4, pady=4)
@@ -1186,7 +1186,7 @@ class ConfigTab(ctk.CTkFrame):
             _win.configure(fg_color=("#E8E8E8", "#1a1a2e"))
             _btn_ref = [None]
             _hdr = ctk.CTkFrame(_win, fg_color="#0d1117", corner_radius=0); _hdr.pack(fill="x")
-            ctk.CTkLabel(_hdr, text=f"  {title}", font=("Arial", 10, "bold"), text_color="#ccc").pack(side="left", padx=4, pady=4)
+            ctk.CTkLabel(_hdr, text=f"  {title}", font=("Arial", 10, "bold"), text_color=("gray30", "#ccc")).pack(side="left", padx=4, pady=4)
             ctk.CTkButton(_hdr, text="✕", width=24, height=20, fg_color="#333", hover_color="#555",
                           command=lambda: (_win.withdraw(), _btn_ref[0] and _btn_ref[0].configure(text="⚙"))
                           ).pack(side="right", padx=4, pady=4)
