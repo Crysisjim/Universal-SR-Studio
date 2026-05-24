@@ -196,7 +196,7 @@ def get_stats_by_architecture() -> list:
                    AVG(duration_seconds) as avg_duration,
                    AVG(CASE WHEN avg_speed > 0 THEN avg_speed ELSE NULL END) as avg_speed
             FROM trainings
-            WHERE status = 'completed' AND best_psnr > 0
+            WHERE status IN ('completed', 'interrupted') AND best_psnr > 0
             GROUP BY architecture
             ORDER BY avg_psnr DESC
         """)

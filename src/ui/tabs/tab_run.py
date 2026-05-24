@@ -1059,12 +1059,12 @@ class RunTab(ctk.CTkFrame):
                 if n_images > 0:
                     eff_batch = int(batch) * max(1, int(accumulate))
                     total_epochs = max(1, round(total_iter * eff_batch / n_images))
-                    dataset_line = f"Dataset train : {n_images} images → ~{total_epochs} epochs\n"
+                    dataset_line = f"{_t('Dataset train', 'Training dataset')} : {n_images} {_t('images', 'images')} → ~{total_epochs} {_t('epochs', 'epochs')}\n"
             except Exception:
                 pass
 
             self.append_log("\n" + "=" * 50 + "\n")
-            self.append_log("[Estimation] Duree prevue de l'entrainement :\n")
+            self.append_log(f"[{_t('Estimation', 'Estimation')}] {_t('Duree prevue de l entrainement', 'Estimated training duration')} :\n")
             if dataset_line:
                 self.append_log(dataset_line)
             self.append_log(format_estimation_message(est) + "\n")
@@ -1145,10 +1145,10 @@ class RunTab(ctk.CTkFrame):
                     )
                     if states:
                         latest_state = os.path.join(state_dir, states[0]).replace("\\", "/")
-                        self.append_log(f"[Auto-Resume] State detecte: {latest_state}\n")
+                        self.append_log(f"[Auto-Resume] {_t('State detecte', 'State found')}: {latest_state}\n")
                         # Write resume_state into the config
                         self._set_resume_state_in_config(config_path, latest_state)
-                        self.append_log(f"[Auto-Resume] Config modifiee pour reprendre depuis ce state.\n")
+                        self.append_log(f"[Auto-Resume] {_t('Config modifiee pour reprendre depuis ce state.', 'Config updated to resume from this state.')}\n")
                         return config_path
 
                 # Fallback: check models dir for .pth or .safetensors
@@ -1161,11 +1161,11 @@ class RunTab(ctk.CTkFrame):
                         reverse=True
                     )
                     if ckpts:
-                        self.append_log(f"[Auto-Resume] Checkpoint detecte: {ckpts[0]} (pas de .state)\n")
-                        self.append_log(f"[Auto-Resume] Aucun .state — l'engine reprendra via le nom d'experience.\n")
+                        self.append_log(f"[Auto-Resume] {_t('Checkpoint detecte', 'Checkpoint found')}: {ckpts[0]} ({_t('pas de .state', 'no .state file')})\n")
+                        self.append_log(f"[Auto-Resume] {_t('Aucun .state — l engine reprendra via le nom d experience.', 'No .state — engine will resume via experiment name.')}\n")
                         return config_path
         except Exception as e:
-            self.append_log(f"[Auto-Resume] Erreur: {e}\n")
+            self.append_log(f"[Auto-Resume] {_t('Erreur', 'Error')}: {e}\n")
         return config_path
 
     def _extract_iter_from_name(self, filename: str) -> int:
@@ -1210,10 +1210,10 @@ class RunTab(ctk.CTkFrame):
                         with open(config_path, "w", encoding="utf-8") as f:
                             _toml_w.dump(data, f)
                     except ImportError:
-                        self.append_log("[Auto-Resume] Avertissement: ni tomli_w ni toml dispo, "
-                                        "TOML non modifie. Le resume ne fonctionnera pas.\n")
+                        self.append_log(_t("[Auto-Resume] Avertissement: ni tomli_w ni toml dispo, TOML non modifie. Le resume ne fonctionnera pas.\n",
+                                           "[Auto-Resume] Warning: neither tomli_w nor toml available, TOML not modified. Resume will not work.\n"))
         except Exception as e:
-            self.append_log(f"[Auto-Resume] Echec ecriture resume_state: {e}\n")
+            self.append_log(f"[Auto-Resume] {_t('Echec ecriture resume_state', 'Failed to write resume_state')}: {e}\n")
 
     def _pre_archive_exp_folder(self, config_path: str, script_path: str):
         """Pre-rename the existing experiment folder before starting any servers or training.
@@ -1400,7 +1400,7 @@ class RunTab(ctk.CTkFrame):
                 _sm.set("gallery_auto_dir", viz_path)
             except Exception:
                 pass
-            self.append_log(f"[History] Training enregistre (ID #{self._history_row_id})\n")
+            self.append_log(f"[History] {_t('Training enregistre', 'Training recorded')} (ID #{self._history_row_id})\n")
         except Exception as e:
             self._history_row_id = 0
             self.append_log(f"[History] Erreur : {e}\n")
@@ -1437,14 +1437,14 @@ class RunTab(ctk.CTkFrame):
             return default
 
         DEG_SLOTS = [
-            ("blur_prob",                  "Flou 1"),
-            ("gaussian_noise_prob",        "Bruit Gaussien 1"),
-            ("gray_noise_prob",            "Bruit Gris 1"),
+            ("blur_prob",                  _t("Flou 1", "Blur 1")),
+            ("gaussian_noise_prob",        _t("Bruit Gaussien 1", "Gaussian Noise 1")),
+            ("gray_noise_prob",            _t("Bruit Gris 1", "Gray Noise 1")),
             ("jpeg_prob",                  "JPEG 1"),
-            ("second_blur_prob",           "Flou 2"),
-            ("gaussian_noise_prob2",       "Bruit Gaussien 2"),
-            ("gray_noise_prob2",           "Bruit Gris 2"),
-            ("final_sinc_prob",            "Sinc final"),
+            ("second_blur_prob",           _t("Flou 2", "Blur 2")),
+            ("gaussian_noise_prob2",       _t("Bruit Gaussien 2", "Gaussian Noise 2")),
+            ("gray_noise_prob2",           _t("Bruit Gris 2", "Gray Noise 2")),
+            ("final_sinc_prob",            _t("Sinc final", "Final Sinc")),
             ("posterize_prob",             "Posterize (custom)"),
             ("banding_prob",               "Banding (custom)"),
             ("aliasing_prob",              "Aliasing (custom)"),
@@ -1469,7 +1469,7 @@ class RunTab(ctk.CTkFrame):
 
         total = len(DEG_SLOTS)
         n_active = len(active)
-        title = f"  Degradations OTF actives : {n_active}/{total}  "
+        title = f"  {_t('Degradations OTF actives', 'Active OTF Degradations')} : {n_active}/{total}  "
         width = max(len(title), max((len(s) for s in active + inactive), default=0)) + 2
         border = "═" * width
 
@@ -1481,7 +1481,7 @@ class RunTab(ctk.CTkFrame):
         for s in active:
             lines.append(f"║{s.ljust(width)}║")
         if inactive:
-            lines.append(f"║{'  (inactives)'.ljust(width)}║")
+            lines.append(f"║{'  ' + _t('(inactives)', '(inactive)'):{width}}║")
             for s in inactive:
                 lines.append(f"║{s.ljust(width)}║")
         lines.append(f"╚{border}╝")
@@ -1607,7 +1607,7 @@ class RunTab(ctk.CTkFrame):
                     "oversharp_prob", "oversharp_strength_range",
                     "scanlines_prob", "scanlines_strength_range", "scanlines_spacing_range",
                 ])
-                self.append_log(f"[Custom Deg] Cles custom retirees du YAML pour msgspec compatibility.\n")
+                self.append_log(f"[Custom Deg] {_t('Cles custom retirees du YAML pour msgspec compatibility.', 'Custom keys removed from YAML for msgspec compatibility.')}\n")
             except Exception as e:
                 self.append_log(f"[Custom Deg] Avertissement strip YAML: {e}\n")
 
@@ -1617,7 +1617,7 @@ class RunTab(ctk.CTkFrame):
             sidecar = os.path.join(engine_dir, "_usr_studio_custom_deg.json")
             with open(sidecar, "w", encoding="utf-8") as f:
                 json.dump(custom_params, f, indent=2)
-            self.append_log(f"[Custom Deg] Sidecar ecrit: {sidecar}\n")
+            self.append_log(f"[Custom Deg] {_t('Sidecar ecrit', 'Sidecar written')}: {sidecar}\n")
         except Exception as e:
             self.append_log(f"[Custom Deg] Avertissement sidecar: {e}\n")
 

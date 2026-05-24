@@ -31,7 +31,7 @@ from src.ui.components.performance_bars import PerformanceBars
 from src.core.descriptions import (
     TOOLTIPS, get_tooltip, ARCH_FIELDS, REDUX_ARCH_FIELDS, DISC_FIELDS,
     OPTIMIZERS, VRAM_FACTORS, REDUX_VRAM_FACTORS, DISC_VRAM_FACTORS,
-    ARCH_FAMILIES, NEOSR_ARCH_FAMILIES, REDUX_ARCH_FAMILIES,
+    ARCH_FAMILIES, NEOSR_ARCH_FAMILIES, REDUX_ARCH_FAMILIES, get_arch_families,
     NEOSR_OPTIMIZERS, REDUX_OPTIMIZERS,
     NEOSR_SCHEDULERS, REDUX_SCHEDULERS,
     NEOSR_SCALES, REDUX_SCALES,
@@ -264,7 +264,7 @@ class ConfigTab(ctk.CTkFrame):
 
         _det_chk = ctk.CTkCheckBox(f_sub, text=_t("Déterministe", "Deterministic"), onvalue="true", offvalue="false",
                                     command=_on_det_toggle)
-        _det_chk.select()  # défaut : activé (seed = 10)
+        _det_chk.deselect()  # défaut : désactivé
         _det_chk.pack(side="left", padx=(8, 0))
         self.widgets["deterministic"] = _det_chk
         ToolTip(_det_chk, get_tooltip("deterministic"))
@@ -320,10 +320,10 @@ class ConfigTab(ctk.CTkFrame):
         is_redux = "Redux" in choice
         
         # 2. Reset des familles par moteur
-        families = REDUX_ARCH_FAMILIES if is_redux else NEOSR_ARCH_FAMILIES
-        fam_list = ["ALL"] + sorted(list(families.keys()))
+        families = get_arch_families("redux" if is_redux else "neosr")
+        fam_list = [_t("TOUTES", "ALL")] + sorted(list(families.keys()))
         self.widgets["arch_family"].configure(values=fam_list)
-        self.widgets["arch_family"].set("ALL")
+        self.widgets["arch_family"].set(_t("TOUTES", "ALL"))
         self.filter_archs("ALL")
 
         # 3. Optimiseurs par moteur
@@ -419,7 +419,7 @@ class ConfigTab(ctk.CTkFrame):
         
         # AJOUT MENU FAMILLE
         ctk.CTkLabel(f_left, text=_t("Famille :", "Family:")).pack(anchor="w")
-        self.widgets["arch_family"] = ctk.CTkOptionMenu(f_left, values=["ALL"], command=self.filter_archs, width=200)
+        self.widgets["arch_family"] = ctk.CTkOptionMenu(f_left, values=[_t("TOUTES", "ALL")], command=self.filter_archs, width=200)
         self.widgets["arch_family"].pack(anchor="w", pady=(0, 5))
 
         ctk.CTkLabel(f_left, text=_t("Architecture :", "Architecture:")).pack(anchor="w")
@@ -2459,15 +2459,15 @@ class ConfigTab(ctk.CTkFrame):
         is_redux = "Redux" in engine
         # Sélection du bon dictionnaire de champs et familles
         target_dict = REDUX_ARCH_FIELDS if is_redux else ARCH_FIELDS
-        families = REDUX_ARCH_FAMILIES if is_redux else NEOSR_ARCH_FAMILIES
-        
-        if fam == "ALL":
+        families = get_arch_families("redux" if is_redux else "neosr")
+
+        if fam in ("ALL", "TOUTES"):
             vals = sorted(list(target_dict.keys()))
         else:
             family_members = families.get(fam, [])
             vals = sorted([x for x in family_members if x in target_dict])
-            
-        if not vals: vals = ["(Aucun)"]
+
+        if not vals: vals = [_t("(Aucun)", "(None)")]
 
         self.widgets["arch"].configure(values=vals)
         self.widgets["arch"].set(vals[0])

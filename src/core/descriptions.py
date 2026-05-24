@@ -1264,8 +1264,39 @@ REDUX_ARCH_FAMILIES = {
     ],
 }
 
+# English-label versions of the family dicts (same arch lists, translated keys)
+NEOSR_ARCH_FAMILIES_EN = {
+    "✨ Recommended": ["omnisr", "span", "realplksr", "esrgan", "compact"],
+    "🚀 Light / Fast": ["span", "spanplus", "compact", "ultracompact", "safmn", "lmlt", "plksr", "realplksr", "cugan"],
+    "🤖 Transformers (Heavy)": ["hat", "swinir_small", "swinir_medium", "dat_s", "srformer_medium", "drct", "atd"],
+    "🎨 GAN / Restoration": ["esrgan", "rcan", "artcnn_r16f96"],
+    "📦 Other": ["cfsr", "craft", "dct", "dctlsa", "ditn", "esc", "eimn", "flexnet", "grformer", "hasn", "hit_srf", "hma", "krgn", "man", "moesr", "mosrv2", "msdan", "plainusr", "rgt", "asid"],
+}
+
+REDUX_ARCH_FAMILIES_EN = {
+    "✨ Recommended": ["span_s", "artcnn_r16f96", "lkfmixer_t", "swinir_s", "seemore_t", "compact", "realplksr", "omnisr"],
+    "🚀 Light / Fast": REDUX_ARCH_FAMILIES["🚀 Léger / Rapide"],
+    "🤖 Transformers / Attention": REDUX_ARCH_FAMILIES["🤖 Transformers / Attention"],
+    "🎨 GAN / Restoration": ["esrgan", "esrgan_lite", "rcan", "rcan_l", "rcan_unshuffle", "artcnn_r16f96", "artcnn_r8f64", "artcnn_r8f48", "artcnn_r3f24", "scunet_aaf6aa"],
+    "🎞️ Video / Temporal": ["temporalspan", "temporalspanv2", "tscunet"],
+    "🧪 Experimental / Heavy": REDUX_ARCH_FAMILIES["🧪 Expérimental / Lourd"],
+}
+
+
+def get_arch_families(engine: str = "neosr") -> dict:
+    """Return architecture families dict in the active language."""
+    try:
+        from src.core.translations import get_translator
+        tr = get_translator()
+        if tr and getattr(tr, 'language', 'fr') == 'en':
+            return REDUX_ARCH_FAMILIES_EN if "redux" in engine.lower() else NEOSR_ARCH_FAMILIES_EN
+    except Exception:
+        pass
+    return REDUX_ARCH_FAMILIES if "redux" in engine.lower() else NEOSR_ARCH_FAMILIES
+
+
 VRAM_FACTORS = {
-    "omnisr": 1.2, "dat": 1.6, "hat": 1.5, "span": 0.8, 
+    "omnisr": 1.2, "dat": 1.6, "hat": 1.5, "span": 0.8,
     "realplksr": 1.1, "esrgan": 1.0, "swinir": 1.4, "swinir_medium": 1.4,
     "rcan": 1.2, "compact": 0.5, "asid": 1.3,
     "drct": 1.5, "hit_srf": 1.3, "mosrv2": 1.2, "safmn": 0.8,

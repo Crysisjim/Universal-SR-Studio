@@ -7,6 +7,17 @@ the total training time. Helps avoid surprises like "this will take 6 days".
 import subprocess
 
 
+def _t(fr: str, en: str) -> str:
+    try:
+        from src.core.translations import get_translator
+        tr = get_translator()
+        if tr and getattr(tr, 'language', 'fr') == 'en':
+            return en
+    except Exception:
+        pass
+    return fr
+
+
 # Empirical baselines: it/s for various (GPU, arch, batch, patch, scale)
 # These are rough averages — better than nothing but not exact.
 # Sources: NeoSR community benchmarks, user reports.
@@ -531,21 +542,21 @@ def format_estimation_message(est: dict) -> str:
     """Format an estimation dict as a human-readable message."""
     confidence_emoji = {"high": "✅", "medium": "🟡", "low": "🟠"}
     emoji = confidence_emoji.get(est["confidence"], "❓")
-    vram_str = f"\nVRAM estimee : ~{est['vram_gb']:.1f} GB" if "vram_gb" in est else ""
+    vram_str = f"\n{_t('VRAM estimee', 'Estimated VRAM')} : ~{est['vram_gb']:.1f} GB" if "vram_gb" in est else ""
     # Show Tensor Core boost if active
     tc_str = ""
     tc_boost = est.get("tc_boost", 1.0)
     amp_mode = est.get("amp_mode", "off")
     if amp_mode != "off":
         if tc_boost > 1.01:
-            tc_str = f"\nAMP {amp_mode.upper()} : Tensor Cores actifs (+{(tc_boost-1)*100:.0f}%)"
+            tc_str = f"\nAMP {amp_mode.upper()} : {_t('Tensor Cores actifs', 'Tensor Cores active')} (+{(tc_boost-1)*100:.0f}%)"
         else:
-            tc_str = f"\nAMP {amp_mode.upper()} : actif"
+            tc_str = f"\nAMP {amp_mode.upper()} : {_t('actif', 'active')}"
     return (
-        f"GPU detecte : {est['gpu']}\n"
-        f"Vitesse estimee : {est['itps']:.3f} it/s\n"
-        f"Duree estimee : {est['eta_str']}"
+        f"{_t('GPU detecte', 'Detected GPU')} : {est['gpu']}\n"
+        f"{_t('Vitesse estimee', 'Estimated speed')} : {est['itps']:.3f} it/s\n"
+        f"{_t('Duree estimee', 'Estimated duration')} : {est['eta_str']}"
         f"{vram_str}"
         f"{tc_str}\n"
-        f"Confiance : {emoji} {est['confidence']}"
+        f"{_t('Confiance', 'Confidence')} : {emoji} {est['confidence']}"
     )

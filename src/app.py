@@ -166,7 +166,8 @@ class App(ctk.CTk):
         # Queue (entre Entrainement et Outils)
         try:
             from src.ui.tabs.tab_queue import QueueTab
-            tab_name = "📋 File d'attente"
+            _lang = self.settings.get("language", "fr")
+            tab_name = "📋 Queue" if _lang == "en" else "📋 File d'attente"
             self.tab_view.add(tab_name)
             self.queue_tab = QueueTab(self.tab_view.tab(tab_name))
             self.queue_tab.pack(fill="both", expand=True)
@@ -190,7 +191,8 @@ class App(ctk.CTk):
         # Distributed Training (optionnel)
         try:
             from src.ui.tabs.tab_distributed import DistributedTab
-            tab_name = "🌐 Partage"
+            _lang2 = self.settings.get("language", "fr")
+            tab_name = "🌐 Distributed" if _lang2 == "en" else "🌐 Partage"
             self.tab_view.add(tab_name)
             self.distributed_tab = DistributedTab(self.tab_view.tab(tab_name))
             self.distributed_tab.pack(fill="both", expand=True)

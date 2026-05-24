@@ -628,7 +628,7 @@ log("[OK] TERMINE !")
         
         # CHARGEMENT DES PREFERENCES
         curr_mode = self.settings.get("appearance_mode", "System")
-        curr_theme = self.settings.get("theme_color", "blue")
+        curr_theme = self.settings.get("theme_color", "green")
         use_aida = self.settings.get("use_aida64") == "true"
 
         # THEMES PERSONNALISÉS
@@ -1642,7 +1642,7 @@ except ImportError:
 
         tk.Label(content_tk, text="Universal SR Studio", font=("Roboto", 24, "bold"),
                  fg="#3498db", bg="#1a1a2e").pack(pady=(5, 2))
-        tk.Label(content_tk, text="v2.2.0 -- Super-Resolution Training Suite",
+        tk.Label(content_tk, text="v2.4.0 -- Super-Resolution Training Suite",
                  fg="#AAAAAA", bg="#1a1a2e", font=("Roboto", 12)).pack()
 
         sep = tk.Frame(content_tk, height=2, bg="#3498db")
@@ -1671,9 +1671,9 @@ except ImportError:
 
         for name, role in [
             ("CrysisJim", "Concept, Design, Direction, Testing"),
-            ("Gemini 3.1 Pro", "Google -- Base du code, Architecture initiale"),
-            ("Grok 4.3", "xAI -- Base du code, Contributions initiales"),
-            ("Claude Opus 4.7", "Anthropic -- Architecture, Code principal, Refactoring"),
+            ("Gemini 3.1 Pro", _t("Google -- Base du code, Architecture initiale", "Google -- Code base, Initial architecture")),
+            ("Grok 4.3", _t("xAI -- Base du code, Contributions initiales", "xAI -- Code base, Initial contributions")),
+            ("Claude Opus 4.7", _t("Anthropic -- Architecture, Code principal, Refactoring", "Anthropic -- Architecture, Main code, Refactoring")),
         ]:
             row = tk.Frame(credits_frame, bg="#111128")
             row.pack(fill="x", padx=15, pady=2)
