@@ -220,7 +220,7 @@ class RunTab(ctk.CTkFrame):
         self.frame_gpu.grid(row=0, column=0, sticky="ns", padx=(0, 5))
         self.frame_gpu.grid_propagate(False) 
         self.setup_gpu_monitor()
-        ToolTip(self.frame_gpu, "Moniteur GPU.\nSurveillez la VRAM pour éviter les crashs (OOM).")
+        ToolTip(self.frame_gpu, _t("Moniteur GPU.\nSurveillez la VRAM pour éviter les crashs (OOM).", "GPU Monitor.\nWatch VRAM to avoid crashes (OOM)."))
 
         # > COLONNE MILIEU : FICHIERS (Auto-Config)
         self.frame_files = ctk.CTkFrame(self.frame_top, fg_color="#2B2B2B")
@@ -232,7 +232,7 @@ class RunTab(ctk.CTkFrame):
         self.frame_cpu.grid(row=0, column=2, sticky="ns", padx=(5, 0))
         self.frame_cpu.grid_propagate(False)
         self.setup_cpu_monitor()
-        ToolTip(self.frame_cpu, "Moniteur Système.\nCharge CPU et RAM.")
+        ToolTip(self.frame_cpu, _t("Moniteur Système.\nCharge CPU et RAM.", "System Monitor.\nCPU and RAM load."))
 
         # 2. DASHBOARD (STATS)
         self.frame_stats = ctk.CTkFrame(self, fg_color="transparent")
@@ -265,20 +265,20 @@ class RunTab(ctk.CTkFrame):
         ToolTip(self.btn_preview_val, _t("Afficher la derniere image de validation (LQ vs SR) avec comparaison", "Show last validation image (LQ vs SR) with comparison"))
 
         # Metrics graph button
-        self.btn_metrics = ctk.CTkButton(self.f_cons_head, text="📊 Metriques",
+        self.btn_metrics = ctk.CTkButton(self.f_cons_head, text=_t("📊 Métriques", "📊 Metrics"),
                                           width=90, height=26, fg_color="#2980b9",
                                           font=_EMOJI_FONT,
                                           command=self._show_metrics_graph)
         self.btn_metrics.pack(side="right", padx=5)
-        ToolTip(self.btn_metrics, "Afficher les courbes de Loss et PSNR en temps reel")
+        ToolTip(self.btn_metrics, _t("Afficher les courbes de Loss et PSNR en temps reel", "Show Loss and PSNR curves in real time"))
 
         # Unified servers button (Gallery + TensorBoard)
-        self.btn_servers = ctk.CTkButton(self.f_cons_head, text="📡 Serveurs",
+        self.btn_servers = ctk.CTkButton(self.f_cons_head, text=_t("📡 Serveurs", "📡 Servers"),
                                           width=90, height=26, fg_color="#16a085",
                                           font=_EMOJI_FONT,
                                           command=self._show_servers_panel)
         self.btn_servers.pack(side="right", padx=5)
-        ToolTip(self.btn_servers, "Galerie images + TensorBoard : QR codes, liens et contrôles")
+        ToolTip(self.btn_servers, _t("Galerie images + TensorBoard : QR codes, liens et contrôles", "Image gallery + TensorBoard: QR codes, links and controls"))
 
         # LR Schedule button
         self.btn_lr_sched = ctk.CTkButton(self.f_cons_head, text="📉 LR",
@@ -286,7 +286,7 @@ class RunTab(ctk.CTkFrame):
                                             font=_EMOJI_FONT,
                                             command=self._show_lr_schedule)
         self.btn_lr_sched.pack(side="right", padx=2)
-        ToolTip(self.btn_lr_sched, "Visualiser l'evolution du Learning Rate\nsur toute la duree de l'entrainement")
+        ToolTip(self.btn_lr_sched, _t("Visualiser l'evolution du Learning Rate\nsur toute la duree de l'entrainement", "Visualize the Learning Rate schedule\nover the full training duration"))
 
         # Auto-resume + options
         f_opts = ctk.CTkFrame(self.frame_console, fg_color="transparent", height=25)
@@ -1283,14 +1283,21 @@ class RunTab(ctk.CTkFrame):
                     # All retries exhausted — warn the user
                     from tkinter import messagebox
                     messagebox.showwarning(
-                        "Dossier verrouillé",
-                        f"Impossible de renommer le dossier existant :\n{exp_folder}\n\n"
-                        "Erreur : " + str(e) + "\n\n"
-                        "Solutions :\n"
-                        "  • Fermez l'Explorateur Windows s'il affiche ce dossier\n"
-                        "  • Attendez quelques secondes que TensorBoard libère les fichiers\n"
-                        "  • Ou renommez le dossier manuellement avant de relancer\n\n"
-                        "L'entraînement va quand même démarrer — traiNNer retentira le renommage."
+                        _t("Dossier verrouillé", "Folder locked"),
+                        _t(f"Impossible de renommer le dossier existant :\n{exp_folder}\n\n"
+                           "Erreur : " + str(e) + "\n\n"
+                           "Solutions :\n"
+                           "  • Fermez l'Explorateur Windows s'il affiche ce dossier\n"
+                           "  • Attendez quelques secondes que TensorBoard libère les fichiers\n"
+                           "  • Ou renommez le dossier manuellement avant de relancer\n\n"
+                           "L'entraînement va quand même démarrer — traiNNer retentira le renommage.",
+                           f"Cannot rename existing folder:\n{exp_folder}\n\n"
+                           "Error: " + str(e) + "\n\n"
+                           "Solutions:\n"
+                           "  • Close Windows Explorer if it is showing this folder\n"
+                           "  • Wait a few seconds for TensorBoard to release file handles\n"
+                           "  • Or rename the folder manually before relaunching\n\n"
+                           "Training will start anyway — traiNNer will retry the rename.")
                     )
             except OSError as e:
                 self.append_log(f"[Pre-Archive] Erreur inattendue: {e}\n")
@@ -2060,9 +2067,9 @@ class RunTab(ctk.CTkFrame):
         self.frame_files.grid_rowconfigure(1, weight=1)
         self.frame_files.grid_rowconfigure(2, weight=1)
         
-        self.row_file(0, "Python", "python_path", "Chemin vers l'exécutable python.exe (Auto-détecté).")
-        self.row_file(1, "Script", "script_path", "Le script train.py (Auto-détecté).")
-        self.row_file(2, "Config", "config_path", "Le fichier .toml (NeoSR) ou .yml (Redux).")
+        self.row_file(0, "Python", "python_path", _t("Chemin vers l'exécutable python.exe (Auto-détecté).", "Path to python.exe executable (Auto-detected)."))
+        self.row_file(1, "Script", "script_path", _t("Le script train.py (Auto-détecté).", "The train.py script (Auto-detected)."))
+        self.row_file(2, "Config", "config_path", _t("Le fichier .toml (NeoSR) ou .yml (Redux).", "The .toml (NeoSR) or .yml (Redux) config file."))
         
         self.btn_scan = ctk.CTkButton(self.frame_files, text="Load", width=50, fg_color="#444", font=("Arial", 9, "bold"), 
                                       command=lambda: self.browse(self.entries_dict["config_path"], "config_path"))
@@ -2154,7 +2161,7 @@ class RunTab(ctk.CTkFrame):
     def setup_cpu_monitor(self):
         inner = ctk.CTkFrame(self.frame_cpu, fg_color="transparent")
         inner.pack(fill="both", expand=True, padx=12, pady=(6, 4))
-        ctk.CTkLabel(inner, text="SYSTÈME", font=("Roboto", 12, "bold"), text_color="#AAA").pack(pady=(0, 2))
+        ctk.CTkLabel(inner, text=_t("SYSTÈME", "SYSTEM"), font=("Roboto", 12, "bold"), text_color="#AAA").pack(pady=(0, 2))
         col_cpu = "#9b59b6"
         nm = self.cpu_model_name.upper()
         if "AMD" in nm or "RYZEN" in nm: col_cpu = "#e67e22"
@@ -2507,47 +2514,78 @@ class RunTab(ctk.CTkFrame):
 
     def setup_dashboard(self):
         for i in range(5): self.frame_stats.grid_columnconfigure(i, weight=1)
-        self.card_timer = self.create_card(0, 0, "DURÉE", "00:00:00", "white",
-            tip="⏱ Durée totale de la session d'entraînement en cours depuis le démarrage.")
-        self.card_iter = self.create_card(0, 1, "ITÉRATION", "0 / --", "#2ecc71",
-            tip="🔄 Itérations d'optimisation (mises à jour des poids).\n"
-                "Ligne 1 : étapes optimizer actuelles / total configuré.\n"
-                "Ligne 2 (accumulation active) : GPU×N — passes physiques réelles\n"
-                "  sur le GPU (forward + backward), soit optimizer × accumulate.\n\n"
-                "Exemple : 60 000 iters config + accumulate=2\n"
-                "  → 60 000 mises à jour des poids\n"
-                "  → 120 000 passes GPU réelles")
-        self.card_speed = self.create_card(0, 2, "VITESSE", "-- it/s", "#f1c40f",
-            tip="⚡ Vitesse de traitement en itérations par seconde.\n"
-                "Valeur instantanée du dernier log. Dépend du batch size, scale et GPU.")
-        self.card_eta = self.create_card(0, 3, "FIN ESTIMÉE", "--:--:--", "white",
-            tip="🏁 Heure de fin estimée basée sur la vitesse actuelle et les itérations restantes.\n"
-                "Se recalcule à chaque itération loggée.")
+        self.card_timer = self.create_card(0, 0, _t("DURÉE", "DURATION"), "00:00:00", "white",
+            tip=_t("⏱ Durée totale de la session d'entraînement en cours depuis le démarrage.",
+                   "⏱ Total duration of the current training session since start."))
+        self.card_iter = self.create_card(0, 1, _t("ITÉRATION", "ITERATION"), "0 / --", "#2ecc71",
+            tip=_t("🔄 Itérations d'optimisation (mises à jour des poids).\n"
+                   "Ligne 1 : étapes optimizer actuelles / total configuré.\n"
+                   "Ligne 2 (accumulation active) : GPU×N — passes physiques réelles\n"
+                   "  sur le GPU (forward + backward), soit optimizer × accumulate.\n\n"
+                   "Exemple : 60 000 iters config + accumulate=2\n"
+                   "  → 60 000 mises à jour des poids\n"
+                   "  → 120 000 passes GPU réelles",
+                   "🔄 Optimization iterations (weight updates).\n"
+                   "Line 1: current optimizer steps / total configured.\n"
+                   "Line 2 (accumulation active): GPU×N — real physical passes\n"
+                   "  on the GPU (forward + backward), i.e. optimizer × accumulate.\n\n"
+                   "Example: 60,000 config iters + accumulate=2\n"
+                   "  → 60,000 weight updates\n"
+                   "  → 120,000 real GPU passes"))
+        self.card_speed = self.create_card(0, 2, _t("VITESSE", "SPEED"), "-- it/s", "#f1c40f",
+            tip=_t("⚡ Vitesse de traitement en itérations par seconde.\n"
+                   "Valeur instantanée du dernier log. Dépend du batch size, scale et GPU.",
+                   "⚡ Processing speed in iterations per second.\n"
+                   "Instantaneous value from last log. Depends on batch size, scale and GPU."))
+        self.card_eta = self.create_card(0, 3, _t("FIN ESTIMÉE", "ETA"), "--:--:--", "white",
+            tip=_t("🏁 Heure de fin estimée basée sur la vitesse actuelle et les itérations restantes.\n"
+                   "Se recalcule à chaque itération loggée.",
+                   "🏁 Estimated end time based on current speed and remaining iterations.\n"
+                   "Recalculated at each logged iteration."))
         self.card_epoch = self.create_card(0, 4, "EPOCH", "0", "#e67e22",
-            tip="📦 Epoch actuelle — un epoch = passage complet sur tout le dataset d'entraînement.\n"
-                "Dépend du nombre d'images et du batch size.")
+            tip=_t("📦 Epoch actuelle — un epoch = passage complet sur tout le dataset d'entraînement.\n"
+                   "Dépend du nombre d'images et du batch size.",
+                   "📦 Current epoch — one epoch = full pass over the entire training dataset.\n"
+                   "Depends on the number of images and batch size."))
         self.card_loss_g = self.create_card(1, 0, "LOSS G", "--", "#e74c3c",
-            tip="📉 Perte totale du Générateur (G).\n"
-                "Cumul : pixel loss + perceptual loss + GAN loss + autres composantes.\n"
-                "Plus basse = meilleure qualité SR. Valeur normale : 0.001–0.1")
+            tip=_t("📉 Perte totale du Générateur (G).\n"
+                   "Cumul : pixel loss + perceptual loss + GAN loss + autres composantes.\n"
+                   "Plus basse = meilleure qualité SR. Valeur normale : 0.001–0.1",
+                   "📉 Total Generator (G) loss.\n"
+                   "Sum: pixel loss + perceptual loss + GAN loss + other components.\n"
+                   "Lower = better SR quality. Normal range: 0.001–0.1"))
         self.card_loss_d = self.create_card(1, 1, "LOSS D", "--", "#9b59b6",
-            tip="⚖️ Perte du Discriminateur (D) — uniquement en mode GAN.\n"
-                "Idéalement ~0.5–0.7 (equilibre G/D).\n"
-                "Trop basse → D trop puissant → G a du mal à le duper.\n"
-                "Trop haute → G domine → artefacts possibles.")
+            tip=_t("⚖️ Perte du Discriminateur (D) — uniquement en mode GAN.\n"
+                   "Idéalement ~0.5–0.7 (equilibre G/D).\n"
+                   "Trop basse → D trop puissant → G a du mal à le duper.\n"
+                   "Trop haute → G domine → artefacts possibles.",
+                   "⚖️ Discriminator (D) loss — GAN mode only.\n"
+                   "Ideally ~0.5–0.7 (G/D balance).\n"
+                   "Too low → D too strong → G struggles to fool it.\n"
+                   "Too high → G dominates → possible artifacts."))
         self.card_lr = self.create_card(1, 2, "LR", "--", "white",
-            tip="🎚 Learning Rate actuel du Générateur.\n"
-                "Diminue selon le scheduler choisi (MultiStepLR, CosineAnnealing, etc.).\n"
-                "Un LR trop élevé → instabilité. Trop bas → convergence lente.")
+            tip=_t("🎚 Learning Rate actuel du Générateur.\n"
+                   "Diminue selon le scheduler choisi (MultiStepLR, CosineAnnealing, etc.).\n"
+                   "Un LR trop élevé → instabilité. Trop bas → convergence lente.",
+                   "🎚 Current Generator Learning Rate.\n"
+                   "Decreases according to the chosen scheduler (MultiStepLR, CosineAnnealing, etc.).\n"
+                   "Too high → instability. Too low → slow convergence."))
         self.card_psnr = self.create_card(1, 3, "BEST PSNR", "-- dB", "#3498db",
-            tip="📡 Meilleur PSNR (Peak Signal-to-Noise Ratio) obtenu en validation.\n"
-                "> 28 dB = bon  |  > 32 dB = excellent  |  > 38 dB = quasi-parfait.\n"
-                "Affiché avec l'itération où ce score a été atteint.")
+            tip=_t("📡 Meilleur PSNR (Peak Signal-to-Noise Ratio) obtenu en validation.\n"
+                   "> 28 dB = bon  |  > 32 dB = excellent  |  > 38 dB = quasi-parfait.\n"
+                   "Affiché avec l'itération où ce score a été atteint.",
+                   "📡 Best PSNR (Peak Signal-to-Noise Ratio) achieved in validation.\n"
+                   "> 28 dB = good  |  > 32 dB = excellent  |  > 38 dB = near-perfect.\n"
+                   "Shown with the iteration where this score was reached."))
         self.card_ssim = self.create_card(1, 4, "BEST SSIM", "--", "#1abc9c",
-            tip="🔬 Meilleur SSIM (Structural Similarity Index) obtenu en validation.\n"
-                "De 0 à 1 — proche de 1.0 = excellente similarité structurelle.\n"
-                "> 0.90 = bon  |  > 0.95 = excellent.\n"
-                "Actualisé après chaque run de validation.")
+            tip=_t("🔬 Meilleur SSIM (Structural Similarity Index) obtenu en validation.\n"
+                   "De 0 à 1 — proche de 1.0 = excellente similarité structurelle.\n"
+                   "> 0.90 = bon  |  > 0.95 = excellent.\n"
+                   "Actualisé après chaque run de validation.",
+                   "🔬 Best SSIM (Structural Similarity Index) achieved in validation.\n"
+                   "From 0 to 1 — close to 1.0 = excellent structural similarity.\n"
+                   "> 0.90 = good  |  > 0.95 = excellent.\n"
+                   "Updated after each validation run."))
 
     def setup_info_panel(self):
         for i in range(5): self.frame_info.grid_columnconfigure(i, weight=1)
@@ -2560,10 +2598,10 @@ class RunTab(ctk.CTkFrame):
             ToolTip(f, desc); ToolTip(v, desc)
             return v
         
-        self.lbl_inf_arch = mk_info(0, "Architecture", "Le modèle de réseau neuronal.")
-        self.lbl_inf_scale = mk_info(1, "Scale", "Facteur d'agrandissement.")
-        self.lbl_inf_batch = mk_info(2, "Batch Size", "Images par passe GPU.")
-        self.lbl_inf_patch = mk_info(3, "Patch/LQ Size", "Taille de travail.")
+        self.lbl_inf_arch = mk_info(0, "Architecture", _t("Le modèle de réseau neuronal.", "The neural network model."))
+        self.lbl_inf_scale = mk_info(1, "Scale", _t("Facteur d'agrandissement.", "Upscaling factor."))
+        self.lbl_inf_batch = mk_info(2, "Batch Size", _t("Images par passe GPU.", "Images per GPU pass."))
+        self.lbl_inf_patch = mk_info(3, "Patch/LQ Size", _t("Taille de travail.", "Working patch size."))
         self.lbl_inf_acc = mk_info(4, "Accumulate", "Gradient accumulation.")
 
     def create_card(self, r, c, title, val, color, tip=""):
@@ -2621,7 +2659,7 @@ class RunTab(ctk.CTkFrame):
             self._metrics_win.focus(); return
         win = ctk.CTkToplevel(self)
         self._metrics_win = win
-        win.title("Métriques d'Entraînement")
+        win.title(_t("Métriques d'Entraînement", "Training Metrics"))
         win.geometry("820x540")
         win.attributes("-topmost", True)
         win.after(500, lambda: win.attributes("-topmost", False))
@@ -2632,7 +2670,7 @@ class RunTab(ctk.CTkFrame):
         toolbar.pack_propagate(False)
         lbl_status = ctk.CTkLabel(toolbar, text="", font=("Roboto", 10), text_color="#888")
         lbl_status.pack(side="left", padx=10)
-        btn_refresh = ctk.CTkButton(toolbar, text="⟳ Rafraîchir", width=100, height=24,
+        btn_refresh = ctk.CTkButton(toolbar, text=_t("⟳ Rafraîchir", "⟳ Refresh"), width=100, height=24,
                                     fg_color="#1e3a5f", hover_color="#2a5298", corner_radius=4)
         btn_refresh.pack(side="right", padx=6, pady=4)
 
@@ -2704,7 +2742,7 @@ class RunTab(ctk.CTkFrame):
             canvas.create_line(tx_last, y_start + h, tx_last, y_start + h + 4, fill="#555")
             canvas.create_text(tx_last, y_start + h + 12, text=f"{iter_last:,}",
                                fill="#666", font=("Roboto", 7), anchor="n")
-            canvas.create_text(x_start + w // 2, y_start + h + 26, text="itérations",
+            canvas.create_text(x_start + w // 2, y_start + h + 26, text=_t("itérations", "iterations"),
                                fill="#555", font=("Roboto", 8))
             # Curve
             points = []
@@ -2837,9 +2875,12 @@ class RunTab(ctk.CTkFrame):
         if not logdir_map:
             from tkinter import messagebox
             messagebox.showinfo("TensorBoard",
-                "Aucun dossier tb_logger trouvé.\n"
-                "Lancez un entrainement d'abord,\n"
-                "ou vérifiez le chemin du moteur.")
+                _t("Aucun dossier tb_logger trouvé.\n"
+                   "Lancez un entrainement d'abord,\n"
+                   "ou vérifiez le chemin du moteur.",
+                   "No tb_logger folder found.\n"
+                   "Start a training run first,\n"
+                   "or check the engine path."))
             return
 
         # Remove duplicate paths (ActiveEngine may duplicate one of the others)
@@ -2903,7 +2944,8 @@ class RunTab(ctk.CTkFrame):
             self.append_log(f"[TensorBoard] Lance (PID {proc.pid})\n")
         except Exception as e:
             from tkinter import messagebox
-            messagebox.showerror("TensorBoard", f"Erreur lancement:\n{e}\n\nvenv Python:\n{py_exec}")
+            messagebox.showerror("TensorBoard", _t(f"Erreur lancement:\n{e}\n\nvenv Python:\n{py_exec}",
+                                                    f"Launch error:\n{e}\n\nvenv Python:\n{py_exec}"))
             return
 
         # --- 7. Poll for port + conditionally open browser ---
@@ -2963,7 +3005,7 @@ class RunTab(ctk.CTkFrame):
 
         win = ctk.CTkToplevel(self)
         self._servers_win = win
-        win.title("📡 Serveurs — Galerie & TensorBoard")
+        win.title(_t("📡 Serveurs — Galerie & TensorBoard", "📡 Servers — Gallery & TensorBoard"))
         win.geometry("460x700")
         win.minsize(400, 500)
         win.resizable(True, True)
@@ -2999,13 +3041,13 @@ class RunTab(ctk.CTkFrame):
             if not qr_shown:
                 ctk.CTkLabel(parent, text=url, font=("Roboto", 10, "bold"),
                              text_color="#2ecc71", wraplength=400).pack(pady=4)
-            ctk.CTkButton(parent, text="🌐 Ouvrir dans le navigateur", width=220, height=28,
+            ctk.CTkButton(parent, text=_t("🌐 Ouvrir dans le navigateur", "🌐 Open in browser"), width=220, height=28,
                           command=lambda u=url: __import__("webbrowser").open(u)).pack(pady=(4, 2))
 
         # === Section A: Gallery ===
         fra = ctk.CTkFrame(scroll, fg_color="#1a1a2e", corner_radius=8)
         fra.pack(fill="x", padx=8, pady=(8, 4))
-        ctk.CTkLabel(fra, text="🖼 Galerie Images", font=("Roboto", 13, "bold"),
+        ctk.CTkLabel(fra, text=_t("🖼 Galerie Images", "🖼 Image Gallery"), font=("Roboto", 13, "bold"),
                      text_color="#2ecc71").pack(pady=(10, 0))
         _make_qr_widget(fra, gal_url, gal_url)
 
@@ -3022,13 +3064,13 @@ class RunTab(ctk.CTkFrame):
                     srv.stop()
                 if gal_dir and os.path.isdir(gal_dir):
                     srv.start(gal_dir, port=port, with_ngrok=with_ngrok)
-                self.append_log("[Serveurs] Galerie images redémarrée.\n")
+                self.append_log(_t("[Serveurs] Galerie images redémarrée.\n", "[Servers] Image gallery restarted.\n"))
                 win.destroy()
                 self.after(500, self._show_servers_panel)
             except Exception as e:
                 self.append_log(f"[Serveurs] Erreur galerie: {e}\n")
 
-        ctk.CTkButton(fra, text="🔄 Redémarrer Galerie", width=190, height=26,
+        ctk.CTkButton(fra, text=_t("🔄 Redémarrer Galerie", "🔄 Restart Gallery"), width=190, height=26,
                       fg_color="#27ae60", command=_restart_gallery).pack(pady=(4, 10))
 
         # === Section B: TensorBoard ===
@@ -3053,7 +3095,7 @@ class RunTab(ctk.CTkFrame):
                       command=win.destroy).pack(pady=8)
 
     def on_finished(self):
-        self.timer_running = False; self.btn_start.configure(state="normal", text="▶  DÉMARRER"); self.btn_stop.configure(state="disabled")
+        self.timer_running = False; self.btn_start.configure(state="normal", text=_t("▶  DÉMARRER", "▶  START")); self.btn_stop.configure(state="disabled")
         # Flush any buffered Redux record that never got a trailing prefix line
         if getattr(self, "_redux_buf_active", False) and self._redux_buf:
             self.append_log(self._flush_redux_buf() + "\n")
@@ -3068,7 +3110,7 @@ class RunTab(ctk.CTkFrame):
                 _srv = get_server()
                 if _srv and _srv.httpd:
                     _srv.stop()
-                    self.append_log("[Serveurs] Galerie auto-arrêtée.\n")
+                    self.append_log(_t("[Serveurs] Galerie auto-arrêtée.\n", "[Servers] Gallery auto-stopped.\n"))
         except Exception:
             pass
         self._play_finish_sound()
@@ -3188,18 +3230,21 @@ class RunTab(ctk.CTkFrame):
 
         if self.chk_shutdown.get():
             confirm = messagebox.askyesno(
-                "Arrêt automatique",
-                "Le training est terminé.\n\nÉteindre le PC dans 60 secondes ?\n\n(Cliquez 'Non' pour annuler)",
+                _t("Arrêt automatique", "Auto shutdown"),
+                _t("Le training est terminé.\n\nÉteindre le PC dans 60 secondes ?\n\n(Cliquez 'Non' pour annuler)",
+                   "Training is complete.\n\nShut down PC in 60 seconds?\n\n(Click 'No' to cancel)"),
                 icon="warning"
             )
             if confirm:
-                self.append_log("\n[ATTENTION] ARRÊT AUTOMATIQUE DANS 60 SECONDES...\n")
+                self.append_log(_t("\n[ATTENTION] ARRÊT AUTOMATIQUE DANS 60 SECONDES...\n",
+                                   "\n[WARNING] AUTO SHUTDOWN IN 60 SECONDS...\n"))
                 if sys.platform == "win32":
                     os.system("shutdown /s /t 60")
                 else:
                     os.system("shutdown -h +1")  # Linux/Mac
             else:
-                self.append_log("[INFO] Arrêt automatique annulé par l'utilisateur.\n")
+                self.append_log(_t("[INFO] Arrêt automatique annulé par l'utilisateur.\n",
+                                   "[INFO] Auto shutdown cancelled by user.\n"))
 
     def _launch_pipeline_phase(self, phase: dict):
         """Generate config for a pipeline phase and launch it."""
@@ -3264,7 +3309,7 @@ class RunTab(ctk.CTkFrame):
         try:
             from PIL import Image, ImageTk
         except ImportError:
-            messagebox.showerror("Erreur", "Pillow (PIL) requis.")
+            messagebox.showerror(_t("Erreur", "Error"), _t("Pillow (PIL) requis.", "Pillow (PIL) is required."))
             return
 
         # Find experiment folder from config path
@@ -3362,7 +3407,9 @@ class RunTab(ctk.CTkFrame):
                 break
 
         if not sr_image:
-            messagebox.showinfo("Validation", "Aucune image de validation trouvee.\nVerifiez experiments/.../visualization/")
+            messagebox.showinfo(_t("Validation", "Validation"),
+                                _t("Aucune image de validation trouvee.\nVerifiez experiments/.../visualization/",
+                                   "No validation image found.\nCheck experiments/.../visualization/"))
             return
 
         # Collect ALL validation images for the selector
@@ -3469,7 +3516,7 @@ class RunTab(ctk.CTkFrame):
 
         # Create preview window
         win = ctk.CTkToplevel(self)
-        win.title("Previsualisation Validation")
+        win.title(_t("Prévisualisation Validation", "Validation Preview"))
         win.geometry("1200x700")
         win.attributes("-topmost", True)
         win.after(500, lambda: win.attributes("-topmost", False))
@@ -3477,12 +3524,12 @@ class RunTab(ctk.CTkFrame):
         # Header with model info + image selector
         header = ctk.CTkFrame(win, fg_color="transparent", height=30)
         header.pack(fill="x", padx=10, pady=(5, 0))
-        ctk.CTkLabel(header, text=f"Modele: {found_exp}", font=("Roboto", 12, "bold"),
+        ctk.CTkLabel(header, text=f"{_t('Modele', 'Model')}: {found_exp}", font=("Roboto", 12, "bold"),
                      text_color="#3498db").pack(side="left")
 
         # Image selector dropdown
         if len(val_names) > 1:
-            ctk.CTkLabel(header, text="  Image:", text_color="#AAA").pack(side="left", padx=(15, 3))
+            ctk.CTkLabel(header, text=f"  {_t('Image', 'Image')}:", text_color="#AAA").pack(side="left", padx=(15, 3))
             self._val_all_images = all_val_images
             self._val_selector = ctk.CTkOptionMenu(header, values=val_names, width=180,
                 command=lambda name: self._on_val_image_select(name, win))
@@ -3677,7 +3724,7 @@ class RunTab(ctk.CTkFrame):
             self._val_tk_slider = ImageTk.PhotoImage(img)
             canvas.delete("all")
             canvas.create_image(w // 2, h // 2, image=self._val_tk_slider, anchor="center")
-            canvas.create_text(w // 2, 10, text=_t("SR only (pas d'image LQ)", "SR only (no LQ image)"), fill="#888",
+            canvas.create_text(w // 2, 10, text=_t("SR uniquement (pas d'image LQ)", "SR only (no LQ image)"), fill="#888",
                                font=("Roboto", 9), anchor="n")
             return
         w = canvas.winfo_width()
@@ -3762,7 +3809,7 @@ class RunTab(ctk.CTkFrame):
             if lq_path and os.path.exists(lq_path):
                 info += f"  |  LQ: {os.path.basename(lq_path)}"
             else:
-                info += "  (pas d'image LQ)"
+                info += _t("  (pas d'image LQ)", "  (no LQ image)")
             if hasattr(self, '_val_info_label'):
                 try: self._val_info_label.configure(text=info)
                 except Exception: pass
@@ -3843,7 +3890,7 @@ class RunTab(ctk.CTkFrame):
             self._lr_win.focus(); return
         win = ctk.CTkToplevel(self)
         self._lr_win = win
-        win.title("Scheduler LR - Visualisation")
+        win.title(_t("Scheduler LR - Visualisation", "LR Scheduler - Visualization"))
         win.geometry("700x400")
         win.attributes("-topmost", True)
         win.after(500, lambda: win.attributes("-topmost", False))
@@ -3887,7 +3934,7 @@ class RunTab(ctk.CTkFrame):
             gh = h - margin_t - margin_b
 
             # Title
-            canvas.create_text(w // 2, 12, text=_t("Evolution du Learning Rate", "Learning Rate Schedule"), fill="#3498db", font=("Roboto", 12, "bold"))
+            canvas.create_text(w // 2, 12, text=_t("Évolution du Learning Rate", "Learning Rate Schedule"), fill="#3498db", font=("Roboto", 12, "bold"))
 
             # Axes
             canvas.create_line(margin_l, margin_t, margin_l, h - margin_b, fill="#555")
@@ -3900,7 +3947,7 @@ class RunTab(ctk.CTkFrame):
             # X axis labels
             canvas.create_text(margin_l, h - margin_b + 12, text="0", fill="#AAA", font=("Roboto", 8))
             canvas.create_text(w - margin_r, h - margin_b + 12, text=f"{total_iter//1000}K", fill="#AAA", font=("Roboto", 8))
-            canvas.create_text(w // 2, h - margin_b + 25, text=_t("Iterations", "Iterations"), fill="#888", font=("Roboto", 9))
+            canvas.create_text(w // 2, h - margin_b + 25, text=_t("Itérations", "Iterations"), fill="#888", font=("Roboto", 9))
 
             # Plot MultiStepLR
             pts_step = []
@@ -4054,7 +4101,7 @@ class RunTab(ctk.CTkFrame):
                     _rd, _rr = divmod(int(rem), 86400)
                     _rh, _rr = divmod(_rr, 3600)
                     _rm, _rs = divmod(_rr, 60)
-                    self.card_eta.configure(text=f"{_rd:3d}j {_rh:02d}:{_rm:02d}:{_rs:02d}")
+                    self.card_eta.configure(text=f"{_rd:3d}{_t('j', 'd')} {_rh:02d}:{_rm:02d}:{_rs:02d}")
 
             # Redux uses l_g_charbonnier / l_g_pix; NeoSR uses l_g_total
             lg = (re.search(r"l_g_total:\s*([0-9.e+\-]+)", line)

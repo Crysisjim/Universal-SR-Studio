@@ -151,7 +151,7 @@ class WizardTab(ctk.CTkScrollableFrame):
             amp_ok = gpu.supports_amp
             gpu_text = f"🖥️ {gpu.name} — {gpu.total_vram_gb:.0f} GB VRAM"
             if not amp_ok:
-                gpu_text += " — ⚠️ AMP non supporté (sm_61)"
+                gpu_text += _t(" — ⚠️ AMP non supporté (sm_61)", " — ⚠️ AMP not supported (sm_61)")
             color = "#2ecc71" if (suitable and amp_ok) else "#e67e22" if suitable else "#e74c3c"
         else:
             gpu_text = _t("⚠️ Aucun GPU NVIDIA détecté — training impossible", "⚠️ No NVIDIA GPU detected — training impossible")
@@ -161,7 +161,7 @@ class WizardTab(ctk.CTkScrollableFrame):
                      font=("Arial", 12), text_color=color).pack(pady=(0, 5))
 
         # Progress
-        self.lbl_progress = ctk.CTkLabel(header, text="Étape 1",
+        self.lbl_progress = ctk.CTkLabel(header, text=_t("Étape 1", "Step 1"),
                                          font=("Arial", 11), text_color="#888")
         self.lbl_progress.pack()
         self.progress_bar = ctk.CTkProgressBar(header, width=400, height=8,
@@ -240,7 +240,7 @@ class WizardTab(ctk.CTkScrollableFrame):
 
         progress = (step_index + 1) / max(total, 1)
         self.progress_bar.set(progress)
-        self.lbl_progress.configure(text=f"Étape {step_index + 1}/{total}")
+        self.lbl_progress.configure(text=_t(f"Étape {step_index + 1}/{total}", f"Step {step_index + 1}/{total}"))
 
         self.lbl_question.configure(text=question.text)
         self.lbl_help.configure(text=question.help_text)
@@ -308,11 +308,11 @@ class WizardTab(ctk.CTkScrollableFrame):
             frame = ctk.CTkFrame(self.answer_frame, fg_color="transparent")
             frame.pack(pady=5)
             ctk.CTkRadioButton(
-                frame, text="✅ Oui", variable=var, value=True,
+                frame, text=_t("✅ Oui", "✅ Yes"), variable=var, value=True,
                 font=("Arial", 13), text_color="#2ecc71"
             ).pack(side="left", padx=20)
             ctk.CTkRadioButton(
-                frame, text="❌ Non", variable=var, value=False,
+                frame, text=_t("❌ Non", "❌ No"), variable=var, value=False,
                 font=("Arial", 13), text_color="#e74c3c"
             ).pack(side="left", padx=20)
             self.answer_widget = var
@@ -320,7 +320,7 @@ class WizardTab(ctk.CTkScrollableFrame):
         elif question.type == QuestionType.PATH:
             frame = ctk.CTkFrame(self.answer_frame, fg_color="transparent")
             frame.pack(fill="x", pady=5)
-            entry = ctk.CTkEntry(frame, width=350, placeholder_text="Sélectionnez un dossier...")
+            entry = ctk.CTkEntry(frame, width=350, placeholder_text=_t("Sélectionnez un dossier...", "Select a folder..."))
             entry.pack(side="left", padx=(0, 5))
             if existing and existing != question.default:
                 entry.insert(0, str(existing))
@@ -337,7 +337,7 @@ class WizardTab(ctk.CTkScrollableFrame):
                     font=("Arial", 12)
                 )
                 seg.pack(pady=5)
-                ctk.CTkLabel(self.answer_frame, text="ou valeur personnalisée :",
+                ctk.CTkLabel(self.answer_frame, text=_t("ou valeur personnalisée :", "or custom value:"),
                              font=("Arial", 10), text_color="#7f8c8d").pack()
                 entry = ctk.CTkEntry(self.answer_frame, width=100, placeholder_text="Manuel")
                 entry.pack(pady=3)
@@ -358,7 +358,7 @@ class WizardTab(ctk.CTkScrollableFrame):
             self.answer_widget = entry
 
     def _browse_path(self, entry):
-        path = filedialog.askdirectory(title="Sélectionner un dossier")
+        path = filedialog.askdirectory(title=_t("Sélectionner un dossier", "Select a folder"))
         if path:
             entry.delete(0, "end")
             entry.insert(0, path)
@@ -396,7 +396,8 @@ class WizardTab(ctk.CTkScrollableFrame):
         if not question.validate(answer):
             messagebox.showwarning(
                 "Validation",
-                f"La valeur '{answer}' n'est pas valide.\n\n{question.help_text}"
+                _t(f"La valeur '{answer}' n'est pas valide.\n\n{question.help_text}",
+                   f"The value '{answer}' is not valid.\n\n{question.help_text}")
             )
             return False
         self.wizard.set_answer(question.id, answer)
@@ -414,7 +415,8 @@ class WizardTab(ctk.CTkScrollableFrame):
             est = self.wizard.estimate_training_time()
             if est["estimated_hours"] > 0:
                 self.lbl_estimate.configure(
-                    text=f"⏱️ Estimation : {est['readable']} ({est['estimated_speed']} it/s)"
+                    text=_t(f"⏱️ Estimation : {est['readable']} ({est['estimated_speed']} it/s)",
+                            f"⏱️ Estimate: {est['readable']} ({est['estimated_speed']} it/s)")
                 )
             else:
                 self.lbl_estimate.configure(text="")
@@ -433,11 +435,11 @@ class WizardTab(ctk.CTkScrollableFrame):
         exp_name = config.get("name", "config")
 
         file_path = filedialog.asksaveasfilename(
-            title="Sauvegarder la configuration",
+            title=_t("Sauvegarder la configuration", "Save configuration"),
             defaultextension=ext,
             filetypes=[
                 ("TOML (NeoSR)", "*.toml") if ext == ".toml" else ("YAML (Redux)", "*.yml"),
-                ("Tous", "*.*"),
+                (_t("Tous", "All"), "*.*"),
             ],
             initialfile=f"{exp_name}{ext}"
         )
@@ -450,7 +452,7 @@ class WizardTab(ctk.CTkScrollableFrame):
                 _write_toml(config, file_path)
             else:
                 if yaml is None:
-                    messagebox.showerror("Erreur", "Module PyYAML non installé.\npip install pyyaml")
+                    messagebox.showerror(_t("Erreur", "Error"), _t("Module PyYAML non installé.\npip install pyyaml", "PyYAML module not installed.\npip install pyyaml"))
                     return
                 with open(file_path, "w", encoding="utf-8") as f:
                     yaml.dump(config, f, default_flow_style=False,
@@ -462,14 +464,23 @@ class WizardTab(ctk.CTkScrollableFrame):
             gan_str = "✅ GAN" if is_gan else "PSNR only"
 
             messagebox.showinfo(
-                "Configuration générée !",
-                f"✅ Sauvegardée : {os.path.basename(file_path)}\n\n"
-                f"🔧 Moteur : {engine}\n"
-                f"🏗️ Architecture : {arch}\n"
-                f"📊 Batch : {config.get('datasets', {}).get('train', {}).get('batch_size', config.get('datasets', {}).get('train', {}).get('batch_size_per_gpu', '?'))}\n"
-                f"⚡ {amp_status}\n"
-                f"🎯 {gan_str}\n\n"
-                f"Chargez ce fichier dans l'onglet Configuration pour le modifier."
+                _t("Configuration générée !", "Configuration generated!"),
+                _t(
+                    f"✅ Sauvegardée : {os.path.basename(file_path)}\n\n"
+                    f"🔧 Moteur : {engine}\n"
+                    f"🏗️ Architecture : {arch}\n"
+                    f"📊 Batch : {config.get('datasets', {}).get('train', {}).get('batch_size', config.get('datasets', {}).get('train', {}).get('batch_size_per_gpu', '?'))}\n"
+                    f"⚡ {amp_status}\n"
+                    f"🎯 {gan_str}\n\n"
+                    f"Chargez ce fichier dans l'onglet Configuration pour le modifier.",
+                    f"✅ Saved: {os.path.basename(file_path)}\n\n"
+                    f"🔧 Engine: {engine}\n"
+                    f"🏗️ Architecture: {arch}\n"
+                    f"📊 Batch: {config.get('datasets', {}).get('train', {}).get('batch_size', config.get('datasets', {}).get('train', {}).get('batch_size_per_gpu', '?'))}\n"
+                    f"⚡ {amp_status}\n"
+                    f"🎯 {gan_str}\n\n"
+                    f"Load this file in the Configuration tab to edit it."
+                )
             )
         except Exception as e:
-            messagebox.showerror("Erreur", f"Impossible de sauvegarder :\n{e}")
+            messagebox.showerror(_t("Erreur", "Error"), _t(f"Impossible de sauvegarder :\n{e}", f"Could not save:\n{e}"))

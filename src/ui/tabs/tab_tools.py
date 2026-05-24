@@ -23,7 +23,7 @@ def _ensure_numpy():
         np = _np
 
 from src.ui.components.tooltip import ToolTip
-from src.core.descriptions import TOOLTIPS
+from src.core.descriptions import TOOLTIPS, get_tooltip
 from src.core.settings import SettingsManager
 
 
@@ -984,9 +984,9 @@ class ToolsTab(ctk.CTkFrame):
                                 False, 4500, "notif_win11_errors")
             except Exception as e:
                 _err = str(e)  # capture before Python 3.12+ deletes 'e'
-                callback(f"Erreur : {_err}")
+                callback(f"{_t('Erreur', 'Error')} : {_err}")
                 self._play_sound("error", "sound_error_enabled")
-                self._ui_update(self._show_toast, "Erreur inattendue", _err,
+                self._ui_update(self._show_toast, _t("Erreur inattendue", "Unexpected error"), _err,
                                 False, 4500, "notif_win11_errors")
             finally:
                 # Always re-disable the stop button when worker exits
@@ -1001,9 +1001,9 @@ class ToolsTab(ctk.CTkFrame):
     def create_page_generator(self):
         _ensure_pil()
         f = ctk.CTkFrame(self.right_panel, fg_color="transparent")
-        self.add_header(f, "Générateur Dataset (LQ)", "Créez des données basse qualité avec dégradations optionnelles.")
-        self.add_path_row(f, "Source (HQ) :", "gen_hq")
-        self.add_path_row(f, "Destination (LQ) :", "gen_lq")
+        self.add_header(f, _t("Générateur Dataset (LQ)", "Dataset Generator (LQ)"), _t("Créez des données basse qualité avec dégradations optionnelles.", "Create low-quality data with optional degradations."))
+        self.add_path_row(f, _t("Source (HQ) :", "Source (HQ):"), "gen_hq")
+        self.add_path_row(f, _t("Destination (LQ) :", "Destination (LQ):"), "gen_lq")
 
         # Scale + méthode de resize
         p = ctk.CTkFrame(f, fg_color="transparent")
@@ -1013,7 +1013,7 @@ class ToolsTab(ctk.CTkFrame):
         self.widgets["gen_scale"].pack(side="left", padx=5)
         self.widgets["gen_scale"].set("4")
 
-        ctk.CTkLabel(p, text="Méthode :").pack(side="left", padx=(15, 0))
+        ctk.CTkLabel(p, text=_t("Méthode :", "Method:")).pack(side="left", padx=(15, 0))
         self.widgets["gen_method"] = ctk.CTkOptionMenu(
             p, values=["BICUBIC", "BILINEAR", "LANCZOS", "NEAREST", "BOX"], width=100
         )
@@ -1021,18 +1021,18 @@ class ToolsTab(ctk.CTkFrame):
         self.widgets["gen_method"].set("BICUBIC")
 
         # Dégradations optionnelles
-        self.add_header(f, "Dégradations (optionnel)")
+        self.add_header(f, _t("Dégradations (optionnel)", "Degradations (optional)"))
         deg = ctk.CTkFrame(f, fg_color="transparent")
         deg.pack(fill="x", pady=5)
 
-        self.widgets["gen_blur"] = ctk.CTkCheckBox(deg, text="Flou gaussien")
+        self.widgets["gen_blur"] = ctk.CTkCheckBox(deg, text=_t("Flou gaussien", "Gaussian Blur"))
         self.widgets["gen_blur"].pack(side="left", padx=5)
         ctk.CTkLabel(deg, text="σ:").pack(side="left")
         self.widgets["gen_blur_sigma"] = ctk.CTkEntry(deg, width=40)
         self.widgets["gen_blur_sigma"].pack(side="left", padx=3)
         self.widgets["gen_blur_sigma"].insert(0, "1.0")
 
-        self.widgets["gen_noise"] = ctk.CTkCheckBox(deg, text="Bruit gaussien")
+        self.widgets["gen_noise"] = ctk.CTkCheckBox(deg, text=_t("Bruit gaussien", "Gaussian Noise"))
         self.widgets["gen_noise"].pack(side="left", padx=(15, 5))
         ctk.CTkLabel(deg, text="σ:").pack(side="left")
         self.widgets["gen_noise_sigma"] = ctk.CTkEntry(deg, width=40)
@@ -1043,7 +1043,7 @@ class ToolsTab(ctk.CTkFrame):
         deg2.pack(fill="x", pady=5)
         self.widgets["gen_jpeg"] = ctk.CTkCheckBox(deg2, text="Compression JPEG")
         self.widgets["gen_jpeg"].pack(side="left", padx=5)
-        ctk.CTkLabel(deg2, text="Qualité:").pack(side="left")
+        ctk.CTkLabel(deg2, text=_t("Qualité:", "Quality:")).pack(side="left")
         self.widgets["gen_jpeg_q"] = ctk.CTkEntry(deg2, width=40)
         self.widgets["gen_jpeg_q"].pack(side="left", padx=3)
         self.widgets["gen_jpeg_q"].insert(0, "50")
@@ -1055,77 +1055,97 @@ class ToolsTab(ctk.CTkFrame):
         deg3 = ctk.CTkFrame(f, fg_color="transparent")
         deg3.pack(fill="x", pady=5)
 
-        self.widgets["gen_posterize"] = ctk.CTkCheckBox(deg3, text="Posterisation")
+        self.widgets["gen_posterize"] = ctk.CTkCheckBox(deg3, text=_t("Posterisation", "Posterization"))
         self.widgets["gen_posterize"].pack(side="left", padx=5)
         ctk.CTkLabel(deg3, text="bits:").pack(side="left")
         self.widgets["gen_posterize_bits"] = ctk.CTkEntry(deg3, width=40)
         self.widgets["gen_posterize_bits"].pack(side="left", padx=3)
         self.widgets["gen_posterize_bits"].insert(0, "4")
         ToolTip(self.widgets["gen_posterize"],
-            "Reduit la profondeur de bits par canal (1-8).\n"
-            "8 = aucun effet, 6 = leger, 4 = visible, 2 = severe.\n"
-            "Cree des paliers de couleur.")
+            _t("Reduit la profondeur de bits par canal (1-8).\n"
+               "8 = aucun effet, 6 = leger, 4 = visible, 2 = severe.\n"
+               "Cree des paliers de couleur.",
+               "Reduces bit depth per channel (1-8).\n"
+               "8 = no effect, 6 = light, 4 = visible, 2 = severe.\n"
+               "Creates color banding steps."))
         ToolTip(self.widgets["gen_posterize_bits"],
-            "Bits par canal RGB :\n"
-            "  8 = aucun effet (256 niveaux)\n"
-            "  6 = leger (64 niveaux)\n"
-            "  5 = visible (32 niveaux)\n"
-            "  4 = marque (16 niveaux) — typique compression video\n"
-            "  3 = severe (8 niveaux)\n"
-            "  2 = extreme (4 niveaux)")
+            _t("Bits par canal RGB :\n"
+               "  8 = aucun effet (256 niveaux)\n"
+               "  6 = leger (64 niveaux)\n"
+               "  5 = visible (32 niveaux)\n"
+               "  4 = marque (16 niveaux) — typique compression video\n"
+               "  3 = severe (8 niveaux)\n"
+               "  2 = extreme (4 niveaux)",
+               "Bits per RGB channel:\n"
+               "  8 = no effect (256 levels)\n"
+               "  6 = light (64 levels)\n"
+               "  5 = visible (32 levels)\n"
+               "  4 = marked (16 levels) — typical video compression\n"
+               "  3 = severe (8 levels)\n"
+               "  2 = extreme (4 levels)"))
 
         self.widgets["gen_banding"] = ctk.CTkCheckBox(deg3, text="Banding")
         self.widgets["gen_banding"].pack(side="left", padx=(15, 5))
-        ctk.CTkLabel(deg3, text="niveaux:").pack(side="left")
+        ctk.CTkLabel(deg3, text=_t("niveaux:", "levels:")).pack(side="left")
         self.widgets["gen_banding_levels"] = ctk.CTkEntry(deg3, width=40)
         self.widgets["gen_banding_levels"].pack(side="left", padx=3)
         self.widgets["gen_banding_levels"].insert(0, "32")
         ToolTip(self.widgets["gen_banding"],
-            "Quantification couleur via dithering reduit.\n"
-            "Cree des bandes visibles dans les degrades (ciels, ombres).\n"
-            "Simule la compression video aggressive (H.264/HEVC bas bitrate).")
+            _t("Quantification couleur via dithering reduit.\n"
+               "Cree des bandes visibles dans les degrades (ciels, ombres).\n"
+               "Simule la compression video aggressive (H.264/HEVC bas bitrate).",
+               "Color quantization via reduced dithering.\n"
+               "Creates visible bands in gradients (skies, shadows).\n"
+               "Simulates aggressive video compression (H.264/HEVC low bitrate)."))
         ToolTip(self.widgets["gen_banding_levels"],
-            "Nombre de niveaux totaux de couleur (palette) :\n"
-            "  256 = peu visible\n"
-            "  128 = leger\n"
-            "   64 = visible\n"
-            "   32 = marque (recommande)\n"
-            "   16 = severe\n"
-            "    8 = extreme")
+            _t("Nombre de niveaux totaux de couleur (palette) :\n"
+               "  256 = peu visible\n"
+               "  128 = leger\n"
+               "   64 = visible\n"
+               "   32 = marque (recommande)\n"
+               "   16 = severe\n"
+               "    8 = extreme",
+               "Total color levels (palette):\n"
+               "  256 = barely visible\n"
+               "  128 = light\n"
+               "   64 = visible\n"
+               "   32 = marked (recommended)\n"
+               "   16 = severe\n"
+               "    8 = extreme"))
 
         # Custom 2 degradations (compact — defaults from otf_preview)
         deg4 = ctk.CTkFrame(f, fg_color="transparent")
         deg4.pack(fill="x", pady=5)
         self.widgets["gen_aliasing"] = ctk.CTkCheckBox(deg4, text="Aliasing")
         self.widgets["gen_aliasing"].pack(side="left", padx=5)
-        ToolTip(self.widgets["gen_aliasing"], "Nearest-neighbor downscale+upscale → artefacts escalier sur les bords diagonaux.")
+        ToolTip(self.widgets["gen_aliasing"], _t("Nearest-neighbor downscale+upscale → artefacts escalier sur les bords diagonaux.", "Nearest-neighbor downscale+upscale → staircase artifacts on diagonal edges."))
         self.widgets["gen_interlace_weave"] = ctk.CTkCheckBox(deg4, text="Interlace weave")
         self.widgets["gen_interlace_weave"].pack(side="left", padx=(15, 5))
-        ToolTip(self.widgets["gen_interlace_weave"], "Entrelacement weave : dents de peigne sur les bords (artefact VHS/DVD).")
+        ToolTip(self.widgets["gen_interlace_weave"], _t("Entrelacement weave : dents de peigne sur les bords (artefact VHS/DVD).", "Weave interlacing: comb teeth on edges (VHS/DVD artifact)."))
         self.widgets["gen_interlace_flicker"] = ctk.CTkCheckBox(deg4, text="Flicker")
         self.widgets["gen_interlace_flicker"].pack(side="left", padx=(8, 5))
-        ToolTip(self.widgets["gen_interlace_flicker"], "Flicker de champ : lignes paires/impaires à luminosité alternée (CRT).")
+        ToolTip(self.widgets["gen_interlace_flicker"], _t("Flicker de champ : lignes paires/impaires à luminosité alternée (CRT).", "Field flicker: alternating brightness on even/odd lines (CRT)."))
         self.widgets["gen_interlace_blend"] = ctk.CTkCheckBox(deg4, text="Field blend")
         self.widgets["gen_interlace_blend"].pack(side="left", padx=(8, 5))
-        ToolTip(self.widgets["gen_interlace_blend"], "Ghosting entre champs : flou de mouvement par mélange de fields interlacés.")
+        ToolTip(self.widgets["gen_interlace_blend"], _t("Ghosting entre champs : flou de mouvement par mélange de fields interlacés.", "Field ghosting: motion blur by blending interlaced fields."))
 
         deg5 = ctk.CTkFrame(f, fg_color="transparent")
         deg5.pack(fill="x", pady=5)
         self.widgets["gen_film_grain"] = ctk.CTkCheckBox(deg5, text="Film Grain")
         self.widgets["gen_film_grain"].pack(side="left", padx=5)
-        ToolTip(self.widgets["gen_film_grain"], "Grain cinéma luminance-dépendant (fort sur tons moyens, faible sur hautes lumières).")
+        ToolTip(self.widgets["gen_film_grain"], _t("Grain cinéma luminance-dépendant (fort sur tons moyens, faible sur hautes lumières).", "Luminance-dependent film grain (strong on midtones, weak on highlights)."))
         self.widgets["gen_oversharp"] = ctk.CTkCheckBox(deg5, text="Oversharpening")
         self.widgets["gen_oversharp"].pack(side="left", padx=(15, 5))
-        ToolTip(self.widgets["gen_oversharp"], "Halos USM (sur-netteté), artefact typique des caméras consommateur / vidéo compressée.")
+        ToolTip(self.widgets["gen_oversharp"], _t("Halos USM (sur-netteté), artefact typique des caméras consommateur / vidéo compressée.", "USM halos (oversharpening), typical artifact of consumer cameras / compressed video."))
         self.widgets["gen_scanlines"] = ctk.CTkCheckBox(deg5, text="Scanlines CRT")
         self.widgets["gen_scanlines"].pack(side="left", padx=(15, 5))
-        ToolTip(self.widgets["gen_scanlines"], "Lignes sombres CRT : assombrit une ligne sur 2-4 (retro games, émulateurs, captures TV).")
+        ToolTip(self.widgets["gen_scanlines"], _t("Lignes sombres CRT : assombrit une ligne sur 2-4 (retro games, émulateurs, captures TV).", "Dark CRT scanlines: darkens every 2-4 lines (retro games, emulators, TV captures)."))
 
-        ctk.CTkButton(f, text="Lancer Génération", fg_color="#E67E22", command=self.run_gen).pack(fill="x", pady=15)
+        ctk.CTkButton(f, text=_t("Lancer Génération", "Run Generation"), fg_color="#E67E22", command=self.run_gen).pack(fill="x", pady=15)
         self.widgets["prog_gen"] = ctk.CTkProgressBar(f)
         self.widgets["prog_gen"].pack(fill="x")
         self.widgets["prog_gen"].set(0)
-        self.widgets["lbl_gen"] = ctk.CTkLabel(f, text="En attente...")
+        self.widgets["lbl_gen"] = ctk.CTkLabel(f, text=_t("En attente...", "Waiting..."))
         self.widgets["lbl_gen"].pack()
         return f
 
@@ -1133,7 +1153,7 @@ class ToolsTab(ctk.CTkFrame):
         hq = self.widgets["gen_hq"].get()
         lq = self.widgets["gen_lq"].get()
         if not hq or not lq:
-            messagebox.showerror("Erreur", "Dossiers requis.")
+            messagebox.showerror(_t("Erreur", "Error"), _t("Dossiers requis.", "Folders required."))
             return
         scale = int(self.widgets["gen_scale"].get())
         method_name = self.widgets["gen_method"].get()
@@ -1175,7 +1195,7 @@ class ToolsTab(ctk.CTkFrame):
             files = [x for x in os.listdir(hq) if os.path.splitext(x)[1].lower() in exts]
             total = len(files)
             if total == 0:
-                self._ui_update(messagebox.showinfo, "Info", "Aucune image trouvée.")
+                self._ui_update(messagebox.showinfo, _t("Info", "Info"), _t("Aucune image trouvée.", "No images found."))
                 return
             for i, fname in enumerate(files):
                 try:
@@ -1254,9 +1274,9 @@ class ToolsTab(ctk.CTkFrame):
                 self._ui_update(self.widgets["prog_gen"].set, prog)
                 self._ui_update(self.widgets["lbl_gen"].configure, text=f"{i+1}/{total}")
 
-            self._ui_update(messagebox.showinfo, "OK", f"Terminé — {total} images traitées.")
+            self._ui_update(messagebox.showinfo, "OK", f"{_t('Terminé', 'Done')} — {total} {_t('images traitées.', 'images processed.')}")
         except Exception as e:
-            self._ui_update(messagebox.showerror, "Erreur", str(e))
+            self._ui_update(messagebox.showerror, _t("Erreur", "Error"), str(e))
 
     # ==========================================
     # PAGE 4: CONVERTISSEUR (enrichi)
@@ -1269,47 +1289,47 @@ class ToolsTab(ctk.CTkFrame):
         self._create_gpu_panel(_top).pack(side="right", padx=(0, 0), pady=4)
         _hdr = ctk.CTkFrame(_top, fg_color="transparent")
         _hdr.pack(side="left", fill="x", expand=True)
-        ctk.CTkLabel(_hdr, text="Convertisseur de Modèle", font=("Roboto", 24, "bold"),
+        ctk.CTkLabel(_hdr, text=_t("Convertisseur de Modèle", "Model Converter"), font=("Roboto", 24, "bold"),
                      text_color="#3B8ED0", anchor="w").pack(fill="x")
-        ctk.CTkLabel(_hdr, text="Convertir un modèle vers différents formats d'inférence.",
+        ctk.CTkLabel(_hdr, text=_t("Convertir un modèle vers différents formats d'inférence.", "Convert a model to different inference formats."),
                      font=("Arial", 12), text_color="gray", anchor="w").pack(fill="x")
-        self.add_path_row(f, "Modèle source (.pth) :", "conv_pth", is_file=True)
-        self.add_path_row(f, "Dossier sortie :", "conv_output")
+        self.add_path_row(f, _t("Modèle source (.pth) :", "Source model (.pth):"), "conv_pth", is_file=True)
+        self.add_path_row(f, _t("Dossier sortie :", "Output folder:"), "conv_output")
 
         # Format options
-        self.add_header(f, "Formats de sortie")
+        self.add_header(f, _t("Formats de sortie", "Output Formats"))
         fmt = ctk.CTkFrame(f, fg_color="transparent")
         fmt.pack(fill="x", pady=5)
 
         self.widgets["chk_onnx"] = ctk.CTkCheckBox(fmt, text="ONNX")
         self.widgets["chk_onnx"].pack(side="left", padx=10)
-        ToolTip(self.widgets["chk_onnx"], "Export ONNX — compatible avec ONNX Runtime, DirectML.\n[+] Portable, multiplateforme.\n[-] Performances moyennes vs TensorRT.")
+        ToolTip(self.widgets["chk_onnx"], _t("Export ONNX — compatible avec ONNX Runtime, DirectML.\n[+] Portable, multiplateforme.\n[-] Performances moyennes vs TensorRT.", "ONNX export — compatible with ONNX Runtime, DirectML.\n[+] Portable, cross-platform.\n[-] Average performance vs TensorRT."))
 
-        self.widgets["chk_fp16"] = ctk.CTkCheckBox(fmt, text="FP16 (demi-précision)")
+        self.widgets["chk_fp16"] = ctk.CTkCheckBox(fmt, text=_t("FP16 (demi-précision)", "FP16 (half-precision)"))
         self.widgets["chk_fp16"].pack(side="left", padx=10)
-        ToolTip(self.widgets["chk_fp16"], "Conversion en Float16.\n[+] Modèle 2x plus petit, inférence plus rapide.\n[-] Légère perte de précision (invisible en pratique).")
+        ToolTip(self.widgets["chk_fp16"], _t("Conversion en Float16.\n[+] Modèle 2x plus petit, inférence plus rapide.\n[-] Légère perte de précision (invisible en pratique).", "Convert to Float16.\n[+] 2x smaller model, faster inference.\n[-] Slight precision loss (invisible in practice)."))
 
         self.widgets["chk_safetensors"] = ctk.CTkCheckBox(fmt, text="SafeTensors")
         self.widgets["chk_safetensors"].pack(side="left", padx=10)
-        ToolTip(self.widgets["chk_safetensors"], "Conversion vers SafeTensors (Hugging Face).\n[+] Sécurisé (pas d'exécution de code), chargement rapide.\n[+] Standard pour partager des modèles.")
+        ToolTip(self.widgets["chk_safetensors"], _t("Conversion vers SafeTensors (Hugging Face).\n[+] Sécurisé (pas d'exécution de code), chargement rapide.\n[+] Standard pour partager des modèles.", "Convert to SafeTensors (Hugging Face).\n[+] Secure (no code execution), fast loading.\n[+] Standard for sharing models."))
 
         fmt2 = ctk.CTkFrame(f, fg_color="transparent")
         fmt2.pack(fill="x", pady=5)
 
         self.widgets["chk_ncnn"] = ctk.CTkCheckBox(fmt2, text="NCNN")
         self.widgets["chk_ncnn"].pack(side="left", padx=10)
-        ToolTip(self.widgets["chk_ncnn"], "Export NCNN (Tencent) — via ONNX.\n[+] Léger, optimisé pour mobile et CPU.\n[-] Nécessite onnx2ncnn installé séparément.")
+        ToolTip(self.widgets["chk_ncnn"], _t("Export NCNN (Tencent) — via ONNX.\n[+] Léger, optimisé pour mobile et CPU.\n[-] Nécessite onnx2ncnn installé séparément.", "NCNN export (Tencent) — via ONNX.\n[+] Lightweight, optimized for mobile and CPU.\n[-] Requires onnx2ncnn installed separately."))
 
         self.widgets["chk_tensorrt"] = ctk.CTkCheckBox(fmt2, text="TensorRT")
         self.widgets["chk_tensorrt"].pack(side="left", padx=10)
-        ToolTip(self.widgets["chk_tensorrt"], "Export TensorRT (NVIDIA) — via ONNX.\n[+] Performances maximales sur GPU NVIDIA.\n[-] Spécifique à la carte GPU (pas portable).\n[-] Nécessite TensorRT SDK installé.")
+        ToolTip(self.widgets["chk_tensorrt"], _t("Export TensorRT (NVIDIA) — via ONNX.\n[+] Performances maximales sur GPU NVIDIA.\n[-] Spécifique à la carte GPU (pas portable).\n[-] Nécessite TensorRT SDK installé.", "TensorRT export (NVIDIA) — via ONNX.\n[+] Maximum performance on NVIDIA GPU.\n[-] GPU-specific (not portable).\n[-] Requires TensorRT SDK installed."))
 
         # Paramètres avancés
-        self.add_header(f, "Paramètres")
+        self.add_header(f, _t("Paramètres", "Parameters"))
         params = ctk.CTkFrame(f, fg_color="transparent")
         params.pack(fill="x", pady=5)
 
-        ctk.CTkLabel(params, text="Architecture :").pack(side="left")
+        ctk.CTkLabel(params, text=_t("Architecture :", "Architecture:")).pack(side="left")
         self.widgets["conv_arch"] = ctk.CTkOptionMenu(
             params, values=["Auto-detect", "omnisr", "span", "realplksr", "compact", "esrgan", "hat", "dat", "swinir"], width=130
         )
@@ -1321,7 +1341,7 @@ class ToolsTab(ctk.CTkFrame):
         self.widgets["conv_scale"].pack(side="left", padx=5)
         self.widgets["conv_scale"].set("Auto")
 
-        ctk.CTkButton(f, text="Convertir", fg_color="#3498db", command=self.run_conv).pack(fill="x", pady=15)
+        ctk.CTkButton(f, text=_t("Convertir", "Convert"), fg_color="#3498db", command=self.run_conv).pack(fill="x", pady=15)
         self.widgets["log_conv"] = ctk.CTkTextbox(f, height=100)
         self.widgets["log_conv"].pack(fill="both", expand=True, pady=5)
         return f
@@ -1329,7 +1349,7 @@ class ToolsTab(ctk.CTkFrame):
     def run_conv(self):
         pth = self.widgets["conv_pth"].get()
         if not pth or not os.path.exists(pth):
-            messagebox.showerror("Erreur", "Modèle introuvable.")
+            messagebox.showerror(_t("Erreur", "Error"), _t("Modèle introuvable.", "Model not found."))
             return
 
         self.widgets["log_conv"].delete("1.0", "end")
@@ -1343,7 +1363,7 @@ class ToolsTab(ctk.CTkFrame):
         do_trt = bool(self.widgets["chk_tensorrt"].get())
 
         if not any([do_onnx, do_fp16, do_safe, do_ncnn, do_trt]):
-            messagebox.showinfo("Info", "Sélectionnez au moins un format.")
+            messagebox.showinfo(_t("Info", "Info"), _t("Sélectionnez au moins un format.", "Select at least one format."))
             return
 
         def log(msg):
@@ -1352,7 +1372,7 @@ class ToolsTab(ctk.CTkFrame):
         def worker():
             try:
                 import torch
-                log(f"Chargement : {os.path.basename(pth)}")
+                log(f"{_t('Chargement', 'Loading')} : {os.path.basename(pth)}")
                 state = torch.load(pth, map_location="cpu", weights_only=False)
 
                 # Extract weights
@@ -1364,21 +1384,21 @@ class ToolsTab(ctk.CTkFrame):
                 base = os.path.splitext(os.path.basename(pth))[0]
 
                 if do_fp16:
-                    log("→ Conversion FP16...")
+                    log(f"→ {_t('Conversion FP16...', 'FP16 conversion...')}")
                     fp16_state = {k: v.half() if v.is_floating_point() else v for k, v in state.items()}
                     fp16_path = os.path.join(out_dir, f"{base}_fp16.pth")
                     torch.save(fp16_state, fp16_path)
                     log(f"  ✅ {fp16_path}")
 
                 if do_safe:
-                    log("→ Conversion SafeTensors...")
+                    log(f"→ {_t('Conversion SafeTensors...', 'SafeTensors conversion...')}")
                     try:
                         from safetensors.torch import save_file
                         safe_path = os.path.join(out_dir, f"{base}.safetensors")
                         save_file(state, safe_path)
                         log(f"  ✅ {safe_path}")
                     except ImportError:
-                        log("  ❌ safetensors non installé (pip install safetensors)")
+                        log(f"  ❌ {_t('safetensors non installé (pip install safetensors)', 'safetensors not installed (pip install safetensors)')}")
 
                 if do_onnx or do_ncnn or do_trt:
                     # Use neosr/redux converter if available
@@ -1391,23 +1411,23 @@ class ToolsTab(ctk.CTkFrame):
                         creationflags = 0x08000000 if sys.platform == "win32" else 0
                         result = subprocess.run(cmd, capture_output=True, text=True, timeout=120, creationflags=creationflags)
                         if result.returncode == 0:
-                            log("  ✅ ONNX exporté")
+                            log(f"  ✅ {_t('ONNX exporté', 'ONNX exported')}")
                         else:
                             log(f"  ⚠️ {result.stderr.strip()[:200]}")
                     except Exception as e:
                         log(f"  ❌ {e}")
 
                     if do_ncnn:
-                        log("→ Pour NCNN : convertissez le fichier .onnx avec 'onnx2ncnn' (outil séparé)")
+                        log(_t("→ Pour NCNN : convertissez le fichier .onnx avec 'onnx2ncnn' (outil séparé)", "→ For NCNN: convert the .onnx file with 'onnx2ncnn' (separate tool)"))
                         log("  → https://github.com/Tencent/ncnn/wiki/how-to-build")
 
                     if do_trt:
-                        log("→ Pour TensorRT : utilisez 'trtexec --onnx=model.onnx --saveEngine=model.trt'")
-                        log("  → Nécessite NVIDIA TensorRT SDK")
+                        log(_t("→ Pour TensorRT : utilisez 'trtexec --onnx=model.onnx --saveEngine=model.trt'", "→ For TensorRT: use 'trtexec --onnx=model.onnx --saveEngine=model.trt'"))
+                        log(f"  → {_t('Nécessite NVIDIA TensorRT SDK', 'Requires NVIDIA TensorRT SDK')}")
 
-                log("✅ Conversion terminée.")
+                log(f"✅ {_t('Conversion terminée.', 'Conversion complete.')}")
             except Exception as e:
-                log(f"❌ Erreur : {e}")
+                log(f"❌ {_t('Erreur', 'Error')} : {e}")
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -1416,9 +1436,9 @@ class ToolsTab(ctk.CTkFrame):
     # ==========================================
     def create_page_lmdb(self):
         f = ctk.CTkFrame(self.right_panel, fg_color="transparent")
-        self.add_header(f, "Créateur LMDB", "Optimiser les datasets pour la vitesse de lecture.")
-        self.add_path_row(f, "Source Images :", "lmdb_src")
-        self.add_path_row(f, "Sortie (.lmdb) :", "lmdb_dst")
+        self.add_header(f, _t("Créateur LMDB", "LMDB Creator"), _t("Optimiser les datasets pour la vitesse de lecture.", "Optimize datasets for read speed."))
+        self.add_path_row(f, _t("Source Images :", "Source Images:"), "lmdb_src")
+        self.add_path_row(f, _t("Sortie (.lmdb) :", "Output (.lmdb):"), "lmdb_dst")
 
         btns = ctk.CTkFrame(f, fg_color="transparent")
         btns.pack(fill="x", pady=20)
@@ -1430,7 +1450,7 @@ class ToolsTab(ctk.CTkFrame):
         self.widgets["prog_lmdb"] = ctk.CTkProgressBar(f)
         self.widgets["prog_lmdb"].pack(fill="x")
         self.widgets["prog_lmdb"].set(0)
-        self.widgets["lbl_lmdb"] = ctk.CTkLabel(f, text="En attente...")
+        self.widgets["lbl_lmdb"] = ctk.CTkLabel(f, text=_t("En attente...", "Waiting..."))
         self.widgets["lbl_lmdb"].pack()
         return f
 
@@ -1438,7 +1458,7 @@ class ToolsTab(ctk.CTkFrame):
         src = self.widgets["lmdb_src"].get()
         dst = self.widgets["lmdb_dst"].get()
         if not src or not dst:
-            messagebox.showerror("Erreur", "Chemins requis.")
+            messagebox.showerror(_t("Erreur", "Error"), _t("Chemins requis.", "Paths required."))
             return
         if not dst.endswith(".lmdb"):
             dst += ".lmdb"
@@ -1475,7 +1495,7 @@ except Exception as e: print(f"ERROR:{{e}}")
                         self._ui_update(self.widgets["prog_lmdb"].set, float(parts[0]) / float(parts[1]))
                         self._ui_update(self.widgets["lbl_lmdb"].configure, text=f"{parts[0]}/{parts[1]}")
                     elif "DONE" in line:
-                        self._ui_update(messagebox.showinfo, "Succès", "LMDB Créé !")
+                        self._ui_update(messagebox.showinfo, _t("Succès", "Success"), _t("LMDB Créé !", "LMDB Created!"))
             except Exception:
                 pass
             finally:
@@ -1495,11 +1515,11 @@ except Exception as e: print(f"ERROR:{{e}}")
     # ==========================================
     def create_page_metrics(self):
         f = ctk.CTkFrame(self.right_panel, fg_color="transparent")
-        self.add_header(f, "Métriques", "Calcul PSNR/SSIM entre deux dossiers.")
-        self.add_path_row(f, "Référence (GT) :", "met_ref")
-        self.add_path_row(f, "Distorsion (Sortie) :", "met_dist")
-        ctk.CTkButton(f, text="Calculer", fg_color="#9b59b6", command=self.run_met).pack(fill="x", pady=20)
-        self.widgets["lbl_met"] = ctk.CTkLabel(f, text="Résultat : --", font=("Consolas", 12))
+        self.add_header(f, _t("Métriques", "Metrics"), _t("Calcul PSNR/SSIM entre deux dossiers.", "Compute PSNR/SSIM between two folders."))
+        self.add_path_row(f, _t("Référence (GT) :", "Reference (GT):"), "met_ref")
+        self.add_path_row(f, _t("Distorsion (Sortie) :", "Distortion (Output):"), "met_dist")
+        ctk.CTkButton(f, text=_t("Calculer", "Compute"), fg_color="#9b59b6", command=self.run_met).pack(fill="x", pady=20)
+        self.widgets["lbl_met"] = ctk.CTkLabel(f, text=_t("Résultat : --", "Result: --"), font=("Consolas", 12))
         self.widgets["lbl_met"].pack()
         return f
 
@@ -1508,7 +1528,7 @@ except Exception as e: print(f"ERROR:{{e}}")
         dist = self.widgets["met_dist"].get()
         if not ref or not dist:
             return
-        self.widgets["lbl_met"].configure(text="Calcul en cours...")
+        self.widgets["lbl_met"].configure(text=_t("Calcul en cours...", "Computing..."))
 
         def calc():
             try:
@@ -1523,10 +1543,10 @@ except Exception as e: print(f"ERROR:{{e}}")
                         i2 = np.array(Image.open(os.path.join(dist, fname)).convert("RGB")).astype(float)
                         mse = np.mean((i1 - i2) ** 2)
                         psnrs.append(20 * np.log10(255.0 / np.sqrt(mse)) if mse != 0 else 100)
-                result = f"PSNR Moyen : {np.mean(psnrs):.2f} dB ({len(psnrs)} images)" if psnrs else "Aucune image commune trouvée"
+                result = f"{_t('PSNR Moyen', 'Average PSNR')} : {np.mean(psnrs):.2f} dB ({len(psnrs)} {_t('images', 'images')})" if psnrs else _t("Aucune image commune trouvée", "No common images found")
                 self._ui_update(self.widgets["lbl_met"].configure, text=result)
             except Exception as e:
-                self._ui_update(self.widgets["lbl_met"].configure, text=f"Erreur: {e}")
+                self._ui_update(self.widgets["lbl_met"].configure, text=f"{_t('Erreur', 'Error')}: {e}")
 
         threading.Thread(target=calc, daemon=True).start()
 
@@ -1535,9 +1555,9 @@ except Exception as e: print(f"ERROR:{{e}}")
     # ==========================================
     def create_page_checker(self):
         f = ctk.CTkFrame(self.right_panel, fg_color="transparent")
-        self.add_header(f, "Vérificateur Dataset", "Trouver les images corrompues.")
-        self.add_path_row(f, "Dossier :", "chk_src")
-        ctk.CTkButton(f, text="Scanner", fg_color="#f39c12", command=self.run_chk).pack(fill="x", pady=10)
+        self.add_header(f, _t("Vérificateur Dataset", "Dataset Checker"), _t("Trouver les images corrompues.", "Find corrupted images."))
+        self.add_path_row(f, _t("Dossier :", "Folder:"), "chk_src")
+        ctk.CTkButton(f, text=_t("Scanner", "Scan"), fg_color="#f39c12", command=self.run_chk).pack(fill="x", pady=10)
         self.widgets["log_chk"] = ctk.CTkTextbox(f)
         self.widgets["log_chk"].pack(fill="both", expand=True)
         return f
@@ -1563,7 +1583,7 @@ except Exception as e: print(f"ERROR:{{e}}")
                         except Exception:
                             bad += 1
                             self._ui_update(self.widgets["log_chk"].insert, "end", f"[BAD] {fname}\n")
-            self._ui_update(self.widgets["log_chk"].insert, "end", f"\nTerminé. Total: {cnt}, Corrompus: {bad}\n")
+            self._ui_update(self.widgets["log_chk"].insert, "end", f"\n{_t('Terminé', 'Done')}. {_t('Total', 'Total')}: {cnt}, {_t('Corrompus', 'Corrupted')}: {bad}\n")
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -1572,19 +1592,19 @@ except Exception as e: print(f"ERROR:{{e}}")
     # ==========================================
     def create_page_history(self):
         f = ctk.CTkFrame(self.right_panel, fg_color="transparent")
-        self.add_header(f, "Historique des Entrainements",
-                        "Tous les trainings lances depuis cette app, avec leurs metriques.")
+        self.add_header(f, _t("Historique des Entrainements", "Training History"),
+                        _t("Tous les trainings lances depuis cette app, avec leurs metriques.", "All trainings launched from this app, with their metrics."))
 
         # Control buttons
         ctrl = ctk.CTkFrame(f, fg_color="transparent")
         ctrl.pack(fill="x", pady=5)
-        ctk.CTkButton(ctrl, text="🔄 Rafraichir", fg_color="#3498db", width=120,
+        ctk.CTkButton(ctrl, text=_t("🔄 Rafraichir", "🔄 Refresh"), fg_color="#3498db", width=120,
                       command=self._refresh_history).pack(side="left", padx=5)
-        ctk.CTkButton(ctrl, text="📊 Stats par Architecture", fg_color="#9b59b6", width=200,
+        ctk.CTkButton(ctrl, text=_t("📊 Stats par Architecture", "📊 Stats by Architecture"), fg_color="#9b59b6", width=200,
                       command=self._show_arch_stats).pack(side="left", padx=5)
-        ctk.CTkButton(ctrl, text="💾 Exporter Benchmark TXT", fg_color="#27ae60", width=200,
+        ctk.CTkButton(ctrl, text=_t("💾 Exporter Benchmark TXT", "💾 Export Benchmark TXT"), fg_color="#27ae60", width=200,
                       command=self._export_history_txt).pack(side="left", padx=5)
-        ctk.CTkButton(ctrl, text="🗑 Tout Supprimer", fg_color="#c0392b", width=160,
+        ctk.CTkButton(ctrl, text=_t("🗑 Tout Supprimer", "🗑 Delete All"), fg_color="#c0392b", width=160,
                       command=self._delete_all_history).pack(side="right", padx=5)
 
         # Scrollable list
@@ -1603,15 +1623,16 @@ except Exception as e: print(f"ERROR:{{e}}")
         trainings = get_recent_trainings(limit=50)
         if not trainings:
             ctk.CTkLabel(self.widgets["history_list"],
-                         text="Aucun training enregistre.\nLes trainings sont automatiquement\nenregistres lorsque vous lancez l'entrainement.",
+                         text=_t("Aucun training enregistre.\nLes trainings sont automatiquement\nenregistres lorsque vous lancez l'entrainement.",
+                                 "No training recorded.\nTrainings are automatically\nrecorded when you start training."),
                          text_color="#666", font=("Roboto", 12), justify="center").pack(pady=40)
             return
 
         # Header
         hdr = ctk.CTkFrame(self.widgets["history_list"], fg_color="#2B2B4B", corner_radius=4)
         hdr.pack(fill="x", pady=(0, 3))
-        for txt, w in [("Nom", 190), ("Arch", 90), ("Iter", 80), ("PSNR", 70),
-                       ("Vitesse", 80), ("Duree", 80), ("Date", 120), ("Status", 80), ("", 30)]:
+        for txt, w in [(_t("Nom", "Name"), 190), ("Arch", 90), ("Iter", 80), ("PSNR", 70),
+                       (_t("Vitesse", "Speed"), 80), (_t("Duree", "Duration"), 80), (_t("Date", "Date"), 120), ("Status", 80), ("", 30)]:
             ctk.CTkLabel(hdr, text=txt, font=("Roboto", 9, "bold"),
                          text_color="#AAA", width=w, anchor="w").pack(side="left", padx=4)
 
@@ -1651,7 +1672,7 @@ except Exception as e: print(f"ERROR:{{e}}")
         """Delete one history entry with confirmation."""
         from tkinter import messagebox
         from src.core.training_history import delete_training
-        if messagebox.askyesno("Supprimer", f"Supprimer l'entrainement #{row_id} ?",
+        if messagebox.askyesno(_t("Supprimer", "Delete"), _t(f"Supprimer l'entrainement #{row_id} ?", f"Delete training #{row_id}?"),
                                icon="warning"):
             delete_training(row_id)
             self._refresh_history()
@@ -1660,8 +1681,9 @@ except Exception as e: print(f"ERROR:{{e}}")
         """Delete all history entries with confirmation."""
         from tkinter import messagebox
         from src.core.training_history import delete_all_trainings
-        if messagebox.askyesno("Tout Supprimer",
-                               "Supprimer TOUT l'historique des entrainements ?\nCette action est irreversible.",
+        if messagebox.askyesno(_t("Tout Supprimer", "Delete All"),
+                               _t("Supprimer TOUT l'historique des entrainements ?\nCette action est irreversible.",
+                                  "Delete ALL training history?\nThis action is irreversible."),
                                icon="warning"):
             delete_all_trainings()
             self._refresh_history()
@@ -1673,9 +1695,9 @@ except Exception as e: print(f"ERROR:{{e}}")
         from datetime import datetime
         default_name = f"benchmark_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
         path = fd.asksaveasfilename(
-            title="Exporter Benchmark",
+            title=_t("Exporter Benchmark", "Export Benchmark"),
             defaultextension=".txt",
-            filetypes=[("Fichier texte", "*.txt"), ("Tous", "*.*")],
+            filetypes=[(_t("Fichier texte", "Text file"), "*.txt"), (_t("Tous", "All"), "*.*")],
             initialfile=default_name,
         )
         if not path:
@@ -1685,23 +1707,23 @@ except Exception as e: print(f"ERROR:{{e}}")
             with open(path, "w", encoding="utf-8") as fh:
                 fh.write(content)
             from tkinter import messagebox
-            messagebox.showinfo("Export OK", f"Benchmark exporte :\n{path}")
+            messagebox.showinfo(_t("Export OK", "Export OK"), f"{_t('Benchmark exporté', 'Benchmark exported')} :\n{path}")
         except Exception as e:
             from tkinter import messagebox
-            messagebox.showerror("Erreur Export", str(e))
+            messagebox.showerror(_t("Erreur Export", "Export Error"), str(e))
 
     def _show_arch_stats(self):
         from src.core.training_history import get_stats_by_architecture, format_duration
 
         win = ctk.CTkToplevel(self)
-        win.title("Stats par Architecture")
+        win.title(_t("Stats par Architecture", "Stats by Architecture"))
         win.geometry("700x400")
-        ctk.CTkLabel(win, text="Performance par Architecture",
+        ctk.CTkLabel(win, text=_t("Performance par Architecture", "Performance by Architecture"),
                      font=("Roboto", 16, "bold")).pack(pady=10)
 
         stats = get_stats_by_architecture()
         if not stats:
-            ctk.CTkLabel(win, text="Pas assez de donnees.", text_color="#888").pack(pady=40)
+            ctk.CTkLabel(win, text=_t("Pas assez de donnees.", "Not enough data."), text_color="#888").pack(pady=40)
             return
 
         for s in stats:
@@ -1709,13 +1731,13 @@ except Exception as e: print(f"ERROR:{{e}}")
             row.pack(fill="x", padx=20, pady=3)
             ctk.CTkLabel(row, text=s["architecture"], font=("Roboto", 12, "bold"),
                          text_color="#3498db", width=150, anchor="w").pack(side="left", padx=10, pady=5)
-            ctk.CTkLabel(row, text=f"Trainings: {s['count']}", width=100,
+            ctk.CTkLabel(row, text=f"{_t('Trainings', 'Trainings')}: {s['count']}", width=100,
                          text_color="#AAA").pack(side="left", padx=5)
-            ctk.CTkLabel(row, text=f"PSNR moy: {s['avg_psnr']:.2f}", width=130,
+            ctk.CTkLabel(row, text=f"{_t('PSNR moy', 'Avg PSNR')}: {s['avg_psnr']:.2f}", width=130,
                          text_color="#2ecc71").pack(side="left", padx=5)
-            ctk.CTkLabel(row, text=f"PSNR max: {s['max_psnr']:.2f}", width=130,
+            ctk.CTkLabel(row, text=f"{_t('PSNR max', 'Max PSNR')}: {s['max_psnr']:.2f}", width=130,
                          text_color="#27ae60").pack(side="left", padx=5)
-            ctk.CTkLabel(row, text=f"Duree moy: {format_duration(int(s['avg_duration']))}",
+            ctk.CTkLabel(row, text=f"{_t('Duree moy', 'Avg duration')}: {format_duration(int(s['avg_duration']))}",
                          text_color="#888").pack(side="left", padx=5)
 
     # ==========================================
@@ -1723,17 +1745,18 @@ except Exception as e: print(f"ERROR:{{e}}")
     # ==========================================
     def create_page_resume(self):
         f = ctk.CTkFrame(self.right_panel, fg_color="transparent")
-        self.add_header(f, "Trainings Interrompus",
-                        "Detecte les trainings qui se sont arretes avant la fin et propose de les reprendre.")
+        self.add_header(f, _t("Trainings Interrompus", "Interrupted Trainings"),
+                        _t("Detecte les trainings qui se sont arretes avant la fin et propose de les reprendre.", "Detects trainings that stopped before completion and offers to resume them."))
 
-        ctk.CTkButton(f, text="🔍 Scanner experiments/", fg_color="#e67e22", width=200,
+        ctk.CTkButton(f, text=_t("🔍 Scanner experiments/", "🔍 Scan experiments/"), fg_color="#e67e22", width=200,
                       command=self._scan_resume).pack(pady=10)
 
         self.widgets["resume_list"] = ctk.CTkScrollableFrame(f, fg_color="#1a1a2e", height=400)
         self.widgets["resume_list"].pack(fill="both", expand=True, pady=10)
 
         ctk.CTkLabel(self.widgets["resume_list"],
-                     text="Cliquez sur 'Scanner' pour rechercher les trainings interrompus.",
+                     text=_t("Cliquez sur 'Scanner' pour rechercher les trainings interrompus.",
+                             "Click 'Scan' to search for interrupted trainings."),
                      text_color="#888").pack(pady=40)
         return f
 
@@ -1743,7 +1766,7 @@ except Exception as e: print(f"ERROR:{{e}}")
         for w in self.widgets["resume_list"].winfo_children():
             w.destroy()
 
-        ctk.CTkLabel(self.widgets["resume_list"], text="Scan en cours...",
+        ctk.CTkLabel(self.widgets["resume_list"], text=_t("Scan en cours...", "Scanning..."),
                      text_color="#888").pack(pady=20)
         self.update_idletasks()
 
@@ -1761,12 +1784,13 @@ except Exception as e: print(f"ERROR:{{e}}")
 
         if not interrupted:
             ctk.CTkLabel(self.widgets["resume_list"],
-                         text="✅ Aucun training interrompu trouve.\n\nTous vos trainings se sont termines correctement.",
+                         text=_t("✅ Aucun training interrompu trouve.\n\nTous vos trainings se sont termines correctement.",
+                                 "✅ No interrupted training found.\n\nAll your trainings completed successfully."),
                          text_color="#2ecc71", font=("Roboto", 12)).pack(pady=40)
             return
 
         ctk.CTkLabel(self.widgets["resume_list"],
-                     text=f"⚠ {len(interrupted)} training(s) interrompu(s) detecte(s) :",
+                     text=f"⚠ {len(interrupted)} {_t('training(s) interrompu(s) detecte(s) :', 'interrupted training(s) detected:')}",
                      text_color="#f39c12", font=("Roboto", 12, "bold")).pack(anchor="w", padx=10, pady=10)
 
         for item in interrupted:
@@ -1779,36 +1803,36 @@ except Exception as e: print(f"ERROR:{{e}}")
             ctk.CTkLabel(top, text=item["name"], font=("Roboto", 12, "bold"),
                          text_color="#3498db").pack(side="left")
             ctk.CTkLabel(top, text=f" [{item['engine']}]", text_color="#666").pack(side="left")
-            ctk.CTkLabel(top, text=f"Modifie : {item['mtime_str']}",
+            ctk.CTkLabel(top, text=f"{_t('Modifié', 'Modified')} : {item['mtime_str']}",
                          text_color="#888", font=("Roboto", 9)).pack(side="right")
 
             mid = ctk.CTkFrame(row, fg_color="transparent")
             mid.pack(fill="x", padx=10, pady=2)
-            ctk.CTkLabel(mid, text=f"Iter atteinte : {item['last_iter']}",
+            ctk.CTkLabel(mid, text=f"{_t('Iter atteinte', 'Iter reached')} : {item['last_iter']}",
                          text_color="#AAA").pack(side="left")
             if item["state_file"]:
-                ctk.CTkLabel(mid, text=f"  ✓ State file disponible",
+                ctk.CTkLabel(mid, text=f"  ✓ {_t('State file disponible', 'State file available')}",
                              text_color="#2ecc71").pack(side="left", padx=10)
             else:
-                ctk.CTkLabel(mid, text=f"  ⚠ Pas de .state",
+                ctk.CTkLabel(mid, text=f"  ⚠ {_t('Pas de .state', 'No .state file')}",
                              text_color="#e67e22").pack(side="left", padx=10)
 
             btns = ctk.CTkFrame(row, fg_color="transparent")
             btns.pack(fill="x", padx=10, pady=(2, 8))
             if cfg:
-                ctk.CTkLabel(btns, text=f"Config : {os.path.basename(cfg)}",
+                ctk.CTkLabel(btns, text=f"{_t('Config', 'Config')} : {os.path.basename(cfg)}",
                              text_color="#888", font=("Roboto", 9)).pack(side="left")
-                ctk.CTkButton(btns, text="▶ Reprendre", fg_color="#27ae60", width=120,
+                ctk.CTkButton(btns, text=_t("▶ Reprendre", "▶ Resume"), fg_color="#27ae60", width=120,
                               command=lambda c=cfg: self._resume_training(c)).pack(side="right", padx=2)
             else:
-                ctk.CTkLabel(btns, text="(Config non trouvee)",
+                ctk.CTkLabel(btns, text=_t("(Config non trouvee)", "(Config not found)"),
                              text_color="#e74c3c", font=("Roboto", 9)).pack(side="left")
-            ctk.CTkButton(btns, text="📁 Ouvrir dossier", fg_color="#666", width=120,
+            ctk.CTkButton(btns, text=_t("📁 Ouvrir dossier", "📁 Open folder"), fg_color="#666", width=120,
                           command=lambda p=item["path"]: self._open_folder(p)).pack(side="right", padx=2)
 
     def _resume_training(self, config_path):
         from tkinter import messagebox
-        if messagebox.askyesno("Reprendre", f"Lancer l'entrainement avec la config :\n{os.path.basename(config_path)} ?"):
+        if messagebox.askyesno(_t("Reprendre", "Resume"), _t(f"Lancer l'entrainement avec la config :\n{os.path.basename(config_path)} ?", f"Start training with config:\n{os.path.basename(config_path)}?")):
             try:
                 app = self.winfo_toplevel()
                 if hasattr(app, "train_tab") and app.train_tab:
@@ -1820,7 +1844,7 @@ except Exception as e: print(f"ERROR:{{e}}")
                                 app.tab_view.set(tab_name)
                                 break
             except Exception as e:
-                messagebox.showerror("Erreur", f"Impossible de lancer : {e}")
+                messagebox.showerror(_t("Erreur", "Error"), f"{_t('Impossible de lancer', 'Cannot start')} : {e}")
 
     def _open_folder(self, path):
         try:
@@ -1844,13 +1868,13 @@ except Exception as e: print(f"ERROR:{{e}}")
         ctrl = ctk.CTkFrame(f, fg_color="transparent")
         ctrl.pack(fill="x", pady=5)
 
-        ctk.CTkLabel(ctrl, text="Image source :").pack(side="left", padx=5)
+        ctk.CTkLabel(ctrl, text=_t("Image source :", "Source image:")).pack(side="left", padx=5)
         self.widgets["otf_src"] = ctk.CTkEntry(ctrl, width=400)
         self.widgets["otf_src"].pack(side="left", padx=5)
         ctk.CTkButton(ctrl, text="...", width=30,
                       command=lambda: self._browse_file(self.widgets["otf_src"])).pack(side="left", padx=2)
 
-        ctk.CTkButton(ctrl, text="Charger config TOML/YML", fg_color="#3498db",
+        ctk.CTkButton(ctrl, text=_t("Charger config TOML/YML", "Load TOML/YML config"), fg_color="#3498db",
                       command=self._otf_load_config).pack(side="left", padx=10)
 
         ctrl2 = ctk.CTkFrame(f, fg_color="transparent")
@@ -1860,12 +1884,12 @@ except Exception as e: print(f"ERROR:{{e}}")
         self.widgets["otf_scale"].pack(side="left", padx=5)
         self.widgets["otf_scale"].set("4")
 
-        ctk.CTkLabel(ctrl2, text="Echantillons :").pack(side="left", padx=15)
+        ctk.CTkLabel(ctrl2, text=_t("Echantillons :", "Samples:")).pack(side="left", padx=15)
         self.widgets["otf_n_samples"] = ctk.CTkOptionMenu(ctrl2, values=["1", "3", "4", "6"], width=60)
         self.widgets["otf_n_samples"].pack(side="left", padx=5)
         self.widgets["otf_n_samples"].set("4")
 
-        ctk.CTkButton(ctrl2, text="🎲 Generer Apercu", fg_color="#9b59b6", width=200,
+        ctk.CTkButton(ctrl2, text=_t("🎲 Generer Apercu", "🎲 Generate Preview"), fg_color="#9b59b6", width=200,
                       command=self._otf_generate_preview).pack(side="left", padx=15)
 
         self.widgets["otf_preview_area"] = ctk.CTkScrollableFrame(f, fg_color="#1a1a2e", height=500)
@@ -1873,7 +1897,8 @@ except Exception as e: print(f"ERROR:{{e}}")
 
         self._otf_config = {}
         ctk.CTkLabel(self.widgets["otf_preview_area"],
-                     text="Charger une config + image, puis cliquer 'Generer Apercu'.",
+                     text=_t("Charger une config + image, puis cliquer 'Generer Apercu'.",
+                             "Load a config + image, then click 'Generate Preview'."),
                      text_color="#888").pack(pady=40)
         return f
 
@@ -1895,9 +1920,9 @@ except Exception as e: print(f"ERROR:{{e}}")
                 with open(path, "r", encoding="utf-8") as fp:
                     cfg = yaml.safe_load(fp) or {}
             self._otf_config = cfg
-            messagebox.showinfo("Config", f"Config chargee :\n{os.path.basename(path)}")
+            messagebox.showinfo("Config", f"{_t('Config chargée', 'Config loaded')} :\n{os.path.basename(path)}")
         except Exception as e:
-            messagebox.showerror("Erreur", str(e))
+            messagebox.showerror(_t("Erreur", "Error"), str(e))
 
     def _otf_generate_preview(self):
         from tkinter import messagebox
@@ -1906,10 +1931,10 @@ except Exception as e: print(f"ERROR:{{e}}")
 
         src = self.widgets["otf_src"].get()
         if not src or not os.path.exists(src):
-            messagebox.showerror("Erreur", "Image source non trouvee.")
+            messagebox.showerror(_t("Erreur", "Error"), _t("Image source non trouvee.", "Source image not found."))
             return
         if not self._otf_config:
-            messagebox.showerror("Erreur", "Chargez d'abord une config TOML/YML.")
+            messagebox.showerror(_t("Erreur", "Error"), _t("Chargez d'abord une config TOML/YML.", "Load a TOML/YML config first."))
             return
 
         scale = int(self.widgets["otf_scale"].get())
@@ -1923,13 +1948,13 @@ except Exception as e: print(f"ERROR:{{e}}")
             samples = generate_preview_samples([src], self._otf_config, scale=scale,
                                                  n_samples_per_image=n)
         except Exception as e:
-            ctk.CTkLabel(self.widgets["otf_preview_area"], text=f"Erreur : {e}",
+            ctk.CTkLabel(self.widgets["otf_preview_area"], text=f"{_t('Erreur', 'Error')} : {e}",
                          text_color="#e74c3c").pack(pady=20)
             return
 
         if not samples:
             ctk.CTkLabel(self.widgets["otf_preview_area"],
-                         text="Aucun echantillon genere.", text_color="#888").pack(pady=20)
+                         text=_t("Aucun echantillon genere.", "No sample generated."), text_color="#888").pack(pady=20)
             return
 
         self._otf_photo_refs = []  # Keep refs to avoid GC
@@ -1938,9 +1963,9 @@ except Exception as e: print(f"ERROR:{{e}}")
         for i, s in enumerate(samples):
             row = ctk.CTkFrame(self.widgets["otf_preview_area"], fg_color="#2B2B3B", corner_radius=6)
             row.pack(fill="x", padx=5, pady=5)
-            ctk.CTkLabel(row, text=f"Echantillon {i+1}", font=("Roboto", 11, "bold"),
+            ctk.CTkLabel(row, text=f"{_t('Echantillon', 'Sample')} {i+1}", font=("Roboto", 11, "bold"),
                          text_color="#9b59b6").pack(anchor="w", padx=10, pady=(5, 0))
-            log_text = " | ".join(s["log"]) if s["log"] else "(aucune degradation appliquee)"
+            log_text = " | ".join(s["log"]) if s["log"] else _t("(aucune degradation appliquee)", "(no degradation applied)")
             ctk.CTkLabel(row, text=log_text, text_color="#AAA",
                          font=("Roboto", 9), wraplength=900).pack(anchor="w", padx=10)
 
@@ -1973,23 +1998,29 @@ except Exception as e: print(f"ERROR:{{e}}")
 
         ctrl = ctk.CTkFrame(f, fg_color="transparent")
         ctrl.pack(fill="x", pady=5)
-        ctk.CTkLabel(ctrl, text="Fichier YAML :").pack(side="left", padx=5)
+        ctk.CTkLabel(ctrl, text=_t("Fichier YAML :", "YAML file:")).pack(side="left", padx=5)
         self.widgets["import_src"] = ctk.CTkEntry(ctrl, width=500)
         self.widgets["import_src"].pack(side="left", padx=5)
         ctk.CTkButton(ctrl, text="...", width=30,
                       command=lambda: self._browse_file(self.widgets["import_src"])).pack(side="left", padx=2)
-        ctk.CTkButton(ctrl, text="🔍 Analyser", fg_color="#3498db", width=120,
+        ctk.CTkButton(ctrl, text=_t("🔍 Analyser", "🔍 Analyze"), fg_color="#3498db", width=120,
                       command=self._import_analyze).pack(side="left", padx=10)
 
         self.widgets["import_summary"] = ctk.CTkTextbox(f, height=300, font=("Consolas", 11))
         self.widgets["import_summary"].pack(fill="both", expand=True, pady=10)
         self.widgets["import_summary"].insert("1.0",
-            "Selectionnez un fichier .yml/.yaml de config Real-ESRGAN, SwinIR, RCAN, HAT...\n"
-            "Cliquez 'Analyser' pour voir le resume.\n\n"
-            "Sources de configs :\n"
-            "  - https://github.com/xinntao/Real-ESRGAN/tree/master/options\n"
-            "  - https://github.com/JingyunLiang/SwinIR/tree/main/options\n"
-            "  - https://github.com/XPixelGroup/BasicSR/tree/master/options\n")
+            _t("Selectionnez un fichier .yml/.yaml de config Real-ESRGAN, SwinIR, RCAN, HAT...\n"
+               "Cliquez 'Analyser' pour voir le resume.\n\n"
+               "Sources de configs :\n"
+               "  - https://github.com/xinntao/Real-ESRGAN/tree/master/options\n"
+               "  - https://github.com/JingyunLiang/SwinIR/tree/main/options\n"
+               "  - https://github.com/XPixelGroup/BasicSR/tree/master/options\n",
+               "Select a .yml/.yaml config file from Real-ESRGAN, SwinIR, RCAN, HAT...\n"
+               "Click 'Analyze' to see the summary.\n\n"
+               "Config sources:\n"
+               "  - https://github.com/xinntao/Real-ESRGAN/tree/master/options\n"
+               "  - https://github.com/JingyunLiang/SwinIR/tree/main/options\n"
+               "  - https://github.com/XPixelGroup/BasicSR/tree/master/options\n"))
         self.widgets["import_summary"].configure(state="disabled")
 
         return f
@@ -2000,17 +2031,19 @@ except Exception as e: print(f"ERROR:{{e}}")
 
         path = self.widgets["import_src"].get()
         if not path or not os.path.exists(path):
-            messagebox.showerror("Erreur", "Fichier non trouve.")
+            messagebox.showerror(_t("Erreur", "Error"), _t("Fichier non trouve.", "File not found."))
             return
 
         summary = get_import_summary(path)
         self.widgets["import_summary"].configure(state="normal")
         self.widgets["import_summary"].delete("1.0", "end")
         self.widgets["import_summary"].insert("1.0",
-            f"Resume de l'import :\n\n{summary}\n\n" +
+            _t("Résumé de l'import", "Import summary") + f" :\n\n{summary}\n\n" +
             "─" * 50 + "\n\n" +
-            "Vous pouvez ensuite copier les valeurs vers la Configuration manuellement,\n" +
-            "ou les utiliser comme reference pour vos tests.")
+            _t("Vous pouvez ensuite copier les valeurs vers la Configuration manuellement,\n"
+               "ou les utiliser comme reference pour vos tests.",
+               "You can then copy the values to the Configuration manually,\n"
+               "or use them as a reference for your tests."))
         self.widgets["import_summary"].configure(state="disabled")
 
     # ==========================================
@@ -2018,39 +2051,48 @@ except Exception as e: print(f"ERROR:{{e}}")
     # ==========================================
     def create_page_model_info(self):
         f = ctk.CTkFrame(self.right_panel, fg_color="transparent")
-        self.add_header(f, "Inspection Modele",
-                        "Inspecte un fichier .pth/.onnx/.safetensors pour identifier l'architecture, le scale, les modules.")
+        self.add_header(f, _t("Inspection Modele", "Model Inspection"),
+                        _t("Inspecte un fichier .pth/.onnx/.safetensors pour identifier l'architecture, le scale, les modules.",
+                           "Inspect a .pth/.onnx/.safetensors file to identify architecture, scale, and modules."))
 
         ctrl = ctk.CTkFrame(f, fg_color="transparent")
         ctrl.pack(fill="x", pady=5)
-        ctk.CTkLabel(ctrl, text="Modele :", width=70, anchor="w").pack(side="left", padx=5)
+        ctk.CTkLabel(ctrl, text=_t("Modele :", "Model:"), width=70, anchor="w").pack(side="left", padx=5)
         self.widgets["mi_path"] = ctk.CTkEntry(ctrl, width=600)
         self.widgets["mi_path"].pack(side="left", padx=5)
         ctk.CTkButton(ctrl, text="...", width=30,
                       command=lambda: self._browse_file(self.widgets["mi_path"])).pack(side="left", padx=2)
-        ctk.CTkButton(ctrl, text="🔍 Inspecter", fg_color="#3498db", width=120,
+        ctk.CTkButton(ctrl, text=_t("🔍 Inspecter", "🔍 Inspect"), fg_color="#3498db", width=120,
                       command=self._inspect_model).pack(side="left", padx=10)
 
         # Convert to safetensors button
         conv = ctk.CTkFrame(f, fg_color="transparent")
         conv.pack(fill="x", pady=5)
-        ctk.CTkButton(conv, text="💾 Convertir vers .safetensors",
+        ctk.CTkButton(conv, text=_t("💾 Convertir vers .safetensors", "💾 Convert to .safetensors"),
                       fg_color="#16a085", command=self._convert_safetensors).pack(side="left", padx=5)
-        ToolTip(conv, "Convertit un .pth en .safetensors (plus securise, charge plus vite)")
+        ToolTip(conv, _t("Convertit un .pth en .safetensors (plus securise, charge plus vite)", "Converts a .pth to .safetensors (more secure, faster loading)"))
 
         self.widgets["mi_output"] = ctk.CTkTextbox(f, height=480, font=("Consolas", 11),
                                                      fg_color="#0d0d1a", text_color="#dcdcdc")
         self.widgets["mi_output"].pack(fill="both", expand=True, pady=10)
         self.widgets["mi_output"].insert(
             "1.0",
-            "Sélectionnez un fichier modèle (.pth, .pt, .onnx, .safetensors)\n"
-            "puis cliquez sur 'Inspecter' pour voir :\n"
-            "  - Architecture détectée (RRDBNet, SwinIR, RCAN, OmniSR, HAT, SPAN, ...)\n"
-            "  - Nombre de paramètres et estimation VRAM\n"
-            "  - Top modules par taille\n"
-            "  - Précision (FP32/FP16/etc)\n"
-            "  - Scale inféré (x2, x3, x4...)\n"
-            "  - Métadonnées du checkpoint\n"
+            _t("Sélectionnez un fichier modèle (.pth, .pt, .onnx, .safetensors)\n"
+               "puis cliquez sur 'Inspecter' pour voir :\n"
+               "  - Architecture détectée (RRDBNet, SwinIR, RCAN, OmniSR, HAT, SPAN, ...)\n"
+               "  - Nombre de paramètres et estimation VRAM\n"
+               "  - Top modules par taille\n"
+               "  - Précision (FP32/FP16/etc)\n"
+               "  - Scale inféré (x2, x3, x4...)\n"
+               "  - Métadonnées du checkpoint\n",
+               "Select a model file (.pth, .pt, .onnx, .safetensors)\n"
+               "then click 'Inspect' to see:\n"
+               "  - Detected architecture (RRDBNet, SwinIR, RCAN, OmniSR, HAT, SPAN, ...)\n"
+               "  - Parameter count and VRAM estimate\n"
+               "  - Top modules by size\n"
+               "  - Precision (FP32/FP16/etc)\n"
+               "  - Inferred scale (x2, x3, x4...)\n"
+               "  - Checkpoint metadata\n")
         )
         return f
 
@@ -2059,7 +2101,7 @@ except Exception as e: print(f"ERROR:{{e}}")
         path = self.widgets["mi_path"].get()
         if not path or not os.path.exists(path):
             from tkinter import messagebox
-            messagebox.showerror("Erreur", "Fichier non trouve.")
+            messagebox.showerror(_t("Erreur", "Error"), _t("Fichier non trouve.", "File not found."))
             return
         info = detect_model_format(path)
         text = format_model_info(info)
@@ -2071,10 +2113,10 @@ except Exception as e: print(f"ERROR:{{e}}")
         from tkinter import messagebox
         path = self.widgets["mi_path"].get()
         if not path or not os.path.exists(path):
-            messagebox.showerror("Erreur", "Selectionnez d'abord un .pth.")
+            messagebox.showerror(_t("Erreur", "Error"), _t("Selectionnez d'abord un .pth.", "Select a .pth file first."))
             return
         if not path.endswith(".pth") and not path.endswith(".pt"):
-            messagebox.showwarning("Attention", "Format source recommande : .pth ou .pt")
+            messagebox.showwarning(_t("Attention", "Warning"), _t("Format source recommande : .pth ou .pt", "Recommended source format: .pth or .pt"))
             return
         out = filedialog.asksaveasfilename(
             defaultextension=".safetensors",
@@ -2085,9 +2127,9 @@ except Exception as e: print(f"ERROR:{{e}}")
             return
         ok, msg = convert_pth_to_safetensors(path, out)
         if ok:
-            messagebox.showinfo("Conversion", msg)
+            messagebox.showinfo(_t("Conversion", "Conversion"), msg)
         else:
-            messagebox.showerror("Erreur", msg)
+            messagebox.showerror(_t("Erreur", "Error"), msg)
 
     # ==========================================
     # PAGE 13: GALERIE WEB + PATCH TENSORBOARD
@@ -2100,19 +2142,21 @@ except Exception as e: print(f"ERROR:{{e}}")
         # ─── Section A: HTTP Gallery Server ───
         section_a = ctk.CTkFrame(f, fg_color="#1a1a2e", corner_radius=8)
         section_a.pack(fill="x", padx=5, pady=8)
-        ctk.CTkLabel(section_a, text="A. Serveur Galerie Web (sans toucher a NeoSR)",
+        ctk.CTkLabel(section_a, text=_t("A. Serveur Galerie Web (sans toucher a NeoSR)", "A. Web Gallery Server (without touching NeoSR)"),
                      font=("Roboto", 13, "bold"), text_color="#3498db"
                      ).pack(anchor="w", padx=10, pady=(8, 5))
         ctk.CTkLabel(section_a,
-                     text="Lance un mini-serveur HTTP pointe sur un dossier d'images.\n"
-                          "Compatible mobile, auto-refresh, zoom click. Optionnel : tunnel Ngrok pour acces distant.",
+                     text=_t("Lance un mini-serveur HTTP pointe sur un dossier d'images.\n"
+                             "Compatible mobile, auto-refresh, zoom click. Optionnel : tunnel Ngrok pour acces distant.",
+                             "Launches a mini HTTP server pointing to an image folder.\n"
+                             "Mobile-compatible, auto-refresh, zoom click. Optional: Ngrok tunnel for remote access."),
                      text_color="#AAA", font=("Roboto", 10), justify="left"
                      ).pack(anchor="w", padx=10, pady=(0, 10))
 
         # Directory picker
         dir_row = ctk.CTkFrame(section_a, fg_color="transparent")
         dir_row.pack(fill="x", padx=10, pady=3)
-        ctk.CTkLabel(dir_row, text="Dossier :", width=80, anchor="w").pack(side="left")
+        ctk.CTkLabel(dir_row, text=_t("Dossier :", "Folder:"), width=80, anchor="w").pack(side="left")
         self.widgets["gal_dir"] = ctk.CTkEntry(dir_row, width=500)
         self.widgets["gal_dir"].pack(side="left", padx=5)
         # Try to autofill with last training's visualization dir
@@ -2138,41 +2182,44 @@ except Exception as e: print(f"ERROR:{{e}}")
         # Options row
         opt_row = ctk.CTkFrame(section_a, fg_color="transparent")
         opt_row.pack(fill="x", padx=10, pady=5)
-        ctk.CTkLabel(opt_row, text="Port :", width=80, anchor="w").pack(side="left")
+        ctk.CTkLabel(opt_row, text=_t("Port :", "Port:"), width=80, anchor="w").pack(side="left")
         self.widgets["gal_port"] = ctk.CTkEntry(opt_row, width=80)
         self.widgets["gal_port"].pack(side="left", padx=5)
         self.widgets["gal_port"].insert(0, "8765")
         self.widgets["gal_ngrok"] = ctk.CTkCheckBox(
-            opt_row, text="Activer tunnel Ngrok (acces a distance)"
+            opt_row, text=_t("Activer tunnel Ngrok (acces a distance)", "Enable Ngrok tunnel (remote access)")
         )
         self.widgets["gal_ngrok"].pack(side="left", padx=20)
         ToolTip(self.widgets["gal_ngrok"],
-                "Necessite ngrok installe et authentifie.\n"
-                "Donnera une URL publique https://xxxx.ngrok-free.app\n"
-                "accessible depuis n'importe quel appareil.")
+                _t("Necessite ngrok installe et authentifie.\n"
+                   "Donnera une URL publique https://xxxx.ngrok-free.app\n"
+                   "accessible depuis n'importe quel appareil.",
+                   "Requires ngrok installed and authenticated.\n"
+                   "Will provide a public URL https://xxxx.ngrok-free.app\n"
+                   "accessible from any device."))
 
         # Action buttons
         btn_row = ctk.CTkFrame(section_a, fg_color="transparent")
         btn_row.pack(fill="x", padx=10, pady=8)
         self.widgets["btn_gal_start"] = ctk.CTkButton(
-            btn_row, text="▶ Demarrer Serveur", fg_color="#27ae60",
+            btn_row, text=_t("▶ Demarrer Serveur", "▶ Start Server"), fg_color="#27ae60",
             width=180, command=self._gallery_start
         )
         self.widgets["btn_gal_start"].pack(side="left", padx=5)
         self.widgets["btn_gal_stop"] = ctk.CTkButton(
-            btn_row, text="⏹ Arreter", fg_color="#e74c3c",
+            btn_row, text=_t("⏹ Arreter", "⏹ Stop"), fg_color="#e74c3c",
             width=120, command=self._gallery_stop, state="disabled"
         )
         self.widgets["btn_gal_stop"].pack(side="left", padx=5)
         self.widgets["btn_gal_open"] = ctk.CTkButton(
-            btn_row, text="🌐 Ouvrir dans Navigateur", fg_color="#3498db",
+            btn_row, text=_t("🌐 Ouvrir dans Navigateur", "🌐 Open in Browser"), fg_color="#3498db",
             width=200, command=self._gallery_open, state="disabled"
         )
         self.widgets["btn_gal_open"].pack(side="left", padx=5)
 
         # Status display
         self.widgets["gal_status"] = ctk.CTkLabel(
-            section_a, text="Etat : Arrete",
+            section_a, text=_t("Etat : Arrete", "Status: Stopped"),
             text_color="#888", anchor="w", justify="left",
             font=("Consolas", 11)
         )
@@ -2185,32 +2232,35 @@ except Exception as e: print(f"ERROR:{{e}}")
         # ─── Section B: NeoSR/Redux TB image patch ───
         section_b = ctk.CTkFrame(f, fg_color="#1a1a2e", corner_radius=8)
         section_b.pack(fill="x", padx=5, pady=8)
-        ctk.CTkLabel(section_b, text="B. Patch NeoSR/Redux pour images TensorBoard",
+        ctk.CTkLabel(section_b, text=_t("B. Patch NeoSR/Redux pour images TensorBoard", "B. NeoSR/Redux Patch for TensorBoard images"),
                      font=("Roboto", 13, "bold"), text_color="#9b59b6"
                      ).pack(anchor="w", padx=10, pady=(8, 5))
         ctk.CTkLabel(section_b,
-                     text="Injecte un appel tb_logger.add_image() apres chaque imwrite() dans nondist_validation.\n"
-                          "Maximum 4 images par validation pour eviter de gonfler les .tfevents.\n"
-                          "Idempotent (detection via marqueur), reversible (backup .usr_bak cree).",
+                     text=_t("Injecte un appel tb_logger.add_image() apres chaque imwrite() dans nondist_validation.\n"
+                             "Maximum 4 images par validation pour eviter de gonfler les .tfevents.\n"
+                             "Idempotent (detection via marqueur), reversible (backup .usr_bak cree).",
+                             "Injects a tb_logger.add_image() call after each imwrite() in nondist_validation.\n"
+                             "Maximum 4 images per validation to avoid bloating .tfevents.\n"
+                             "Idempotent (marker-based detection), reversible (backup .usr_bak created)."),
                      text_color="#AAA", font=("Roboto", 10), justify="left"
                      ).pack(anchor="w", padx=10, pady=(0, 10))
 
         # Engine selection
         eng_row = ctk.CTkFrame(section_b, fg_color="transparent")
         eng_row.pack(fill="x", padx=10, pady=3)
-        ctk.CTkLabel(eng_row, text="Engine :", width=80, anchor="w").pack(side="left")
+        ctk.CTkLabel(eng_row, text=_t("Engine :", "Engine:"), width=80, anchor="w").pack(side="left")
         self.widgets["tbp_engine"] = ctk.CTkOptionMenu(
             eng_row, values=["NeoSR", "traiNNer-Redux"], width=200,
             command=lambda x: self._tbp_refresh_status()
         )
         self.widgets["tbp_engine"].pack(side="left", padx=5)
-        ctk.CTkButton(eng_row, text="🔄 Verifier statut", fg_color="#666",
+        ctk.CTkButton(eng_row, text=_t("🔄 Verifier statut", "🔄 Check status"), fg_color="#666",
                       width=140, command=self._tbp_refresh_status
                       ).pack(side="left", padx=10)
 
         # Status
         self.widgets["tbp_status"] = ctk.CTkLabel(
-            section_b, text="(non verifie)", text_color="#888",
+            section_b, text=_t("(non verifie)", "(not checked)"), text_color="#888",
             anchor="w", justify="left", font=("Consolas", 10), wraplength=700
         )
         self.widgets["tbp_status"].pack(anchor="w", fill="x", padx=10, pady=5)
@@ -2218,10 +2268,10 @@ except Exception as e: print(f"ERROR:{{e}}")
         # Action buttons
         tbp_btn_row = ctk.CTkFrame(section_b, fg_color="transparent")
         tbp_btn_row.pack(fill="x", padx=10, pady=8)
-        ctk.CTkButton(tbp_btn_row, text="✅ Appliquer le Patch", fg_color="#27ae60",
+        ctk.CTkButton(tbp_btn_row, text=_t("✅ Appliquer le Patch", "✅ Apply Patch"), fg_color="#27ae60",
                       width=180, command=self._tbp_apply
                       ).pack(side="left", padx=5)
-        ctk.CTkButton(tbp_btn_row, text="❌ Retirer le Patch", fg_color="#e74c3c",
+        ctk.CTkButton(tbp_btn_row, text=_t("❌ Retirer le Patch", "❌ Remove Patch"), fg_color="#e74c3c",
                       width=180, command=self._tbp_remove
                       ).pack(side="left", padx=5)
 
@@ -2239,20 +2289,20 @@ except Exception as e: print(f"ERROR:{{e}}")
         with_ngrok = self.widgets["gal_ngrok"].get()
 
         if not directory or not os.path.isdir(directory):
-            messagebox.showerror("Erreur", "Selectionnez un dossier valide.")
+            messagebox.showerror(_t("Erreur", "Error"), _t("Selectionnez un dossier valide.", "Select a valid folder."))
             return
 
         try:
             port = int(port_str) if port_str else 0
         except ValueError:
-            messagebox.showerror("Erreur", "Port invalide.")
+            messagebox.showerror(_t("Erreur", "Error"), _t("Port invalide.", "Invalid port."))
             return
 
         srv = get_server()
         result = srv.start(directory, port=port, with_ngrok=bool(with_ngrok))
 
         if not result.get("ok"):
-            messagebox.showerror("Erreur", result.get("error", "Echec inconnu"))
+            messagebox.showerror(_t("Erreur", "Error"), result.get("error", _t("Echec inconnu", "Unknown failure")))
             return
 
         # Update UI
@@ -2261,18 +2311,18 @@ except Exception as e: print(f"ERROR:{{e}}")
         self.widgets["btn_gal_open"].configure(state="normal")
 
         status_lines = [
-            f"✅ Serveur actif",
-            f"   Local : {result['local_url']}",
+            f"✅ {_t('Serveur actif', 'Server active')}",
+            f"   {_t('Local', 'Local')} : {result['local_url']}",
         ]
         if result.get("ngrok_url"):
-            status_lines.append(f"   Public : {result['ngrok_url']}")
+            status_lines.append(f"   {_t('Public', 'Public')} : {result['ngrok_url']}")
             self._gallery_show_qr(result["ngrok_url"])
         elif with_ngrok and result.get("ngrok_warning"):
             status_lines.append(f"   ⚠ {result['ngrok_warning']}")
         else:
             self._gallery_show_qr(result["local_url"])
 
-        status_lines.append(f"   Dossier : {directory}")
+        status_lines.append(f"   {_t('Dossier', 'Folder')} : {directory}")
         self.widgets["gal_status"].configure(
             text="\n".join(status_lines), text_color="#2ecc71"
         )
@@ -2289,7 +2339,7 @@ except Exception as e: print(f"ERROR:{{e}}")
         self.widgets["btn_gal_start"].configure(state="normal")
         self.widgets["btn_gal_stop"].configure(state="disabled")
         self.widgets["btn_gal_open"].configure(state="disabled")
-        self.widgets["gal_status"].configure(text="Etat : Arrete", text_color="#888")
+        self.widgets["gal_status"].configure(text=_t("Etat : Arrete", "Status: Stopped"), text_color="#888")
 
     def _gallery_open(self):
         from src.core.gallery_server import get_server
@@ -2310,8 +2360,10 @@ except Exception as e: print(f"ERROR:{{e}}")
             if not is_qrcode_available():
                 ctk.CTkLabel(
                     self.widgets["gal_qr_frame"],
-                    text=f"💡 Installer 'qrcode' pour scanner avec votre tel : pip install qrcode[pil]\n"
-                         f"URL : {url}",
+                    text=_t(f"💡 Installer 'qrcode' pour scanner avec votre tel : pip install qrcode[pil]\n"
+                            f"URL : {url}",
+                            f"💡 Install 'qrcode' to scan with your phone: pip install qrcode[pil]\n"
+                            f"URL: {url}"),
                     text_color="#888", justify="left"
                 ).pack(anchor="w")
                 return
@@ -2327,7 +2379,8 @@ except Exception as e: print(f"ERROR:{{e}}")
                 import tkinter as tk
                 tk.Label(row, image=photo, bg="#1a1a2e").pack(side="left", padx=5)
                 ctk.CTkLabel(row,
-                             text=f"📱 Scannez le QR code avec votre telephone\n\nURL : {url}",
+                             text=_t(f"📱 Scannez le QR code avec votre telephone\n\nURL : {url}",
+                                     f"📱 Scan the QR code with your phone\n\nURL: {url}"),
                              text_color="#3498db", justify="left", font=("Roboto", 11)
                              ).pack(side="left", padx=15)
         except Exception as e:
@@ -2348,17 +2401,24 @@ except Exception as e: print(f"ERROR:{{e}}")
         root = self._get_engine_root()
         status = get_patch_status(root)
         if not status["found"]:
-            text = (f"❌ Engine non trouve : {root}\n"
-                    f"   (verifie que le dossier IA_Engine existe avec NeoSR/Redux installe)")
+            text = (_t(f"❌ Engine non trouve : {root}\n"
+                       f"   (verifie que le dossier IA_Engine existe avec NeoSR/Redux installe)",
+                       f"❌ Engine not found: {root}\n"
+                       f"   (check that the IA_Engine folder exists with NeoSR/Redux installed)"))
             color = "#e74c3c"
         elif status["patched"]:
-            text = (f"✅ Patch deja applique\n"
-                    f"   Fichier : {status['target_file']}\n"
-                    f"   Backup .usr_bak : {'present' if status['backup_exists'] else 'absent'}")
+            text = (_t(f"✅ Patch deja applique\n"
+                       f"   Fichier : {status['target_file']}\n"
+                       f"   Backup .usr_bak : {'present' if status['backup_exists'] else 'absent'}",
+                       f"✅ Patch already applied\n"
+                       f"   File: {status['target_file']}\n"
+                       f"   Backup .usr_bak: {'present' if status['backup_exists'] else 'absent'}"))
             color = "#2ecc71"
         else:
-            text = (f"⚪ Pas patche (pret a l'emploi)\n"
-                    f"   Fichier cible : {status['target_file']}")
+            text = (_t(f"⚪ Pas patche (pret a l'emploi)\n"
+                       f"   Fichier cible : {status['target_file']}",
+                       f"⚪ Not patched (ready to use)\n"
+                       f"   Target file: {status['target_file']}"))
             color = "#f39c12"
         self.widgets["tbp_status"].configure(text=text, text_color=color)
 
@@ -2367,19 +2427,22 @@ except Exception as e: print(f"ERROR:{{e}}")
         from src.core.tb_image_patch import patch_engine
         root = self._get_engine_root()
         if not os.path.isdir(root):
-            messagebox.showerror("Erreur", f"Engine introuvable : {root}")
+            messagebox.showerror(_t("Erreur", "Error"), _t(f"Engine introuvable : {root}", f"Engine not found: {root}"))
             return
         if not messagebox.askyesno(
-                "Appliquer Patch",
-                f"Modifier les fichiers de {os.path.basename(root)} ?\n\n"
-                f"Un backup .usr_bak sera cree.\n"
-                f"Vous pourrez retirer le patch a tout moment via 'Retirer'."):
+                _t("Appliquer Patch", "Apply Patch"),
+                _t(f"Modifier les fichiers de {os.path.basename(root)} ?\n\n"
+                   f"Un backup .usr_bak sera cree.\n"
+                   f"Vous pourrez retirer le patch a tout moment via 'Retirer'.",
+                   f"Modify files of {os.path.basename(root)} ?\n\n"
+                   f"A .usr_bak backup will be created.\n"
+                   f"You can remove the patch at any time via 'Remove'.")):
             return
         ok, msg, path = patch_engine(root)
         if ok:
-            messagebox.showinfo("Patch", f"{msg}\n\nFichier modifie :\n{path}")
+            messagebox.showinfo("Patch", _t(f"{msg}\n\nFichier modifie :\n{path}", f"{msg}\n\nModified file:\n{path}"))
         else:
-            messagebox.showerror("Erreur", msg)
+            messagebox.showerror(_t("Erreur", "Error"), msg)
         self._tbp_refresh_status()
 
     def _tbp_remove(self):
@@ -2408,8 +2471,8 @@ except Exception as e: print(f"ERROR:{{e}}")
         self._exp_radio_var = StringVar(value="")
 
         f = ctk.CTkFrame(self.right_panel, fg_color="transparent")
-        self.add_header(f, "📦 Publier Modèle",
-                        "Préparer un package propre pour archiver ou partager votre modèle.")
+        self.add_header(f, _t("📦 Publier Modèle", "📦 Publish Model"),
+                        _t("Préparer un package propre pour archiver ou partager votre modèle.", "Prepare a clean package to archive or share your model."))
 
         body = ctk.CTkFrame(f, fg_color="transparent")
         body.pack(fill="both", expand=True)
@@ -2421,33 +2484,33 @@ except Exception as e: print(f"ERROR:{{e}}")
         left = ctk.CTkFrame(body, fg_color="#1a1a2e", corner_radius=8)
         left.grid(row=0, column=0, sticky="nsew", padx=(0, 5), pady=5)
 
-        ctk.CTkLabel(left, text="📂 Sélectionner le Modèle",
+        ctk.CTkLabel(left, text=_t("📂 Sélectionner le Modèle", "📂 Select Model"),
                      font=("Roboto", 13, "bold"),
                      text_color="#3498db").pack(anchor="w", padx=10, pady=(8, 4))
 
         flt_row = ctk.CTkFrame(left, fg_color="transparent")
         flt_row.pack(fill="x", padx=10, pady=3)
-        ctk.CTkLabel(flt_row, text="Filtre :", width=50, anchor="w").pack(side="left")
-        self._exp_engine_var = StringVar(value="Tous")
+        ctk.CTkLabel(flt_row, text=_t("Filtre :", "Filter:"), width=50, anchor="w").pack(side="left")
+        self._exp_engine_var = StringVar(value=_t("Tous", "All"))
         self.widgets["exp_engine_filter"] = ctk.CTkOptionMenu(
             flt_row,
-            values=["Tous", "5 derniers", "10 derniers", "NeoSR", "Redux"],
+            values=[_t("Tous", "All"), _t("5 derniers", "Last 5"), _t("10 derniers", "Last 10"), "NeoSR", "Redux"],
             variable=self._exp_engine_var, width=140,
             command=lambda x: self._export_refresh_list()
         )
         self.widgets["exp_engine_filter"].pack(side="left", padx=5)
-        ctk.CTkButton(flt_row, text="🔄 Scanner", width=100,
+        ctk.CTkButton(flt_row, text=_t("🔄 Scanner", "🔄 Scan"), width=100,
                       command=self._export_scan).pack(side="left", padx=3)
 
         self._exp_list_frame = ctk.CTkScrollableFrame(left, height=260, fg_color="#111")
         self._exp_list_frame.pack(fill="both", expand=True, padx=10, pady=5)
         ctk.CTkLabel(self._exp_list_frame,
-                     text="(cliquez 🔄 Scanner pour charger)",
+                     text=_t("(cliquez 🔄 Scanner pour charger)", "(click 🔄 Scan to load)"),
                      text_color="#555").pack(anchor="w")
 
         man_row = ctk.CTkFrame(left, fg_color="transparent")
         man_row.pack(fill="x", padx=10, pady=(4, 8))
-        ctk.CTkLabel(man_row, text="Ou parcourir :", width=90, anchor="w").pack(side="left")
+        ctk.CTkLabel(man_row, text=_t("Ou parcourir :", "Or browse:"), width=90, anchor="w").pack(side="left")
         self.widgets["exp_manual_path"] = ctk.CTkEntry(
             man_row, placeholder_text="chemin/vers/modele.safetensors")
         self.widgets["exp_manual_path"].pack(side="left", fill="x", expand=True, padx=4)
@@ -2458,16 +2521,16 @@ except Exception as e: print(f"ERROR:{{e}}")
         right = ctk.CTkFrame(body, fg_color="#1a1a2e", corner_radius=8)
         right.grid(row=0, column=1, sticky="nsew", padx=(5, 0), pady=5)
 
-        ctk.CTkLabel(right, text="📝 Métadonnées & Fiche Technique",
+        ctk.CTkLabel(right, text=_t("📝 Métadonnées & Fiche Technique", "📝 Metadata & Technical Sheet"),
                      font=("Roboto", 13, "bold"),
                      text_color="#3498db").pack(anchor="w", padx=10, pady=(8, 4))
 
         meta_f = ctk.CTkFrame(right, fg_color="transparent")
         meta_f.pack(fill="x", padx=10, pady=3)
         for lbl, key, ph in [
-            ("Nom du modèle :", "exp_name",    "ex: Crysisjim SPANPlus Deband_HARD"),
-            ("Version :",       "exp_version", "ex: 1.0"),
-            ("Auteur :",        "exp_author",  "ex: Crysisjim"),
+            (_t("Nom du modèle :", "Model name:"), "exp_name",    "ex: Crysisjim SPANPlus Deband_HARD"),
+            (_t("Version :",       "Version:"),    "exp_version", "ex: 1.0"),
+            (_t("Auteur :",        "Author:"),     "exp_author",  "ex: Crysisjim"),
         ]:
             r = ctk.CTkFrame(meta_f, fg_color="transparent")
             r.pack(fill="x", pady=2)
@@ -2481,19 +2544,19 @@ except Exception as e: print(f"ERROR:{{e}}")
         self.widgets["exp_version"].bind(
             "<KeyRelease>", lambda e: self._export_update_preview_lbl())
 
-        ctk.CTkLabel(right, text="Notes personnelles :",
+        ctk.CTkLabel(right, text=_t("Notes personnelles :", "Personal notes:"),
                      anchor="w").pack(anchor="w", padx=10, pady=(6, 0))
         self.widgets["exp_notes"] = ctk.CTkTextbox(right, height=60, fg_color="#111")
         self.widgets["exp_notes"].pack(fill="x", padx=10, pady=3)
 
         self.widgets["exp_config_info"] = ctk.CTkLabel(
-            right, text="ℹ Aucun modèle sélectionné",
+            right, text=_t("ℹ Aucun modèle sélectionné", "ℹ No model selected"),
             text_color="#666", font=("Roboto", 10),
             justify="left", anchor="w", wraplength=380
         )
         self.widgets["exp_config_info"].pack(anchor="w", padx=10, pady=3)
 
-        ctk.CTkLabel(right, text="📄 Fiche Technique du Modèle :",
+        ctk.CTkLabel(right, text=_t("📄 Fiche Technique du Modèle :", "📄 Model Technical Sheet:"),
                      anchor="w", font=("Roboto", 11, "bold")).pack(
             anchor="w", padx=10, pady=(6, 0))
         self.widgets["exp_fiche"] = ctk.CTkTextbox(right, height=200, fg_color="#111")
@@ -2539,20 +2602,20 @@ except Exception as e: print(f"ERROR:{{e}}")
 
         fiche_btns = ctk.CTkFrame(right, fg_color="transparent")
         fiche_btns.pack(fill="x", padx=10, pady=3)
-        ctk.CTkButton(fiche_btns, text="📋 Générer (template)", width=165,
+        ctk.CTkButton(fiche_btns, text=_t("📋 Générer (template)", "📋 Generate (template)"), width=165,
                       command=self._export_generate_template).pack(side="left", padx=(0, 6))
-        ctk.CTkButton(fiche_btns, text="🤖 Générer avec IA", width=165,
+        ctk.CTkButton(fiche_btns, text=_t("🤖 Générer avec IA", "🤖 Generate with AI"), width=165,
                       fg_color="#8e44ad",
                       command=self._export_generate_ai).pack(side="left", padx=3)
 
         self.widgets["exp_dest_lbl"] = ctk.CTkLabel(
-            right, text="📁 Destination : (sélectionnez un modèle)",
+            right, text=_t("📁 Destination : (sélectionnez un modèle)", "📁 Destination: (select a model)"),
             text_color="#888", font=("Roboto", 10), anchor="w", wraplength=390
         )
         self.widgets["exp_dest_lbl"].pack(anchor="w", padx=10, pady=(4, 0))
 
         self.widgets["exp_export_btn"] = ctk.CTkButton(
-            right, text="📦 Exporter le Package",
+            right, text=_t("📦 Exporter le Package", "📦 Export Package"),
             fg_color="#16a085", height=38,
             font=("Roboto", 13, "bold"),
             command=self._export_do_export
@@ -2560,12 +2623,18 @@ except Exception as e: print(f"ERROR:{{e}}")
         self.widgets["exp_export_btn"].pack(fill="x", padx=10, pady=(6, 10))
 
         ToolTip(self.widgets["exp_export_btn"],
-                "📦 Crée le dossier dans Final model/ avec :\n"
-                "  • {Nom Version}.safetensors  (modèle renommé)\n"
-                "  • Fiche Technique du Modèle.txt\n"
-                "  • Option/  →  config d'entraînement\n"
-                "  • resume/  →  fichier original conservé\n"
-                "  • Trainning state/  →  fichier .state")
+                _t("📦 Crée le dossier dans Final model/ avec :\n"
+                   "  • {Nom Version}.safetensors  (modèle renommé)\n"
+                   "  • Fiche Technique du Modèle.txt\n"
+                   "  • Option/  →  config d'entraînement\n"
+                   "  • resume/  →  fichier original conservé\n"
+                   "  • Trainning state/  →  fichier .state",
+                   "📦 Creates the folder in Final model/ with:\n"
+                   "  • {Name Version}.safetensors  (renamed model)\n"
+                   "  • Fiche Technique du Modèle.txt\n"
+                   "  • Option/  →  training config\n"
+                   "  • resume/  →  original file kept\n"
+                   "  • Trainning state/  →  .state file"))
         return f
 
     def _export_scan(self):
@@ -2669,17 +2738,18 @@ except Exception as e: print(f"ERROR:{{e}}")
         for w in self._exp_list_frame.winfo_children():
             w.destroy()
         flt  = self._exp_engine_var.get()
-        # Apply filter
-        if flt in ("5 derniers", "10 derniers"):
-            n    = int(flt.split()[0])
-            data = self._exp_scan_data[:n]          # already sorted newest first
+        # Apply filter — check both FR and EN values
+        if flt in (_t("5 derniers", "Last 5"), "5 derniers", "Last 5"):
+            data = self._exp_scan_data[:5]
+        elif flt in (_t("10 derniers", "Last 10"), "10 derniers", "Last 10"):
+            data = self._exp_scan_data[:10]
         elif flt in ("NeoSR", "Redux"):
             data = [d for d in self._exp_scan_data if d["engine"] == flt]
         else:
             data = list(self._exp_scan_data)
         if not data:
             ctk.CTkLabel(self._exp_list_frame,
-                         text="Aucun modèle trouvé. Cliquez 🔄 Scanner.",
+                         text=_t("Aucun modèle trouvé. Cliquez 🔄 Scanner.", "No model found. Click 🔄 Scan."),
                          text_color="#555").pack(anchor="w")
             return
         for d in data:
@@ -2716,7 +2786,7 @@ except Exception as e: print(f"ERROR:{{e}}")
             ).pack(anchor="w", padx=8)
             ctk.CTkLabel(
                 card,
-                text=f"  Config {cfg_icon}  État {sta_icon}  — {d['model_file']}",
+                text=f"  Config {cfg_icon}  {_t('État', 'State')} {sta_icon}  — {d['model_file']}",
                 text_color="#666", font=("Roboto", 9)
             ).pack(anchor="w", padx=8, pady=(0, 5))
 
@@ -2733,15 +2803,16 @@ except Exception as e: print(f"ERROR:{{e}}")
                    f"Scale : {info.get('scale', '?')}x | "
                    f"Losses : {info.get('losses_summary', '?')}")
         else:
-            txt = "Config introuvable — utilisez le bouton '...' pour la retrouver"
+            txt = _t("Config introuvable — utilisez le bouton '...' pour la retrouver",
+                     "Config not found — use the '...' button to locate it")
         self.widgets["exp_config_info"].configure(text=txt)
         self._export_update_preview_lbl()
 
     def _export_browse_model(self):
         """Open file dialog to manually select a .safetensors model."""
         path = filedialog.askopenfilename(
-            title="Sélectionner le modèle",
-            filetypes=[("SafeTensors", "*.safetensors"), ("Tous", "*.*")]
+            title=_t("Sélectionner le modèle", "Select model"),
+            filetypes=[("SafeTensors", "*.safetensors"), (_t("Tous", "All"), "*.*")]
         )
         if not path:
             return
@@ -2811,10 +2882,10 @@ except Exception as e: print(f"ERROR:{{e}}")
             dest = os.path.join(
                 os.path.expanduser("~"), "IA_Engine", "Final model", folder)
             self.widgets["exp_dest_lbl"].configure(
-                text=f"📁 Destination : {dest}")
+                text=f"📁 {_t('Destination', 'Destination')} : {dest}")
         else:
             self.widgets["exp_dest_lbl"].configure(
-                text="📁 Destination : (entrez un nom de modèle)")
+                text=_t("📁 Destination : (entrez un nom de modèle)", "📁 Destination: (enter a model name)"))
 
     def _export_parse_config(self, path: str) -> dict:
         """Parse YAML/TOML training config — return key metadata as dict."""
@@ -2846,7 +2917,7 @@ except Exception as e: print(f"ERROR:{{e}}")
             info["scale"] = str(cfg.get("scale", "?"))
             # GAN
             net_d = cfg.get("network_d")
-            info["gan"]       = "Oui" if net_d else "Non"
+            info["gan"]       = _t("Oui", "Yes") if net_d else _t("Non", "No")
             info["net_d_type"] = (str(net_d.get("type", "?"))
                                   if isinstance(net_d, dict) else "—")
             # Training
@@ -2948,19 +3019,25 @@ except Exception as e: print(f"ERROR:{{e}}")
         provider = self.widgets["exp_ia_provider"].get()
         model    = self.widgets["exp_ia_model"].get().strip()
         if not model:
-            messagebox.showerror("Modèle IA", "Sélectionnez un modèle.")
+            messagebox.showerror(_t("Modèle IA", "AI Model"), _t("Sélectionnez un modèle.", "Select a model."))
             return
         # Resolve API key — same key format as tab_config: api_key_{provider}
         api_key = self.settings.get(f"api_key_{provider}", "")
         if not api_key:
             messagebox.showerror(
-                "Clé API manquante",
-                f"Aucune clé sauvegardée pour :\n{provider}\n\n"
-                "Pour sauvegarder :\n"
-                "1. Onglet Configuration\n"
-                "2. Section 'Vérification par IA'\n"
-                "3. Sélectionnez le fournisseur + entrez la clé\n"
-                "4. Cliquez 'Analyser avec IA' → la clé est sauvegardée."
+                _t("Clé API manquante", "Missing API Key"),
+                _t(f"Aucune clé sauvegardée pour :\n{provider}\n\n"
+                   "Pour sauvegarder :\n"
+                   "1. Onglet Configuration\n"
+                   "2. Section 'Vérification par IA'\n"
+                   "3. Sélectionnez le fournisseur + entrez la clé\n"
+                   "4. Cliquez 'Analyser avec IA' → la clé est sauvegardée.",
+                   f"No saved key for:\n{provider}\n\n"
+                   "To save:\n"
+                   "1. Configuration tab\n"
+                   "2. 'AI Verification' section\n"
+                   "3. Select provider + enter key\n"
+                   "4. Click 'Analyze with AI' → key is saved.")
             )
             return
         d       = self._exp_selected or {}
@@ -3016,7 +3093,7 @@ except Exception as e: print(f"ERROR:{{e}}")
             f"Personal notes (use as Description context): {notes or 'none'}\n"
         )
         self.widgets["exp_fiche"].delete("1.0", "end")
-        self.widgets["exp_fiche"].insert("1.0", f"⏳ Génération IA en cours ({provider})…")
+        self.widgets["exp_fiche"].insert("1.0", f"⏳ {_t('Génération IA en cours', 'AI generation in progress')} ({provider})…")
 
         def _set_fiche(text):
             self.widgets["exp_fiche"].delete("1.0", "end")
@@ -3066,9 +3143,9 @@ except Exception as e: print(f"ERROR:{{e}}")
                          .get("content", {}).get("parts", []))
                 return parts[0].get("text", str(r)) if parts else str(r)
             except urllib.error.HTTPError as e:
-                return f"Erreur HTTP {e.code}: {e.read().decode()[:300]}"
+                return f"{_t('Erreur HTTP', 'HTTP Error')} {e.code}: {e.read().decode()[:300]}"
             except Exception as ex:
-                return f"Erreur: {ex}"
+                return f"{_t('Erreur', 'Error')}: {ex}"
         elif "xAI" in provider or "Grok" in provider:
             url = "https://api.x.ai/v1/chat/completions"
             headers["Authorization"] = f"Bearer {api_key}"
@@ -3076,7 +3153,7 @@ except Exception as e: print(f"ERROR:{{e}}")
             url = "https://api.deepseek.com/chat/completions"
             headers["Authorization"] = f"Bearer {api_key}"
         else:
-            return f"Fournisseur non supporté : {provider}"
+            return f"{_t('Fournisseur non supporté', 'Unsupported provider')} : {provider}"
         # Standard OpenAI-compatible body
         body = _json.dumps({
             "model": model, "max_tokens": 1500,
@@ -3088,9 +3165,9 @@ except Exception as e: print(f"ERROR:{{e}}")
             with urllib.request.urlopen(req, timeout=60) as resp:
                 r = _json.loads(resp.read().decode())
         except urllib.error.HTTPError as e:
-            return f"Erreur HTTP {e.code}: {e.read().decode()[:300]}"
+            return f"{_t('Erreur HTTP', 'HTTP Error')} {e.code}: {e.read().decode()[:300]}"
         except Exception as ex:
-            return f"Erreur: {ex}"
+            return f"{_t('Erreur', 'Error')}: {ex}"
         if "content" in r and isinstance(r["content"], list):
             return r["content"][0].get("text", str(r))
         if "choices" in r:
@@ -3103,28 +3180,30 @@ except Exception as e: print(f"ERROR:{{e}}")
         name    = self.widgets["exp_name"].get().strip()
         version = self.widgets["exp_version"].get().strip()
         if not name:
-            messagebox.showerror("Erreur", "Entrez un nom de modèle.")
+            messagebox.showerror(_t("Erreur", "Error"), _t("Entrez un nom de modèle.", "Enter a model name."))
             return
         # Resolve model path (manual browse takes priority)
         d          = self._exp_selected or {}
         model_path = self.widgets["exp_manual_path"].get().strip() or d.get("model_path", "")
         if not model_path or not os.path.isfile(model_path):
-            messagebox.showerror("Erreur",
-                                 "Aucun modèle sélectionné ou fichier introuvable.")
+            messagebox.showerror(_t("Erreur", "Error"),
+                                 _t("Aucun modèle sélectionné ou fichier introuvable.", "No model selected or file not found."))
             return
         fiche_text = self.widgets["exp_fiche"].get("1.0", "end").strip()
         if not fiche_text:
             if not messagebox.askyesno(
-                    "Fiche vide",
-                    "La fiche technique est vide.\n\nContinuer quand même ?"):
+                    _t("Fiche vide", "Empty sheet"),
+                    _t("La fiche technique est vide.\n\nContinuer quand même ?",
+                       "The technical sheet is empty.\n\nContinue anyway?")):
                 return
         folder_name = f"{name} {version}".strip()
         dest_root = os.path.join(
             os.path.expanduser("~"), "IA_Engine", "Final model", folder_name)
         if os.path.exists(dest_root):
             if not messagebox.askyesno(
-                    "Dossier existant",
-                    f"Le dossier existe déjà :\n{dest_root}\n\nÉcraser ?"):
+                    _t("Dossier existant", "Folder exists"),
+                    _t(f"Le dossier existe déjà :\n{dest_root}\n\nÉcraser ?",
+                       f"The folder already exists:\n{dest_root}\n\nOverwrite?")):
                 return
         try:
             os.makedirs(os.path.join(dest_root, "Option"),         exist_ok=True)
@@ -3157,8 +3236,8 @@ except Exception as e: print(f"ERROR:{{e}}")
                                           os.path.basename(state_file)))
                 state_copied = True
             messagebox.showinfo(
-                "✅ Export réussi !",
-                f"Package créé dans :\n{dest_root}\n\n"
+                _t("✅ Export réussi !", "✅ Export successful!"),
+                f"{_t('Package créé dans', 'Package created in')} :\n{dest_root}\n\n"
                 f"• {folder_name}.safetensors\n"
                 f"• Fiche Technique du Modèle.txt\n"
                 f"• Option/{os.path.basename(cfg_path) if cfg_path and os.path.isfile(cfg_path) else '(vide)'}\n"
@@ -3170,7 +3249,7 @@ except Exception as e: print(f"ERROR:{{e}}")
             except Exception:
                 pass
         except Exception as ex:
-            messagebox.showerror("Erreur Export", f"Export échoué :\n{ex}")
+            messagebox.showerror(_t("Erreur Export", "Export Error"), f"{_t('Export échoué', 'Export failed')} :\n{ex}")
 
     # ==========================================
     # PAGE 12: BENCHMARK (Arch / Feature)
@@ -3190,7 +3269,8 @@ except Exception as e: print(f"ERROR:{{e}}")
         ctk.CTkLabel(_hdr, text="📈 Benchmark", font=("Roboto", 24, "bold"),
                      text_color="#3B8ED0", anchor="w").pack(fill="x")
         ctk.CTkLabel(_hdr,
-                     text="Mesure les it/s, VRAM et stabilité de chaque architecture ou feature.",
+                     text=_t("Mesure les it/s, VRAM et stabilité de chaque architecture ou feature.",
+                             "Measures it/s, VRAM and stability for each architecture or feature."),
                      font=("Arial", 12), text_color="gray", anchor="w").pack(fill="x")
 
         # ── Top controls (scrollable) ──
@@ -3210,56 +3290,73 @@ except Exception as e: print(f"ERROR:{{e}}")
         # ── Moteur ──
         r_engine = ctk.CTkFrame(scroll, fg_color="transparent")
         r_engine.pack(fill="x", pady=3)
-        ctk.CTkLabel(r_engine, text="Moteur :", width=170, anchor="w").pack(side="left")
+        ctk.CTkLabel(r_engine, text=_t("Moteur :", "Engine:"), width=170, anchor="w").pack(side="left")
         self.widgets["bench_engine"] = ctk.CTkOptionMenu(
-            r_engine, values=["Redux", "NeoSR", "Les deux"],
+            r_engine, values=["Redux", "NeoSR", _t("Les deux", "Both")],
             width=130, command=self._bench_on_engine_change)
         self.widgets["bench_engine"].set("Redux")
         self.widgets["bench_engine"].pack(side="left")
         ToolTip(self.widgets["bench_engine"],
-                "Redux  : traiNNer-redux (YAML, plus d'archs/features).\n"
-                "NeoSR  : moteur NeoSR (TOML).\n"
-                "Les deux : lance les deux moteurs successivement.\n\n"
-                "Chaque moteur utilise son propre venv Python.")
+                _t("Redux  : traiNNer-redux (YAML, plus d'archs/features).\n"
+                   "NeoSR  : moteur NeoSR (TOML).\n"
+                   "Les deux : lance les deux moteurs successivement.\n\n"
+                   "Chaque moteur utilise son propre venv Python.",
+                   "Redux  : traiNNer-redux (YAML, more archs/features).\n"
+                   "NeoSR  : NeoSR engine (TOML).\n"
+                   "Both   : runs both engines sequentially.\n\n"
+                   "Each engine uses its own Python venv."))
 
         # ── Type de benchmark ──
         r_type = ctk.CTkFrame(scroll, fg_color="transparent")
         r_type.pack(fill="x", pady=3)
-        ctk.CTkLabel(r_type, text="Type de benchmark :", width=170, anchor="w").pack(side="left")
+        ctk.CTkLabel(r_type, text=_t("Type de benchmark :", "Benchmark type:"), width=170, anchor="w").pack(side="left")
         self.widgets["bench_type"] = ctk.CTkOptionMenu(
-            r_type, values=["Architectures", "Features", "Arch + Features"],
+            r_type, values=[_t("Architectures", "Architectures"), _t("Features", "Features"), _t("Arch + Features", "Arch + Features")],
             width=150, command=self._bench_on_type_change)
         self.widgets["bench_type"].set("Architectures")
         self.widgets["bench_type"].pack(side="left")
         ToolTip(self.widgets["bench_type"],
-                "Architectures : mesure it/s et VRAM de chaque architecture.\n"
-                "  → Idéal pour choisir la meilleure arch pour votre GPU.\n\n"
-                "Features : teste l'impact de chaque loss/optimiseur/scheduler.\n"
-                "  → Idéal pour optimiser votre config d'entraînement.\n\n"
-                "Arch + Features : lance les deux suites successivement.\n"
-                "  → Durée totale : ~6-10h selon votre GPU.")
+                _t("Architectures : mesure it/s et VRAM de chaque architecture.\n"
+                   "  → Idéal pour choisir la meilleure arch pour votre GPU.\n\n"
+                   "Features : teste l'impact de chaque loss/optimiseur/scheduler.\n"
+                   "  → Idéal pour optimiser votre config d'entraînement.\n\n"
+                   "Arch + Features : lance les deux suites successivement.\n"
+                   "  → Durée totale : ~6-10h selon votre GPU.",
+                   "Architectures: measures it/s and VRAM per architecture.\n"
+                   "  → Ideal to pick the best arch for your GPU.\n\n"
+                   "Features: tests the impact of each loss/optimizer/scheduler.\n"
+                   "  → Ideal to optimize your training config.\n\n"
+                   "Arch + Features: runs both suites sequentially.\n"
+                   "  → Total duration: ~6-10h depending on your GPU."))
 
         # ── Itérations ──
         self.widgets["bench_n_iter"] = _row(
-            scroll, "Itérations / test :",
+            scroll, _t("Itérations / test :", "Iterations / test:"),
             lambda p: (lambda e: (e.insert(0, "2500"), e)[-1])(ctk.CTkEntry(p, width=90)),
-            "Nombre d'itérations d'entraînement par test.\n"
-            "Arch    → 2500 iters (recommandé, ~4 min/test)\n"
-            "Feature → 500 iters  (recommandé, ~1 min/test)\n"
-            "Plus bas = rapide mais moins stable.\nPlus haut = précis mais très long.")
+            _t("Nombre d'itérations d'entraînement par test.\n"
+               "Arch    → 2500 iters (recommandé, ~4 min/test)\n"
+               "Feature → 500 iters  (recommandé, ~1 min/test)\n"
+               "Plus bas = rapide mais moins stable.\nPlus haut = précis mais très long.",
+               "Number of training iterations per test.\n"
+               "Arch    → 2500 iters (recommended, ~4 min/test)\n"
+               "Feature → 500 iters  (recommended, ~1 min/test)\n"
+               "Lower = faster but less stable.\nHigher = accurate but very long."))
 
         # ── Timeout ──
         self.widgets["bench_timeout"] = _row(
-            scroll, "Timeout (s) / test :",
+            scroll, _t("Timeout (s) / test :", "Timeout (s) / test:"),
             lambda p: (lambda e: (e.insert(0, "3600"), e)[-1])(ctk.CTkEntry(p, width=90)),
-            "Temps maximum autorisé par test avant kill forcé.\n"
-            "Arch    → 3600s (1h)\nFeature → 900s  (15min)\n"
-            "Si le test dépasse ce seuil, il est marqué 'timeout' et le benchmark continue.")
+            _t("Temps maximum autorisé par test avant kill forcé.\n"
+               "Arch    → 3600s (1h)\nFeature → 900s  (15min)\n"
+               "Si le test dépasse ce seuil, il est marqué 'timeout' et le benchmark continue.",
+               "Maximum time allowed per test before forced kill.\n"
+               "Arch    → 3600s (1h)\nFeature → 900s  (15min)\n"
+               "If the test exceeds this threshold, it is marked 'timeout' and the benchmark continues."))
 
         # ── Modes précision (arch Redux seulement) ──
         f_modes = ctk.CTkFrame(scroll, fg_color="transparent")
         f_modes.pack(fill="x", pady=3)
-        ctk.CTkLabel(f_modes, text="Modes précision :", width=170, anchor="w").pack(side="left")
+        ctk.CTkLabel(f_modes, text=_t("Modes précision :", "Precision modes:"), width=170, anchor="w").pack(side="left")
         self.widgets["bench_mode_normal"] = ctk.CTkCheckBox(f_modes, text="normal", onvalue="normal", offvalue="")
         self.widgets["bench_mode_fp16"]   = ctk.CTkCheckBox(f_modes, text="fp16",   onvalue="fp16",   offvalue="")
         self.widgets["bench_mode_bf16"]   = ctk.CTkCheckBox(f_modes, text="bf16",   onvalue="bf16",   offvalue="")
@@ -3270,19 +3367,26 @@ except Exception as e: print(f"ERROR:{{e}}")
                     self.widgets["bench_mode_bf16"],   self.widgets["bench_mode_tf32"]):
             chk.pack(side="left", padx=6)
         ToolTip(self.widgets["bench_mode_normal"],
-                "Modes de précision à tester (Redux arch uniquement).\n\n"
-                "normal : FP32 — baseline, toujours disponible.\n"
-                "fp16   : AMP Float16 — +10-15% sur RTX 2000+.\n"
-                "bf16   : AMP BFloat16 — +25-35% sur RTX 3000+ (Ampere).\n"
-                "tf32   : fast_matmul TF32 — +5-10% sur RTX 3000+.\n\n"
-                "Recommandé GTX 1080 Ti : normal seulement.\n"
-                "Recommandé RTX 3070+ : normal + bf16.")
+                _t("Modes de précision à tester (Redux arch uniquement).\n\n"
+                   "normal : FP32 — baseline, toujours disponible.\n"
+                   "fp16   : AMP Float16 — +10-15% sur RTX 2000+.\n"
+                   "bf16   : AMP BFloat16 — +25-35% sur RTX 3000+ (Ampere).\n"
+                   "tf32   : fast_matmul TF32 — +5-10% sur RTX 3000+.\n\n"
+                   "Recommandé GTX 1080 Ti : normal seulement.\n"
+                   "Recommandé RTX 3070+ : normal + bf16.",
+                   "Precision modes to test (Redux arch only).\n\n"
+                   "normal : FP32 — baseline, always available.\n"
+                   "fp16   : AMP Float16 — +10-15% on RTX 2000+.\n"
+                   "bf16   : AMP BFloat16 — +25-35% on RTX 3000+ (Ampere).\n"
+                   "tf32   : fast_matmul TF32 — +5-10% on RTX 3000+.\n\n"
+                   "Recommended GTX 1080 Ti: normal only.\n"
+                   "Recommended RTX 3070+: normal + bf16."))
         self._bench_modes_frame = f_modes
 
         # ── Tests/archs ciblés ──
         f_tests = ctk.CTkFrame(scroll, fg_color="transparent")
         f_tests.pack(fill="x", pady=3)
-        ctk.CTkLabel(f_tests, text="Tests ciblés :", width=170, anchor="w").pack(side="left")
+        ctk.CTkLabel(f_tests, text=_t("Tests ciblés :", "Targeted tests:"), width=170, anchor="w").pack(side="left")
         self.widgets["bench_tests"] = ctk.CTkEntry(
             f_tests, width=300,
             placeholder_text="vide = tous  |  ex: compact,span,hat_s")
@@ -3290,18 +3394,25 @@ except Exception as e: print(f"ERROR:{{e}}")
         ctk.CTkButton(f_tests, text="📋", width=30,
                       command=self._bench_list_tests).pack(side="left")
         ToolTip(self.widgets["bench_tests"],
-                "Archs ou features à tester, séparés par virgule.\n"
-                "Vide = teste TOUT (peut durer plusieurs heures).\n\n"
-                "Exemples Arch :\n"
-                "  compact, span, hat_s, ultracompact, artcnn_r8f64\n\n"
-                "Exemples Feature :\n"
-                "  baseline, loss_mse, loss_ssim, optim_adan, loss_perc_conv\n\n"
-                "→ Cliquez 📋 pour lister tous les tests disponibles.")
+                _t("Archs ou features à tester, séparés par virgule.\n"
+                   "Vide = teste TOUT (peut durer plusieurs heures).\n\n"
+                   "Exemples Arch :\n"
+                   "  compact, span, hat_s, ultracompact, artcnn_r8f64\n\n"
+                   "Exemples Feature :\n"
+                   "  baseline, loss_mse, loss_ssim, optim_adan, loss_perc_conv\n\n"
+                   "→ Cliquez 📋 pour lister tous les tests disponibles.",
+                   "Archs or features to test, comma-separated.\n"
+                   "Empty = test ALL (may take several hours).\n\n"
+                   "Arch examples:\n"
+                   "  compact, span, hat_s, ultracompact, artcnn_r8f64\n\n"
+                   "Feature examples:\n"
+                   "  baseline, loss_mse, loss_ssim, optim_adan, loss_perc_conv\n\n"
+                   "→ Click 📋 to list all available tests."))
 
         # Train GT (optional override)
         r_gt = ctk.CTkFrame(scroll, fg_color="transparent")
         r_gt.pack(fill="x", pady=3)
-        ctk.CTkLabel(r_gt, text="Dataset train GT :", width=170, anchor="w").pack(side="left")
+        ctk.CTkLabel(r_gt, text=_t("Dataset train GT :", "Train dataset GT:"), width=170, anchor="w").pack(side="left")
         self.widgets["bench_gt"] = ctk.CTkEntry(r_gt,
             placeholder_text=str(Path.home() / "IA_Engine/datasets/train/HR"))
         self.widgets["bench_gt"].pack(side="left", fill="x", expand=True, padx=5)
@@ -3312,7 +3423,7 @@ except Exception as e: print(f"ERROR:{{e}}")
         # Output dir (optional)
         r_out = ctk.CTkFrame(scroll, fg_color="transparent")
         r_out.pack(fill="x", pady=3)
-        ctk.CTkLabel(r_out, text="Dossier résultats :", width=170, anchor="w").pack(side="left")
+        ctk.CTkLabel(r_out, text=_t("Dossier résultats :", "Results folder:"), width=170, anchor="w").pack(side="left")
         self.widgets["bench_outdir"] = ctk.CTkEntry(r_out,
             placeholder_text=str(Path.home() / "IA_Engine/benchmark_results"))
         self.widgets["bench_outdir"].pack(side="left", fill="x", expand=True, padx=5)
@@ -3324,23 +3435,25 @@ except Exception as e: print(f"ERROR:{{e}}")
         f_opts = ctk.CTkFrame(scroll, fg_color="transparent")
         f_opts.pack(fill="x", pady=3)
         self.widgets["bench_reset"] = ctk.CTkCheckBox(
-            f_opts, text="Reset état (repart de zéro)",
+            f_opts, text=_t("Reset état (repart de zéro)", "Reset state (start from scratch)"),
             onvalue="true", offvalue="false")
         self.widgets["bench_reset"].pack(side="left", padx=4)
         self.widgets["bench_no_upscale"] = ctk.CTkCheckBox(
-            f_opts, text="Pas de test upscale",
+            f_opts, text=_t("Pas de test upscale", "No upscale test"),
             onvalue="true", offvalue="false")
         self.widgets["bench_no_upscale"].pack(side="left", padx=12)
         ToolTip(self.widgets["bench_reset"],
-                "Ignore l'état sauvegardé et relance tous les tests depuis le début.")
+                _t("Ignore l'état sauvegardé et relance tous les tests depuis le début.",
+                   "Ignores saved state and reruns all tests from the beginning."))
         ToolTip(self.widgets["bench_no_upscale"],
-                "Passe le test d'inférence rapide après chaque arch/feature.\n(Arch benchmark uniquement)")
+                _t("Passe le test d'inférence rapide après chaque arch/feature.\n(Arch benchmark uniquement)",
+                   "Skips the quick inference test after each arch/feature.\n(Arch benchmark only)"))
 
         # ── Action buttons ──
         f_btns = ctk.CTkFrame(f, fg_color="transparent")
         f_btns.pack(fill="x", pady=6)
         self.widgets["bench_run_btn"] = ctk.CTkButton(
-            f_btns, text="▶  Lancer le Benchmark",
+            f_btns, text=_t("▶  Lancer le Benchmark", "▶  Run Benchmark"),
             fg_color="#2e7d32", hover_color="#1b5e20",
             font=("Arial", 13, "bold"), command=self._bench_run)
         self.widgets["bench_run_btn"].pack(side="left", padx=(0, 8), ipady=4)
@@ -3352,12 +3465,12 @@ except Exception as e: print(f"ERROR:{{e}}")
         self.widgets["bench_stop_btn"].pack(side="left", padx=(0, 8), ipady=4)
 
         ctk.CTkButton(
-            f_btns, text="📂 Ouvrir résultats",
+            f_btns, text=_t("📂 Ouvrir résultats", "📂 Open results"),
             fg_color="#1565c0", hover_color="#0d47a1",
             command=self._bench_open_results).pack(side="left", ipady=4)
 
         ctk.CTkButton(
-            f_btns, text="📋 Lister tests",
+            f_btns, text=_t("📋 Lister tests", "📋 List tests"),
             fg_color="transparent", border_width=1,
             command=self._bench_list_tests).pack(side="left", padx=8, ipady=4)
 
@@ -3382,7 +3495,8 @@ except Exception as e: print(f"ERROR:{{e}}")
 
     def _bench_on_type_change(self, val):
         """Ajuste les défauts n_iter / timeout selon le type."""
-        if val in ("Architectures", "Arch + Features"):
+        if val in (_t("Architectures", "Architectures"), "Architectures",
+                   _t("Arch + Features", "Arch + Features"), "Arch + Features"):
             # Arch phase domine → défauts arch
             self._bench_set_entry("bench_n_iter", "2500")
             self._bench_set_entry("bench_timeout", "3600")
@@ -3431,11 +3545,11 @@ except Exception as e: print(f"ERROR:{{e}}")
         type_sel   = self.widgets["bench_type"].get()    # "Architectures" | "Features" | "Arch + Features"
 
         # Expansion sélection moteur
-        engines = ["redux", "neosr"] if engine_sel == "Les deux" else [engine_sel.lower()]
+        engines = ["redux", "neosr"] if engine_sel in (_t("Les deux", "Both"), "Les deux", "Both") else [engine_sel.lower()]
 
         # Expansion sélection type
-        btypes  = ["arch", "feature"] if type_sel == "Arch + Features" else \
-                  ["arch"]            if type_sel == "Architectures"    else \
+        btypes  = ["arch", "feature"] if type_sel in (_t("Arch + Features", "Arch + Features"), "Arch + Features") else \
+                  ["arch"]            if type_sel in (_t("Architectures", "Architectures"), "Architectures")    else \
                   ["feature"]
 
         if list_only:
@@ -3479,7 +3593,8 @@ except Exception as e: print(f"ERROR:{{e}}")
         python, script = self._bench_resolve_script()
         if not os.path.isfile(script):
             messagebox.showerror("Benchmark",
-                f"Script introuvable :\n{script}\n\nVérifiez l'installation du moteur.")
+                _t(f"Script introuvable :\n{script}\n\nVérifiez l'installation du moteur.",
+                   f"Script not found:\n{script}\n\nCheck the engine installation."))
             return
 
         cmds   = self._bench_build_cmd(python, script)
@@ -3491,11 +3606,11 @@ except Exception as e: print(f"ERROR:{{e}}")
         log.configure(state="normal"); log.delete("1.0", "end"); log.configure(state="disabled")
         self._bench_log_write(f"[Benchmark] {engine} — {btype}")
         if len(cmds) > 1:
-            self._bench_log_write(f"[Benchmark] {len(cmds)} phase(s) à exécuter successivement.\n")
+            self._bench_log_write(f"[Benchmark] {len(cmds)} {_t('phase(s) à exécuter successivement.', 'phase(s) to run sequentially.')}\n")
 
         self.widgets["bench_run_btn"].configure(state="disabled")
         self.widgets["bench_stop_btn"].configure(state="normal")
-        self._bench_status_set("Benchmark en cours...")
+        self._bench_status_set(_t("Benchmark en cours...", "Benchmark running..."))
 
         def _worker():
             try:
@@ -3507,11 +3622,11 @@ except Exception as e: print(f"ERROR:{{e}}")
                             ei = cmd.index("--engine"); ti = cmd.index("--type")
                             phase_label = f"{cmd[ei+1].upper()} / {cmd[ti+1]}"
                         except ValueError:
-                            phase_label = f"phase {i}"
+                            phase_label = f"{_t('phase', 'phase')} {i}"
                         self._bench_log_write(
-                            f"[Benchmark] Phase {i}/{len(cmds)} : {phase_label}")
+                            f"[Benchmark] {_t('Phase', 'Phase')} {i}/{len(cmds)} : {phase_label}")
                         self._bench_log_write(f"{'='*60}")
-                    self._bench_log_write(f"[Benchmark] Commande : {' '.join(cmd)}\n")
+                    self._bench_log_write(f"[Benchmark] {_t('Commande', 'Command')} : {' '.join(cmd)}\n")
 
                     self._bench_proc = subprocess.Popen(
                         cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -3523,20 +3638,20 @@ except Exception as e: print(f"ERROR:{{e}}")
                     rc = self._bench_proc.returncode
 
                     if rc != 0:
-                        self._bench_status_set(f"Phase {i} terminée avec erreur (code {rc}).")
+                        self._bench_status_set(_t(f"Phase {i} terminée avec erreur (code {rc}).", f"Phase {i} finished with error (code {rc})."))
                         self._bench_log_write(
-                            f"\n[Benchmark] ❌ Phase {i} terminée avec erreur (code {rc}). Arrêt.")
+                            f"\n[Benchmark] ❌ {_t(f'Phase {i} terminée avec erreur (code {rc}). Arrêt.', f'Phase {i} finished with error (code {rc}). Stopping.')}")
                         return  # stop on first error
 
                     self._bench_log_write(
-                        f"\n[Benchmark] ✅ Phase {i}/{len(cmds)} terminée.")
+                        f"\n[Benchmark] ✅ {_t(f'Phase {i}/{len(cmds)} terminée.', f'Phase {i}/{len(cmds)} done.')}")
 
-                self._bench_status_set("Benchmark terminé avec succès.")
+                self._bench_status_set(_t("Benchmark terminé avec succès.", "Benchmark completed successfully."))
                 self._bench_log_write(
-                    "\n[Benchmark] ✅ Toutes les phases terminées — voir les résultats.")
+                    f"\n[Benchmark] ✅ {_t('Toutes les phases terminées — voir les résultats.', 'All phases completed — see results.')}")
             except Exception as ex:
-                self._bench_log_write(f"[Benchmark] ERREUR : {ex}")
-                self._bench_status_set(f"Erreur : {ex}")
+                self._bench_log_write(f"[Benchmark] {_t('ERREUR', 'ERROR')} : {ex}")
+                self._bench_status_set(f"{_t('Erreur', 'Error')} : {ex}")
             finally:
                 self._ui_update(self.widgets["bench_run_btn"].configure, state="normal")
                 self._ui_update(self.widgets["bench_stop_btn"].configure, state="disabled")
@@ -3555,8 +3670,8 @@ except Exception as e: print(f"ERROR:{{e}}")
                 self._bench_proc.kill()
             except Exception:
                 pass
-            self._bench_log_write("[Benchmark] Arrêt demandé par l'utilisateur.")
-            self._bench_status_set("Arrêté.")
+            self._bench_log_write(f"[Benchmark] {_t('Arrêt demandé par l\'utilisateur.', 'Stop requested by user.')}")
+            self._bench_status_set(_t("Arrêté.", "Stopped."))
         self.widgets["bench_stop_btn"].configure(state="disabled")
         self.widgets["bench_run_btn"].configure(state="normal")
 
@@ -3575,18 +3690,18 @@ except Exception as e: print(f"ERROR:{{e}}")
             os.makedirs(outdir, exist_ok=True)
             os.startfile(outdir)
         except Exception as ex:
-            messagebox.showerror("Ouvrir résultats", f"Impossible d'ouvrir :\n{outdir}\n\n{ex}")
+            messagebox.showerror(_t("Ouvrir résultats", "Open results"), _t("Impossible d'ouvrir", "Cannot open") + f" :\n{outdir}\n\n{ex}")
 
     def _bench_list_tests(self):
         python, script = self._bench_resolve_script()
         if not os.path.isfile(script):
-            messagebox.showerror("Benchmark", f"Script introuvable :\n{script}")
+            messagebox.showerror("Benchmark", _t(f"Script introuvable :\n{script}", f"Script not found:\n{script}"))
             return
         # list_only retourne une liste d'une seule commande (première combinaison)
         cmd = self._bench_build_cmd(python, script, list_only=True)[0]
         log = self.widgets["bench_log"]
         log.configure(state="normal"); log.delete("1.0", "end"); log.configure(state="disabled")
-        self._bench_log_write("[Benchmark] Liste des tests disponibles :\n")
+        self._bench_log_write(f"[Benchmark] {_t('Liste des tests disponibles :', 'Available tests list:')}\n")
 
         def _worker():
             try:
@@ -3597,6 +3712,6 @@ except Exception as e: print(f"ERROR:{{e}}")
                     self._bench_log_write(line.rstrip())
                 proc.wait()
             except Exception as ex:
-                self._bench_log_write(f"Erreur : {ex}")
+                self._bench_log_write(f"{_t('Erreur', 'Error')} : {ex}")
 
         threading.Thread(target=_worker, daemon=True).start()

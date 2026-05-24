@@ -29,7 +29,7 @@ from src.core.ai_cache import get_cached_response, store_response, test_api_conn
 from src.core.config_templates import list_templates, get_template
 from src.ui.components.performance_bars import PerformanceBars
 from src.core.descriptions import (
-    TOOLTIPS, ARCH_FIELDS, REDUX_ARCH_FIELDS, DISC_FIELDS,
+    TOOLTIPS, get_tooltip, ARCH_FIELDS, REDUX_ARCH_FIELDS, DISC_FIELDS,
     OPTIMIZERS, VRAM_FACTORS, REDUX_VRAM_FACTORS, DISC_VRAM_FACTORS,
     ARCH_FAMILIES, NEOSR_ARCH_FAMILIES, REDUX_ARCH_FAMILIES,
     NEOSR_OPTIMIZERS, REDUX_OPTIMIZERS,
@@ -267,7 +267,7 @@ class ConfigTab(ctk.CTkFrame):
         _det_chk.select()  # défaut : activé (seed = 10)
         _det_chk.pack(side="left", padx=(8, 0))
         self.widgets["deterministic"] = _det_chk
-        ToolTip(_det_chk, TOOLTIPS.get("deterministic"))
+        ToolTip(_det_chk, get_tooltip("deterministic"))
 
         # Engine banner — bottom, larger, centered
         self._banner_frame = ctk.CTkFrame(f, height=140, fg_color="transparent")
@@ -431,7 +431,7 @@ class ConfigTab(ctk.CTkFrame):
         self.perf_bars = PerformanceBars(f_right, fg_color="transparent"); self.perf_bars.pack(padx=10, pady=5, fill="x", expand=True)
         self.frame_dynamic_g = ctk.CTkFrame(f, border_width=1, border_color="#3B8ED0"); self.frame_dynamic_g.pack(fill="x", pady=10, ipady=5)
         self.add_header(f, _t("Discriminateur (GAN)", "Discriminator (GAN)"))
-        self.widgets["use_gan"] = ctk.CTkCheckBox(f, text=_t("Activer GAN", "Enable GAN"), onvalue="true", offvalue="false", command=self.toggle_gan_options); self.widgets["use_gan"].pack(anchor="w", pady=5); ToolTip(self.widgets["use_gan"], TOOLTIPS.get("use_gan", ""))
+        self.widgets["use_gan"] = ctk.CTkCheckBox(f, text=_t("Activer GAN", "Enable GAN"), onvalue="true", offvalue="false", command=self.toggle_gan_options); self.widgets["use_gan"].pack(anchor="w", pady=5); ToolTip(self.widgets["use_gan"], get_tooltip("use_gan", ""))
         self.frame_gan_opts = ctk.CTkFrame(f, fg_color="transparent")
         # ── Ligne principale : Type | Mode | Real | Fake | [bloc Loss GAN vertical] ──
         _f_row = ctk.CTkFrame(self.frame_gan_opts, fg_color="transparent"); _f_row.pack(fill="x", pady=(6, 2))
@@ -455,7 +455,7 @@ class ConfigTab(ctk.CTkFrame):
         # Bloc Loss GAN : label + emoji | sous-cadre slider centré | entry
         _gan_blk = ctk.CTkFrame(_f_row, fg_color="transparent"); _gan_blk.pack(side="left", padx=(0, 8))
         _lbl_gan = ctk.CTkLabel(_gan_blk, text=_t("Loss Weight GAN :", "Loss Weight GAN:")); _lbl_gan.pack(side="left", padx=5)
-        ToolTip(_lbl_gan, TOOLTIPS.get("gan_loss_weight", ""))
+        ToolTip(_lbl_gan, get_tooltip("gan_loss_weight", ""))
         self._gan_w_emoji = ctk.CTkLabel(_gan_blk, text="🟢", width=28, font=("Segoe UI Emoji", 13))
         self._gan_w_emoji.pack(side="left", padx=(4, 6))
         # Sous-cadre : "−intensité+" (width=218) centré sur slider, pady symétrique centre le slider
@@ -468,7 +468,8 @@ class ConfigTab(ctk.CTkFrame):
         self.widgets["dyn_gan_weight"].insert(0, "0.05")
         self.widgets["dyn_gan_weight"].bind("<KeyRelease>", lambda e: self.refresh_ui_stats())
         self.widgets["dyn_gan_weight"].pack(side="left", padx=(6, 0))
-        ToolTip(self.widgets["dyn_gan_weight"], "Poids de la loss GAN (adversarielle)\n\nValeurs guides :\n  0.001  quasi-PSNR  (GAN quasi absent)\n  0.01   GAN doux    (ideal pour demarrer)\n  0.05   defaut NeoSR (equilibre pixel/realisme)\n  0.1    modere      (textures plus vives)\n  0.2    agressif    (risque d'artefacts)\n  0.5    fort        (GAN dominant)\n  1.0    instable    (deconseille)")
+        ToolTip(self.widgets["dyn_gan_weight"], _t("Poids de la loss GAN (adversarielle)\n\nValeurs guides :\n  0.001  quasi-PSNR  (GAN quasi absent)\n  0.01   GAN doux    (idéal pour démarrer)\n  0.05   défaut NeoSR (équilibre pixel/réalisme)\n  0.1    modéré      (textures plus vives)\n  0.2    agressif    (risque d'artefacts)\n  0.5    fort        (GAN dominant)\n  1.0    instable    (déconseillé)",
+                                                    "GAN loss weight (adversarial)\n\nGuide values:\n  0.001  near-PSNR  (GAN almost absent)\n  0.01   soft GAN   (ideal to start)\n  0.05   NeoSR default (pixel/realism balance)\n  0.1    moderate   (more vivid textures)\n  0.2    aggressive (risk of artifacts)\n  0.5    strong     (GAN dominant)\n  1.0    unstable   (not recommended)"))
         self._init_log_slider(self._gan_w_sl, self.widgets["dyn_gan_weight"], self._gan_w_emoji,
                               lo=0.001, hi=1.0, emoji_map=_gan_emoji_map)
         self.frame_dynamic_d = ctk.CTkFrame(self.frame_gan_opts, border_width=1, border_color="#e74c3c"); self.frame_dynamic_d.pack(fill="x", pady=(15, 4), ipady=5)
@@ -478,7 +479,7 @@ class ConfigTab(ctk.CTkFrame):
         f = ctk.CTkFrame(self.page_container, fg_color="transparent"); self.add_header(f, _t("Datasets & Chemins", "Datasets & Paths"))
         f_mode = ctk.CTkFrame(f, fg_color="transparent"); f_mode.pack(fill="x", pady=5)
         ctk.CTkLabel(f_mode, text=_t("Mode de Dataset :", "Dataset Mode:"), width=120, anchor="w").pack(side="left")
-        self.widgets["dataset_mode"] = ctk.CTkOptionMenu(f_mode, values=["otf", "paired"], width=180); self.widgets["dataset_mode"].pack(side="left"); self.widgets["dataset_mode"].set("otf"); ToolTip(self.widgets["dataset_mode"], TOOLTIPS.get("dataset_mode"))
+        self.widgets["dataset_mode"] = ctk.CTkOptionMenu(f_mode, values=["otf", "paired"], width=180); self.widgets["dataset_mode"].pack(side="left"); self.widgets["dataset_mode"].set("otf"); ToolTip(self.widgets["dataset_mode"], get_tooltip("dataset_mode"))
         self.row_file_picker(f, _t("Train HQ (GT) :", "Train HQ (GT):"), "dataroot_gt", default=self.settings.get("ds_train_gt"))
         self.row_file_picker(f, _t("Val HQ (GT) :", "Val HQ (GT):"), "val_gt", default=self.settings.get("ds_val_gt"), tip_key="val_freq")
         self.row_file_picker(f, _t("Val LQ (Optionnel) :", "Val LQ (Optional):"), "val_lq", default=self.settings.get("ds_val_lq"))
@@ -486,19 +487,22 @@ class ConfigTab(ctk.CTkFrame):
 
         row_sh = ctk.CTkFrame(f, fg_color="transparent"); row_sh.pack(fill="x", pady=2)
         self.widgets["use_shuffle"] = ctk.CTkCheckBox(row_sh, text=_t("Shuffle (Mélanger)", "Shuffle (Randomize)"), onvalue="true", offvalue="false"); self.widgets["use_shuffle"].pack(side="left", padx=5); self.widgets["use_shuffle"].select()
-        ToolTip(self.widgets["use_shuffle"], "Mélanger les données à chaque epoch.\nIndispensable pour éviter que le modèle mémorise l'ordre des images.")
+        ToolTip(self.widgets["use_shuffle"], _t("Mélanger les données à chaque epoch.\nIndispensable pour éviter que le modèle mémorise l'ordre des images.",
+                                                  "Shuffle data at each epoch.\nEssential to prevent the model from memorizing the order of images."))
         self.add_header(f, _t("Augmentations (Train)", "Augmentations (Train)"))
         # Spatial augmentations (hflip, rot90)
         row_spatial = ctk.CTkFrame(f, fg_color="transparent"); row_spatial.pack(fill="x", pady=2)
         self.widgets["use_hflip"] = ctk.CTkCheckBox(row_spatial, text=_t("HFlip (Miroir H)", "HFlip (H Mirror)"), onvalue="true", offvalue="false"); self.widgets["use_hflip"].pack(side="left", padx=5); self.widgets["use_hflip"].select()
-        ToolTip(self.widgets["use_hflip"], "Retournement horizontal aléatoire.\n        [+] Double la variété du dataset gratuitement (aucun coût VRAM).\n        [+] Toujours recommandé sauf si votre dataset a une orientation fixe (ex: texte).")
+        ToolTip(self.widgets["use_hflip"], _t("Retournement horizontal aléatoire.\n        [+] Double la variété du dataset gratuitement (aucun coût VRAM).\n        [+] Toujours recommandé sauf si votre dataset a une orientation fixe (ex: texte).",
+                                               "Random horizontal flip.\n        [+] Doubles dataset variety for free (no VRAM cost).\n        [+] Always recommended unless your dataset has a fixed orientation (e.g. text)."))
         self.widgets["use_rot"] = ctk.CTkCheckBox(row_spatial, text=_t("Rot90 (Rotations)", "Rot90 (Rotations)"), onvalue="true", offvalue="false"); self.widgets["use_rot"].pack(side="left", padx=15); self.widgets["use_rot"].select()
-        ToolTip(self.widgets["use_rot"], "Rotations aléatoires de 90°, 180°, 270°.\n        [+] Quadruple la variété du dataset.\n        [+] Recommandé pour textures et photos naturelles.\n        [-] À désactiver si l'orientation compte (visages, texte).")
+        ToolTip(self.widgets["use_rot"], _t("Rotations aléatoires de 90°, 180°, 270°.\n        [+] Quadruple la variété du dataset.\n        [+] Recommandé pour textures et photos naturelles.\n        [-] À désactiver si l'orientation compte (visages, texte).",
+                                             "Random rotations of 90°, 180°, 270°.\n        [+] Quadruples dataset variety.\n        [+] Recommended for textures and natural photos.\n        [-] Disable if orientation matters (faces, text)."))
         # Mix augmentations (MoA)
         for aug, lbl, default_prob in [("mixup", "MixUp", 0.15), ("cutmix", "CutMix", 0.15), ("resizemix", "ResizeMix", 0.15), ("cutblur", "CutBlur", 0.15)]:
             row = ctk.CTkFrame(f, fg_color="transparent"); row.pack(fill="x", pady=2)
             chk = ctk.CTkCheckBox(row, text=lbl, width=90, onvalue="true", offvalue="false"); chk.pack(side="left")
-            self.widgets[f"aug_{aug}"] = chk; ToolTip(chk, TOOLTIPS.get(f"aug_{aug}"))
+            self.widgets[f"aug_{aug}"] = chk; ToolTip(chk, get_tooltip(f"aug_{aug}"))
             sl = ctk.CTkSlider(row, from_=0, to=1, number_of_steps=20, width=120); sl.pack(side="left", padx=10); sl.set(default_prob)
             self.widgets[f"prob_aug_{aug}"] = sl
             lbl_prob = ctk.CTkLabel(row, text=f"{default_prob:.2f}", width=40); lbl_prob.pack(side="left")
@@ -567,7 +571,7 @@ class ConfigTab(ctk.CTkFrame):
         self.widgets["optim_g"] = ctk.CTkOptionMenu(f_opt, values=NEOSR_OPTIMIZERS, width=120, command=lambda x: (self._on_optimizer_change(x), self.refresh_ui_stats())); self.widgets["optim_g"].pack(side="left", padx=5)
         self.add_label_tip(f_opt, _t("Scheduler :", "Scheduler:"), "scheduler")
         self.widgets["scheduler"] = ctk.CTkOptionMenu(f_opt, values=NEOSR_SCHEDULERS, width=140); self.widgets["scheduler"].pack(side="left", padx=5)
-        self.widgets["schedule_free"] = ctk.CTkCheckBox(f_opt, text=_t("Sched. Free", "Sched. Free"), width=90); self.widgets["schedule_free"].pack(side="left", padx=5); ToolTip(self.widgets["schedule_free"], TOOLTIPS.get("schedule_free"))
+        self.widgets["schedule_free"] = ctk.CTkCheckBox(f_opt, text=_t("Sched. Free", "Sched. Free"), width=90); self.widgets["schedule_free"].pack(side="left", padx=5); ToolTip(self.widgets["schedule_free"], get_tooltip("schedule_free"))
 
         # ---- LR Générateur | LR Discriminateur côte à côte ----
         _f_lr_cols = ctk.CTkFrame(f, fg_color="transparent"); _f_lr_cols.pack(fill="x", pady=(4, 4))
@@ -575,7 +579,7 @@ class ConfigTab(ctk.CTkFrame):
         # LR Générateur — label inline à gauche (comme GAN)
         _lr_g_fr = ctk.CTkFrame(_f_lr_cols, fg_color="transparent"); _lr_g_fr.pack(side="left", fill="x", expand=True, padx=(0, 6))
         _lbl_lr_g = ctk.CTkLabel(_lr_g_fr, text=_t("LR Générateur :", "LR Generator:")); _lbl_lr_g.pack(side="left", padx=(0, 5))
-        ToolTip(_lbl_lr_g, TOOLTIPS.get("lr", ""))
+        ToolTip(_lbl_lr_g, get_tooltip("lr", ""))
         self._lr_g_emoji = ctk.CTkLabel(_lr_g_fr, text="🟢", width=30, font=("Segoe UI Emoji", 13))
         self._lr_g_emoji.pack(side="left", padx=(3, 0))
         _lr_g_sub = ctk.CTkFrame(_lr_g_fr, fg_color="transparent"); _lr_g_sub.pack(side="left", fill="x", expand=True, padx=3)
@@ -585,27 +589,29 @@ class ConfigTab(ctk.CTkFrame):
         self._lr_g_sl.pack(fill="x", pady=(0, 12))
         self.widgets["_sl_lr"] = self._lr_g_sl
         self.widgets["lr"] = ctk.CTkEntry(_lr_g_fr, width=72); self.widgets["lr"].insert(0, "5e-5"); self.widgets["lr"].pack(side="left", padx=3)
-        ToolTip(self.widgets["lr"], "LR Generateur — vitesse d'apprentissage\n\nValeurs guides :\n  1e-6  ultra lent   (micro-ajustement final)\n  1e-5  tres lent    (fine-tuning existant)\n  5e-5  lent         (fine-tuning GAN)\n  1e-4  modere       (stable, bon pour GAN)\n  2e-4  standard     (Adam/AdamW recommande)\n  5e-4  rapide       (depart PSNR)\n  1e-3  tres rapide  (instable)\n\nPSNR : 2e-4 a 5e-4\nGAN  : 5e-5 a 2e-4\nFine-tune : 1e-5 a 5e-5")
+        ToolTip(self.widgets["lr"], _t("LR Générateur — vitesse d'apprentissage\n\nValeurs guides :\n  1e-6  ultra lent   (micro-ajustement final)\n  1e-5  très lent    (fine-tuning existant)\n  5e-5  lent         (fine-tuning GAN)\n  1e-4  modéré       (stable, bon pour GAN)\n  2e-4  standard     (Adam/AdamW recommandé)\n  5e-4  rapide       (départ PSNR)\n  1e-3  très rapide  (instable)\n\nPSNR : 2e-4 à 5e-4\nGAN  : 5e-5 à 2e-4\nFine-tune : 1e-5 à 5e-5",
+                                        "Generator LR — learning rate\n\nGuide values:\n  1e-6  ultra slow   (final micro-adjustment)\n  1e-5  very slow    (fine-tuning existing)\n  5e-5  slow         (GAN fine-tuning)\n  1e-4  moderate     (stable, good for GAN)\n  2e-4  standard     (Adam/AdamW recommended)\n  5e-4  fast         (PSNR start)\n  1e-3  very fast    (unstable)\n\nPSNR: 2e-4 to 5e-4\nGAN:  5e-5 to 2e-4\nFine-tune: 1e-5 to 5e-5"))
         self._init_log_slider(self._lr_g_sl, self.widgets["lr"], self._lr_g_emoji)
 
         # LR Discriminateur — label inline à gauche (comme GAN)
         _lr_d_fr = ctk.CTkFrame(_f_lr_cols, fg_color="transparent"); _lr_d_fr.pack(side="left", fill="x", expand=True, padx=(6, 0))
         _lbl_lr_d = ctk.CTkLabel(_lr_d_fr, text=_t("LR Discriminateur :", "LR Discriminator:")); _lbl_lr_d.pack(side="left", padx=(0, 5))
-        ToolTip(_lbl_lr_d, TOOLTIPS.get("lr_d", ""))
+        ToolTip(_lbl_lr_d, get_tooltip("lr_d", ""))
         self._lr_d_emoji = ctk.CTkLabel(_lr_d_fr, text="🟢", width=30, font=("Segoe UI Emoji", 13))
         self._lr_d_emoji.pack(side="left", padx=(3, 0))
         _lr_d_sub = ctk.CTkFrame(_lr_d_fr, fg_color="transparent"); _lr_d_sub.pack(side="left", fill="x", expand=True, padx=3)
-        ctk.CTkLabel(_lr_d_sub, text="−  intensité  +", text_color="#aaa",
+        ctk.CTkLabel(_lr_d_sub, text=_t("−  intensité  +", "−  intensity  +"), text_color="#aaa",
                      font=("Arial", 9, "italic"), height=12).pack(fill="x", pady=(0, 3))
         self._lr_d_sl = ctk.CTkSlider(_lr_d_sub, from_=0, to=1, number_of_steps=100)
         self._lr_d_sl.pack(fill="x", pady=(0, 12))
         self.widgets["_sl_lr_d"] = self._lr_d_sl
         self.widgets["lr_d"] = ctk.CTkEntry(_lr_d_fr, width=72); self.widgets["lr_d"].insert(0, "5e-5"); self.widgets["lr_d"].pack(side="left", padx=3)
-        ToolTip(self.widgets["lr_d"], "LR Discriminateur — vitesse apprentissage du D\n\nValeurs guides :\n  1e-5  tres lent    (D freine au max)\n  5e-5  conservateur (D stable)\n  1e-4  standard     (equilibre G/D)\n  2e-4  agressif     (D apprend vite)\n\nGeneralement = ou < LR du generateur.\nD domine (artefacts) : baisser ce LR\nG domine (flou) : augmenter ce LR")
+        ToolTip(self.widgets["lr_d"], _t("LR Discriminateur — vitesse apprentissage du D\n\nValeurs guides :\n  1e-5  très lent    (D freine au max)\n  5e-5  conservateur (D stable)\n  1e-4  standard     (équilibre G/D)\n  2e-4  agressif     (D apprend vite)\n\nGénéralement = ou < LR du générateur.\nD domine (artefacts) : baisser ce LR\nG domine (flou) : augmenter ce LR",
+                                          "Discriminator LR — D learning rate\n\nGuide values:\n  1e-5  very slow    (D brakes max)\n  5e-5  conservative (D stable)\n  1e-4  standard     (G/D balance)\n  2e-4  aggressive   (D learns fast)\n\nGenerally = or < Generator LR.\nD dominates (artifacts): lower this LR\nG dominates (blur): raise this LR"))
         self._init_log_slider(self._lr_d_sl, self.widgets["lr_d"], self._lr_d_emoji)
         
         # Paramètres Spécifiques
-        self.add_header(f, "Paramètres Scheduler")
+        self.add_header(f, _t("Paramètres Scheduler", "Scheduler Parameters"))
         f_sched = ctk.CTkFrame(f, fg_color="transparent"); f_sched.pack(fill="x")
         
         # MultiStep Params
@@ -616,7 +622,7 @@ class ConfigTab(ctk.CTkFrame):
         self.add_param_grid(f_sched, "T_max (Cosine)", "300000", "t_max", 1, 0, "Durée d'un cycle complet en itérations.\nDoit généralement être égal à 'Total Iter'.")
         self.add_param_grid(f_sched, "Eta Min (Cosine)", "1e-7", "eta_min", 1, 1, "Learning Rate minimum atteint à la fin du cycle.\nÉvite que l'entraînement ne s'arrête totalement.")
 
-        self.add_header(f, "Log & Validation")
+        self.add_header(f, _t("Log & Validation", "Log & Validation"))
         f_val = ctk.CTkFrame(f, fg_color="transparent"); f_val.pack(fill="x", pady=10)
         self.add_param_grid(f_val, "Val Freq", "5000", "val_freq", 0, 0, "Fréquence de calcul des scores (PSNR/SSIM) sur le set de validation.")
         self.add_param_grid(f_val, "Save Freq", "5000", "save_freq", 0, 1, "Fréquence de sauvegarde du modèle (.pth).\nImportant en cas de crash.")
@@ -629,10 +635,10 @@ class ConfigTab(ctk.CTkFrame):
         
         # --- METRIQUES STRICTES NEOSR ---
         f_metrics = ctk.CTkFrame(f, fg_color="transparent"); f_metrics.pack(fill="x", padx=5, pady=5)
-        ctk.CTkLabel(f_metrics, text="Métriques :", font=("Roboto", 10, "bold"), text_color="#AAA").pack(anchor="w")
+        ctk.CTkLabel(f_metrics, text=_t("Métriques :", "Metrics:"), font=("Roboto", 10, "bold"), text_color="#AAA").pack(anchor="w")
         for m, txt in NEOSR_METRICS:
             chk = ctk.CTkCheckBox(f_metrics, text=txt, onvalue="true", offvalue="false", width=80); chk.pack(side="left", padx=5)
-            self.widgets[f"metric_{m}"] = chk; ToolTip(chk, METRIC_DESCS.get(m, TOOLTIPS.get(f"metric_{m}")))
+            self.widgets[f"metric_{m}"] = chk; ToolTip(chk, METRIC_DESCS.get(m, get_tooltip(f"metric_{m}")))
             if m in ["psnr", "ssim"]: chk.select()
         return f
 
@@ -646,23 +652,25 @@ class ConfigTab(ctk.CTkFrame):
         self.deg_preset_menu = ctk.CTkOptionMenu(f_pre, values=["Light", "Medium", "Heavy", "Overkill"], command=self.apply_deg_preset)
         self.deg_preset_menu.pack(side="left")
         self.deg_preset_menu.set("Medium")
-        ToolTip(self.deg_preset_menu, TOOLTIPS.get("deg_level"))
+        ToolTip(self.deg_preset_menu, get_tooltip("deg_level"))
         # Checkbox: include custom degradations when applying preset
         self._chk_deg_custom = ctk.CTkCheckBox(f_pre, text="Deg. Custom", font=("Roboto", 11),
                                                 command=self._on_deg_custom_toggle)
         self._chk_deg_custom.pack(side="left", padx=(12, 0))
         self._chk_deg_custom.select()
-        ToolTip(self._chk_deg_custom, "Si coché : le preset applique aussi les dégradations custom.\nDécocher = remet à zéro toutes les dégradations custom immédiatement.")
+        ToolTip(self._chk_deg_custom, _t("Si coché : le preset applique aussi les dégradations custom.\nDécocher = remet à zéro toutes les dégradations custom immédiatement.",
+                                          "If checked: the preset also applies custom degradations.\nUncheck = resets all custom degradations immediately."))
         # Checkbox: include VHS degradations
         self._chk_deg_vhs = ctk.CTkCheckBox(f_pre, text="VHS/Analog", font=("Roboto", 11),
                                              command=self._on_deg_vhs_toggle)
         self._chk_deg_vhs.pack(side="left", padx=(8, 0))
-        ToolTip(self._chk_deg_vhs, "Si coché : le preset applique les dégradations VHS/analogiques.\nDécocher = remet VHS à zéro immédiatement.")
+        ToolTip(self._chk_deg_vhs, _t("Si coché : le preset applique les dégradations VHS/analogiques.\nDécocher = remet VHS à zéro immédiatement.",
+                                        "If checked: the preset applies VHS/analog degradations.\nUncheck = resets VHS to zero immediately."))
         self.lbl_deg_info = ctk.CTkLabel(f_pre, text="", text_color="gray"); self.lbl_deg_info.pack(side="left", padx=10)
 
         def add_control(parent, label, key, default, type="entry", slider_max=1.0, step=0.01, pady=2):
             row = ctk.CTkFrame(parent, fg_color="transparent"); row.pack(fill="x", pady=pady)
-            chk = ctk.CTkCheckBox(row, text=label, width=20, font=("Arial", 11)); chk.pack(side="left", padx=(5, 0)); chk.select(); ToolTip(chk, TOOLTIPS.get(key, ""))
+            chk = ctk.CTkCheckBox(row, text=label, width=20, font=("Arial", 11)); chk.pack(side="left", padx=(5, 0)); chk.select(); ToolTip(chk, get_tooltip(key, ""))
 
             if type == "range":
                 raw = str(default).strip().strip("[]")
@@ -752,7 +760,7 @@ class ConfigTab(ctk.CTkFrame):
         s2_right = ctk.CTkScrollableFrame(t2, fg_color="transparent")
         s2_right.grid(row=0, column=1, sticky="nsew", padx=(1, 2), pady=2)
 
-        self.add_header(s2_left, "Stage 2 — Blur / Bruit")
+        self.add_header(s2_left, _t("Stage 2 — Blur / Bruit", "Stage 2 — Blur / Noise"))
         add_control(s2_left, "2nd Blur Prob",  "second_blur_prob",    0.5,          "slider", 1.0)
         add_control(s2_left, "Blur Sigma 2",   "blur_sigma2",         "[0.2, 1.5]", "range")
         add_control(s2_left, "Kernel Size 2",  "blur_kernel_size2",   21,           "slider", 31, 2)
@@ -773,17 +781,17 @@ class ConfigTab(ctk.CTkFrame):
         sc_right = ctk.CTkScrollableFrame(tc, fg_color="transparent")
         sc_right.grid(row=0, column=1, sticky="nsew", padx=(1, 2), pady=2)
 
-        self.add_header(sc_left, "Quantification")
+        self.add_header(sc_left, _t("Quantification", "Quantization"))
         add_control(sc_left, "Posterize Prob",  "posterize_prob",        0.0,         "slider", 1.0, pady=1)
         add_control(sc_left, "Posterize Bits",  "posterize_bits_range",  "[3, 6]",    "range",  pady=1)
         add_control(sc_left, "Banding Prob",    "banding_prob",          0.0,         "slider", 1.0, pady=1)
         add_control(sc_left, "Banding Levels",  "banding_levels_range",  "[16, 64]",  "range",  pady=1)
         # VHS/Analog dans le bloc gauche pour éviter le scroll dans le bloc droit
-        self.add_header(sc_left, "VHS / Analog")
+        self.add_header(sc_left, _t("VHS / Analog", "VHS / Analog"))
         add_control(sc_left, "VHS Prob",        "vhs_prob",              0.0,          "slider", 1.0, pady=1)
         add_control(sc_left, "VHS Strength",    "vhs_strength_range",    "[0.1, 0.5]", "range",  pady=1)
 
-        self.add_header(sc_right, "Optique / Analog")
+        self.add_header(sc_right, _t("Optique / Analog", "Optical / Analog"))
         add_control(sc_right, "Chroma Sub Prob",   "chroma_prob",              0.0,           "slider", 1.0, pady=1)
         add_control(sc_right, "Chrom. Aber. Prob", "ca_prob",                  0.0,           "slider", 1.0, pady=1)
         add_control(sc_right, "CA Shift (px)",     "ca_shift_range",           "[1, 5]",      "range",  pady=1)
@@ -801,27 +809,27 @@ class ConfigTab(ctk.CTkFrame):
         sc2_right = ctk.CTkScrollableFrame(tc2, fg_color="transparent")
         sc2_right.grid(row=0, column=1, sticky="nsew", padx=(1, 2), pady=2)
 
-        self.add_header(sc2_left, "Aliasing / Lignes")
+        self.add_header(sc2_left, _t("Aliasing / Lignes", "Aliasing / Lines"))
         add_control(sc2_left, "Aliasing Prob",   "aliasing_prob",           0.0,           "slider", 1.0, pady=1)
         add_control(sc2_left, "Aliasing Scale",  "aliasing_scale_range",    "[0.5, 0.85]", "range",  pady=1)
-        self.add_header(sc2_left, "Entrelacement — Weave")
+        self.add_header(sc2_left, _t("Entrelacement — Weave", "Interlace — Weave"))
         add_control(sc2_left, "Weave Prob",      "interlace_weave_prob",            0.0,         "slider", 1.0, pady=1)
         add_control(sc2_left, "Weave Strength",  "interlace_weave_strength_range",  "[0.5, 1.0]","range",  pady=1)
-        self.add_header(sc2_left, "Entrelacement — Flicker")
+        self.add_header(sc2_left, _t("Entrelacement — Flicker", "Interlace — Flicker"))
         add_control(sc2_left, "Flicker Prob",    "interlace_flicker_prob",            0.0,          "slider", 1.0, pady=1)
         add_control(sc2_left, "Flicker Strength","interlace_flicker_strength_range",  "[0.1, 0.4]", "range",  pady=1)
-        self.add_header(sc2_left, "Entrelacement — Blend")
+        self.add_header(sc2_left, _t("Entrelacement — Blend", "Interlace — Blend"))
         add_control(sc2_left, "Blend Prob",      "interlace_blend_prob",            0.0,         "slider", 1.0, pady=1)
         add_control(sc2_left, "Blend Strength",  "interlace_blend_strength_range",  "[0.3, 1.0]","range",  pady=1)
 
-        self.add_header(sc2_right, "Grain Cinéma")
+        self.add_header(sc2_right, _t("Grain Cinéma", "Film Grain"))
         add_control(sc2_right, "Film Grain Prob",     "film_grain_prob",           0.0,            "slider", 1.0, pady=1)
         add_control(sc2_right, "Grain Strength",      "film_grain_strength_range", "[0.03, 0.12]", "range",  pady=1)
         add_control(sc2_right, "Grain Size (px)",     "film_grain_size_range",     "[1, 2]",       "range",  pady=1)
-        self.add_header(sc2_right, "Sur-Netteté (Halos)")
+        self.add_header(sc2_right, _t("Sur-Netteté (Halos)", "Oversharpening (Halos)"))
         add_control(sc2_right, "Oversharp Prob",     "oversharp_prob",            0.0,          "slider", 1.0, pady=1)
         add_control(sc2_right, "Oversharp Strength", "oversharp_strength_range",  "[0.5, 2.0]", "range",  pady=1)
-        self.add_header(sc2_right, "Scanlines CRT")
+        self.add_header(sc2_right, _t("Scanlines CRT", "CRT Scanlines"))
         add_control(sc2_right, "Scanlines Prob",     "scanlines_prob",            0.0,          "slider", 1.0, pady=1)
         add_control(sc2_right, "Scanlines Strength", "scanlines_strength_range",  "[0.2, 0.5]", "range",  pady=1)
         add_control(sc2_right, "Scanlines Spacing",  "scanlines_spacing_range",   "[2, 4]",     "range",  pady=1)
@@ -847,55 +855,69 @@ class ConfigTab(ctk.CTkFrame):
                 ToolTip(om, tip)
             self.widgets[key] = om
 
-        self.add_header(sc3_left, "Screentone / Halftone")
+        self.add_header(sc3_left, _t("Screentone / Halftone", "Screentone / Halftone"))
         add_control(sc3_left, "Screentone Prob",  "screentone_prob",       0.0,       "slider", 1.0, pady=1)
         add_control(sc3_left, "Dot Size",         "screentone_dot_size",   "[7, 15]", "range",  pady=1)
         add_control(sc3_left, "Angle",            "screentone_angle",      "[0, 90]", "range",  pady=1)
-        _opt_row(sc3_left, "Dot Type", "screentone_dot_type",
+        _opt_row(sc3_left, _t("Type de point", "Dot Type"), "screentone_dot_type",
                  ["circle", "ellipse", "square", "cross"], "circle",
-                 "Forme des points du motif screentone.")
-        _opt_row(sc3_left, "Espace couleur", "screentone_color_space",
+                 _t("Forme des points du motif screentone.", "Shape of screentone pattern dots."))
+        _opt_row(sc3_left, _t("Espace couleur", "Color space"), "screentone_color_space",
                  ["rgb", "cmyk", "hsv", "gray"], "rgb",
-                 "Espace couleur dans lequel le motif est appliqué.")
+                 _t("Espace couleur dans lequel le motif est appliqué.",
+                    "Color space in which the pattern is applied."))
 
-        self.add_header(sc3_left, "Dithering")
+        self.add_header(sc3_left, _t("Dithering", "Dithering"))
         add_control(sc3_left, "Dithering Prob",   "dithering_prob",        0.0,      "slider", 1.0, pady=1)
-        add_control(sc3_left, "Canaux couleur",   "dithering_color_ch",    "[2, 8]", "range",  pady=1)
-        _opt_row(sc3_left, "Algorithme", "dithering_type",
+        add_control(sc3_left, _t("Canaux couleur", "Color channels"), "dithering_color_ch", "[2, 8]", "range", pady=1)
+        _opt_row(sc3_left, _t("Algorithme", "Algorithm"), "dithering_type",
                  ["quantize", "floyd_steinberg", "jarvis_judice", "stucki", "atkinson", "ordered"],
                  "floyd_steinberg",
-                 "Algorithme de tramage.\n"
-                 "• floyd_steinberg : diffusion d'erreur classique\n"
-                 "• ordered : tramage ordonné (Bayer)\n"
-                 "• quantize : réduction couleur simple\n"
-                 "• atkinson : tramage léger (Apple Mac originel)")
+                 _t("Algorithme de tramage.\n"
+                    "• floyd_steinberg : diffusion d'erreur classique\n"
+                    "• ordered : tramage ordonné (Bayer)\n"
+                    "• quantize : réduction couleur simple\n"
+                    "• atkinson : tramage léger (Apple Mac originel)",
+                    "Dithering algorithm.\n"
+                    "• floyd_steinberg : classic error diffusion\n"
+                    "• ordered : ordered dithering (Bayer)\n"
+                    "• quantize : simple color reduction\n"
+                    "• atkinson : light dithering (original Apple Mac)"))
 
-        self.add_header(sc3_right, "Pixelisation")
+        self.add_header(sc3_right, _t("Pixelisation", "Pixelation"))
         add_control(sc3_right, "Pixelate Prob",   "pixelate_prob",         0.0,         "slider", 1.0, pady=1)
         add_control(sc3_right, "Block Size",      "pixelate_size",         "[2, 16]",   "range",  pady=1)
 
-        self.add_header(sc3_right, "Sinusoïdal (ondulations)")
+        self.add_header(sc3_right, _t("Sinusoïdal (ondulations)", "Sinusoidal (ripples)"))
         add_control(sc3_right, "Sin Prob",        "sin_prob",              0.0,          "slider", 1.0, pady=1)
-        add_control(sc3_right, "Fréquence",       "sin_shape",             "[100, 600]", "range",  pady=1)
-        add_control(sc3_right, "Amplitude",       "sin_alpha",             "[0.1, 0.4]", "range",  pady=1)
-        add_control(sc3_right, "Biais",           "sin_bias",              "[0.8, 1.2]", "range",  pady=1)
-        _opt_row(sc3_right, "Orientation", "sin_orientation",
-                 ["aléatoire", "horizontal", "vertical"], "aléatoire",
-                 "Direction des ondulations sinusoïdales. Fréquence haute = serrées.")
+        add_control(sc3_right, _t("Fréquence", "Frequency"), "sin_shape",   "[100, 600]", "range", pady=1)
+        add_control(sc3_right, _t("Amplitude", "Amplitude"), "sin_alpha",   "[0.1, 0.4]", "range", pady=1)
+        add_control(sc3_right, _t("Biais", "Bias"),          "sin_bias",    "[0.8, 1.2]", "range", pady=1)
+        _opt_row(sc3_right, _t("Orientation", "Orientation"), "sin_orientation",
+                 [_t("aléatoire", "random"), "horizontal", "vertical"], _t("aléatoire", "random"),
+                 _t("Direction des ondulations sinusoïdales. Fréquence haute = serrées.",
+                    "Direction of sinusoidal ripples. High frequency = tight waves."))
 
-        self.add_header(sc3_right, "Sous-Échantillonnage Chroma")
+        self.add_header(sc3_right, _t("Sous-Échantillonnage Chroma", "Chroma Subsampling"))
         add_control(sc3_right, "Subsamp Prob",    "subsampling_prob",      0.0,  "slider", 1.0, pady=1)
-        _opt_row(sc3_right, "Format", "subsampling_format",
+        _opt_row(sc3_right, _t("Format", "Format"), "subsampling_format",
                  ["4:4:4", "4:2:2", "4:2:0", "4:1:1"], "4:2:0",
-                 "Format de sous-échantillonnage chroma.\n"
-                 "• 4:4:4 : aucune réduction\n"
-                 "• 4:2:2 : réduction horizontale ×2\n"
-                 "• 4:2:0 : réduction ×2 H et V (JPEG standard)\n"
-                 "• 4:1:1 : forte réduction horizontale")
-        _opt_row(sc3_right, "Standard YUV", "subsampling_yuv",
+                 _t("Format de sous-échantillonnage chroma.\n"
+                    "• 4:4:4 : aucune réduction\n"
+                    "• 4:2:2 : réduction horizontale ×2\n"
+                    "• 4:2:0 : réduction ×2 H et V (JPEG standard)\n"
+                    "• 4:1:1 : forte réduction horizontale",
+                    "Chroma subsampling format.\n"
+                    "• 4:4:4 : no reduction\n"
+                    "• 4:2:2 : horizontal ×2 reduction\n"
+                    "• 4:2:0 : ×2 H and V reduction (standard JPEG)\n"
+                    "• 4:1:1 : heavy horizontal reduction"))
+        _opt_row(sc3_right, _t("Standard YUV", "YUV Standard"), "subsampling_yuv",
                  ["601", "709", "2020"], "601",
-                 "Matrice de conversion YUV.\n"
-                 "601 = SD/vidéo ancienne, 709 = HD, 2020 = UHD.")
+                 _t("Matrice de conversion YUV.\n"
+                    "601 = SD/vidéo ancienne, 709 = HD, 2020 = UHD.",
+                    "YUV conversion matrix.\n"
+                    "601 = SD/legacy video, 709 = HD, 2020 = UHD."))
 
         # --- Custom 4 : Niveaux couleur + Saturation + Shift + Halo (wtp) ---
         tc4.columnconfigure(0, weight=1)
@@ -906,30 +928,35 @@ class ConfigTab(ctk.CTkFrame):
         sc4_right = ctk.CTkScrollableFrame(tc4, fg_color="transparent")
         sc4_right.grid(row=0, column=1, sticky="nsew", padx=(1, 2), pady=2)
 
-        self.add_header(sc4_left, "Niveaux de Couleur")
+        self.add_header(sc4_left, _t("Niveaux de Couleur", "Color Levels"))
         add_control(sc4_left, "Color Level Prob", "color_level_prob",      0.0,           "slider", 1.0, pady=1)
         add_control(sc4_left, "Output High",      "color_level_high",      "[220, 255]",  "range",  pady=1)
         add_control(sc4_left, "Output Low",       "color_level_low",       "[0, 35]",     "range",  pady=1)
         add_control(sc4_left, "Gamma",            "color_level_gamma",     "[0.7, 1.5]",  "range",  pady=1)
 
-        self.add_header(sc4_left, "Halo / Ringing (wtp)")
+        self.add_header(sc4_left, _t("Halo / Ringing (wtp)", "Halo / Ringing (wtp)"))
         add_control(sc4_left, "Halo Prob",        "wtp_halo_prob",         0.0,           "slider", 1.0, pady=1)
         add_control(sc4_left, "Halo Strength",    "wtp_halo_strength",     "[0.1, 0.5]",  "range",  pady=1)
         add_control(sc4_left, "Halo Radius",      "wtp_halo_radius",       "[3, 12]",     "range",  pady=1)
 
-        self.add_header(sc4_right, "Saturation")
+        self.add_header(sc4_right, _t("Saturation", "Saturation"))
         add_control(sc4_right, "Saturation Prob", "saturation_prob",       0.0,           "slider", 1.0, pady=1)
         add_control(sc4_right, "Saturation",      "saturation_range",      "[0.3, 1.8]",  "range",  pady=1)
 
-        self.add_header(sc4_right, "Décalage Pixel (Shift)")
+        self.add_header(sc4_right, _t("Décalage Pixel (Shift)", "Pixel Shift"))
         add_control(sc4_right, "Shift Prob",      "shift_prob",            0.0,           "slider", 1.0, pady=1)
         add_control(sc4_right, "Amplitude (px)",  "shift_range",           "[1, 8]",      "range",  pady=1)
-        _opt_row(sc4_right, "Axe", "shift_axis",
-                 ["aléatoire", "horizontal", "vertical", "les deux"], "aléatoire",
-                 "Axe de décalage pixel.\n"
-                 "• horizontal : glitch latéral\n"
-                 "• vertical : glitch vertical\n"
-                 "• les deux : combiné")
+        _opt_row(sc4_right, _t("Axe", "Axis"), "shift_axis",
+                 [_t("aléatoire", "random"), "horizontal", "vertical", _t("les deux", "both")],
+                 _t("aléatoire", "random"),
+                 _t("Axe de décalage pixel.\n"
+                    "• horizontal : glitch latéral\n"
+                    "• vertical : glitch vertical\n"
+                    "• les deux : combiné",
+                    "Pixel shift axis.\n"
+                    "• horizontal : lateral glitch\n"
+                    "• vertical : vertical glitch\n"
+                    "• both : combined"))
 
         # ─── Live preview (toujours visible sous les onglets) ───
         f.grid_propagate(False)             # empêche f de grandir quand la preview charge une image
@@ -938,18 +965,20 @@ class ConfigTab(ctk.CTkFrame):
         f.grid_rowconfigure(2, weight=4)               # preview — 4x l'espace restant
         f_preview = ctk.CTkFrame(f, fg_color="#1a1a2e", corner_radius=8)
         f_preview.grid(row=2, column=0, sticky="nsew", padx=5, pady=(6, 5))
-        ctk.CTkLabel(f_preview, text="🔍 Aperçu en direct des dégradations",
+        ctk.CTkLabel(f_preview, text=_t("🔍 Aperçu en direct des dégradations", "🔍 Live degradation preview"),
                      font=("Roboto", 13, "bold"), text_color="#9b59b6"
                      ).pack(anchor="w", padx=10, pady=(8, 5))
         ctk.CTkLabel(f_preview,
-                     text="Charge une image source, puis applique les paramètres ci-dessus pour voir le résultat. "
-                          "Cliquez sur l'image pour zoomer (molette = zoom, glisser = pan).",
+                     text=_t("Charge une image source, puis applique les paramètres ci-dessus pour voir le résultat. "
+                              "Cliquez sur l'image pour zoomer (molette = zoom, glisser = pan).",
+                              "Load a source image, then apply the parameters above to see the result. "
+                              "Click the image to zoom (scroll wheel = zoom, drag = pan)."),
                      text_color="#AAA", font=("Roboto", 10)
                      ).pack(anchor="w", padx=10, pady=(0, 5))
 
         prev_ctrl = ctk.CTkFrame(f_preview, fg_color="transparent")
         prev_ctrl.pack(fill="x", padx=10, pady=5)
-        ctk.CTkLabel(prev_ctrl, text="Image :", width=60, anchor="w").pack(side="left")
+        ctk.CTkLabel(prev_ctrl, text=_t("Image :", "Image:"), width=60, anchor="w").pack(side="left")
         self.widgets["deg_preview_src"] = ctk.CTkEntry(prev_ctrl, width=380)
         self.widgets["deg_preview_src"].pack(side="left", padx=5)
         _last_img = self.settings.get("last_preview_image", "")
@@ -963,16 +992,16 @@ class ConfigTab(ctk.CTkFrame):
         )
         self.widgets["deg_preview_scale"].pack(side="left", padx=2)
         self.widgets["deg_preview_scale"].set("4")
-        ctk.CTkButton(prev_ctrl, text="🎲 Régénérer", fg_color="#9b59b6", width=120,
+        ctk.CTkButton(prev_ctrl, text=_t("🎲 Régénérer", "🎲 Regenerate"), fg_color="#9b59b6", width=120,
                       command=self._deg_refresh_preview).pack(side="left", padx=10)
-        ctk.CTkButton(prev_ctrl, text="🔍 Zoom", fg_color="#16a085", width=80,
+        ctk.CTkButton(prev_ctrl, text=_t("🔍 Zoom", "🔍 Zoom"), fg_color="#16a085", width=80,
                       command=self._deg_zoom_preview).pack(side="left", padx=2)
 
         ctk.CTkLabel(prev_ctrl, text="  Var :").pack(side="left", padx=(12, 2))
         self.widgets["deg_otf_variants"] = ctk.CTkEntry(prev_ctrl, width=38)
         self.widgets["deg_otf_variants"].pack(side="left")
         self.widgets["deg_otf_variants"].insert(0, "1")
-        ctk.CTkButton(prev_ctrl, text="📁 Tester GT Val",
+        ctk.CTkButton(prev_ctrl, text=_t("📁 Tester GT Val", "📁 Test GT Val"),
                       fg_color="#2471a3", width=150,
                       command=self._deg_generate_otf_batch).pack(side="left", padx=(8, 2))
 
@@ -983,7 +1012,8 @@ class ConfigTab(ctk.CTkFrame):
         self._deg_preview_refs = {"hq": None, "lq": None, "hq_orig": None, "lq_orig": None}
         # Placeholder
         ctk.CTkLabel(self.widgets["deg_preview_area"],
-                     text="(Aucune image chargée — sélectionnez une image source)",
+                     text=_t("(Aucune image chargée — sélectionnez une image source)",
+                              "(No image loaded — select a source image)"),
                      text_color="#666", font=("Roboto", 11)
                      ).pack(pady=80)
 
@@ -994,13 +1024,13 @@ class ConfigTab(ctk.CTkFrame):
         # Scrollable container so content is visible even when window is not maximized
         f = ctk.CTkScrollableFrame(outer, fg_color="transparent")
         f.pack(fill="both", expand=True)
-        self.add_header(f, "Optimisations Système")
+        self.add_header(f, _t("Optimisations Système", "System Optimizations"))
         f_checks = ctk.CTkFrame(f, fg_color="transparent"); f_checks.pack(fill="x", pady=5)
         f_gpu = ctk.CTkFrame(f, fg_color="transparent"); f_gpu.pack(fill="x", pady=2)
         ctk.CTkLabel(f_gpu, text="Num GPU :", width=80, anchor="w").pack(side="left")
-        self.widgets["num_gpu"] = ctk.CTkEntry(f_gpu, width=50); self.widgets["num_gpu"].insert(0, "1"); self.widgets["num_gpu"].pack(side="left"); ToolTip(self.widgets["num_gpu"], TOOLTIPS.get("num_gpu"))
+        self.widgets["num_gpu"] = ctk.CTkEntry(f_gpu, width=50); self.widgets["num_gpu"].insert(0, "1"); self.widgets["num_gpu"].pack(side="left"); ToolTip(self.widgets["num_gpu"], get_tooltip("num_gpu"))
         for k, txt in [("use_amp", "Use AMP (FP16)"), ("bfloat16", "Use BF16 (RTX 30+)"), ("fast_matmul", "Fast MatMul (TF32)"), ("compile", "Torch Compile (Linux)"), ("grad_clip", "Gradient Clipping"), ("match_lq_colors", "Match Colors (LQ->GT)"), ("eco", "Mode ECO (Low Memory)")]:
-            chk = ctk.CTkCheckBox(f_checks, text=txt, onvalue="true", offvalue="false", command=lambda: self.refresh_ui_stats()); chk.pack(anchor="w", pady=2); self.widgets[k] = chk; ToolTip(chk, TOOLTIPS.get(k))
+            chk = ctk.CTkCheckBox(f_checks, text=txt, onvalue="true", offvalue="false", command=lambda: self.refresh_ui_stats()); chk.pack(anchor="w", pady=2); self.widgets[k] = chk; ToolTip(chk, get_tooltip(k))
         f_sam = ctk.CTkFrame(f, fg_color="transparent"); f_sam.pack(fill="x", pady=2)
         self.add_label_tip(f_sam, "Mode SAM :", "sam"); self.widgets["sam"] = ctk.CTkOptionMenu(f_sam, values=["none", "sam", "fsam"]); self.widgets["sam"].pack(side="left")
         self.add_label_tip(f_sam, "Init :", "sam_init"); self.widgets["sam_init"] = ctk.CTkEntry(f_sam, width=60); self.widgets["sam_init"].insert(0, "-1"); self.widgets["sam_init"].pack(side="left")
@@ -1008,8 +1038,9 @@ class ConfigTab(ctk.CTkFrame):
         f_ema = ctk.CTkFrame(f, fg_color="transparent"); f_ema.pack(fill="x", pady=2)
         ctk.CTkLabel(f_ema, text="EMA :", width=80, anchor="w").pack(side="left")
         self.widgets["ema"] = ctk.CTkEntry(f_ema, width=80); self.widgets["ema"].insert(0, "0.999"); self.widgets["ema"].pack(side="left", padx=5)
-        ToolTip(self.widgets["ema"], "Momentum EMA (Exponential Moving Average).\n0.999 = standard, modèle plus stable.\n0 = désactivé.\nNeoSR : clé 'ema'  |  Redux : clé 'ema_decay'")
-        self.add_header(f, "Fonctions de Perte (Losses)")
+        ToolTip(self.widgets["ema"], _t("Momentum EMA (Exponential Moving Average).\n0.999 = standard, modèle plus stable.\n0 = désactivé.\nNeoSR : clé 'ema'  |  Redux : clé 'ema_decay'",
+                                         "Momentum EMA (Exponential Moving Average).\n0.999 = standard, more stable model.\n0 = disabled.\nNeoSR: key 'ema'  |  Redux: key 'ema_decay'"))
+        self.add_header(f, _t("Fonctions de Perte (Losses)", "Loss Functions (Losses)"))
         # ── Conteneur horizontal : colonne gauche (normal) | colonne droite (Redux-only) ──
         # pack anchor="w" → l'outer ne s'étend pas à pleine largeur, les deux blocs restent côte à côte
         # ── Conteneur pleine largeur fond sombre ──────────────────────────────────
@@ -1025,28 +1056,28 @@ class ConfigTab(ctk.CTkFrame):
         f_loss_right = ctk.CTkFrame(_f_inner, fg_color="#111827", corner_radius=6, width=430)
         f_loss_right.pack(side="left", fill="y")
         f_loss_right.pack_propagate(False)
-        ctk.CTkLabel(f_loss_right, text="⚡ Redux uniquement", text_color="#3B8ED0",
+        ctk.CTkLabel(f_loss_right, text=_t("⚡ Redux uniquement", "⚡ Redux only"), text_color="#3B8ED0",
                      font=("Arial", 10, "bold")).pack(anchor="w", padx=8, pady=(6, 2))
         # alias : tout le code existant utilise f_loss_adv → redirige vers f_loss_left
         f_loss_adv = f_loss_left
         
         def add_weighted_loss(parent, key, label, default_w=1.0, has_reduction=False, has_type=None):
             row = ctk.CTkFrame(parent, fg_color="transparent"); row.pack(fill="x", pady=2)
-            chk = ctk.CTkCheckBox(row, text=label, width=140, onvalue="true", offvalue="false"); chk.pack(side="left"); self.widgets[key] = chk; ToolTip(chk, TOOLTIPS.get(key))
+            chk = ctk.CTkCheckBox(row, text=label, width=140, onvalue="true", offvalue="false"); chk.pack(side="left"); self.widgets[key] = chk; ToolTip(chk, get_tooltip(key))
             lbl_w = ctk.CTkLabel(row, text="W:", width=20); lbl_w.pack(side="left")
             e = ctk.CTkEntry(row, width=50); e.insert(0, str(default_w)); e.pack(side="left", padx=5); self.widgets[f"weight_{key}"] = e
             if has_reduction:
                 lbl_r = ctk.CTkLabel(row, text="Mode:", width=40); lbl_r.pack(side="left")
-                opt = ctk.CTkOptionMenu(row, values=["mean", "sum"], width=80); opt.pack(side="left"); opt.set("mean"); self.widgets["pixel_reduction"] = opt; ToolTip(opt, TOOLTIPS.get("pixel_reduction"))
+                opt = ctk.CTkOptionMenu(row, values=["mean", "sum"], width=80); opt.pack(side="left"); opt.set("mean"); self.widgets["pixel_reduction"] = opt; ToolTip(opt, get_tooltip("pixel_reduction"))
             if has_type is not None:
                 lbl_t = ctk.CTkLabel(row, text="Type:", width=40); lbl_t.pack(side="left")
-                opt_t = ctk.CTkOptionMenu(row, values=has_type, width=130); opt_t.pack(side="left", padx=5); opt_t.set(has_type[0]); self.widgets["pixel_criterion"] = opt_t; ToolTip(opt_t, TOOLTIPS.get("pixel_criterion"))
+                opt_t = ctk.CTkOptionMenu(row, values=has_type, width=130); opt_t.pack(side="left", padx=5); opt_t.set(has_type[0]); self.widgets["pixel_criterion"] = opt_t; ToolTip(opt_t, get_tooltip("pixel_criterion"))
 
         add_weighted_loss(f_loss_adv, "loss_pixel", "Pixel L1 / Charbonnier", 1.0, has_reduction=True, has_type=["L1Loss", "MSELoss", "HuberLoss", "chc_loss"]); self.widgets["loss_pixel"].select()
         f_perc = ctk.CTkFrame(f_loss_adv, fg_color="transparent"); f_perc.pack(fill="x", pady=2)
-        chk_p = ctk.CTkCheckBox(f_perc, text="Perceptual (VGG)", width=140, onvalue="true", offvalue="false"); chk_p.pack(side="left"); self.widgets["loss_percep"] = chk_p; chk_p.select(); ToolTip(chk_p, TOOLTIPS.get("loss_percep"))
+        chk_p = ctk.CTkCheckBox(f_perc, text="Perceptual (VGG)", width=140, onvalue="true", offvalue="false"); chk_p.pack(side="left"); self.widgets["loss_percep"] = chk_p; chk_p.select(); ToolTip(chk_p, get_tooltip("loss_percep"))
         lbl_w = ctk.CTkLabel(f_perc, text="W:", width=20); lbl_w.pack(side="left"); self.widgets["weight_loss_percep"] = ctk.CTkEntry(f_perc, width=50); self.widgets["weight_loss_percep"].insert(0, "1.0"); self.widgets["weight_loss_percep"].pack(side="left", padx=5)
-        self.widgets["percep_criterion"] = ctk.CTkOptionMenu(f_perc, values=["huber", "l1", "l2", "charbonnier", "chc_loss"], width=110); self.widgets["percep_criterion"].pack(side="left", padx=5); self.widgets["percep_criterion"].set("huber"); ToolTip(self.widgets["percep_criterion"], TOOLTIPS.get("percep_criterion"))
+        self.widgets["percep_criterion"] = ctk.CTkOptionMenu(f_perc, values=["huber", "l1", "l2", "charbonnier", "chc_loss"], width=110); self.widgets["percep_criterion"].pack(side="left", padx=5); self.widgets["percep_criterion"].set("huber"); ToolTip(self.widgets["percep_criterion"], get_tooltip("percep_criterion"))
         # VGG layers — CTkToplevel popup à droite du bouton
         _VGG_LAYERS = [("conv1_2","0.0"),("conv2_2","0.0"),("conv3_2","0.0"),("conv3_4","0.0"),
                        ("conv4_2","0.0"),("conv4_4","0.0"),("conv5_2","0.0"),("conv5_4","1.0")]
@@ -1081,10 +1112,11 @@ class ConfigTab(ctk.CTkFrame):
         # Header
         _vgg_hdr = ctk.CTkFrame(_vgg_win, fg_color="#0d1117", corner_radius=0)
         _vgg_hdr.pack(fill="x")
-        ctk.CTkLabel(_vgg_hdr, text="  Poids couches VGG  (0.0 = désactivée)",
+        ctk.CTkLabel(_vgg_hdr, text=_t("  Poids couches VGG  (0.0 = désactivée)",
+                                        "  VGG layer weights  (0.0 = disabled)"),
                      font=("Arial", 10, "bold"), text_color="#ccc").pack(side="left", padx=4, pady=4)
         ctk.CTkButton(_vgg_hdr, text="✕", width=24, height=20, fg_color="#333", hover_color="#555",
-                      command=lambda: (_vgg_win.withdraw(), btn_vgg.configure(text="▾ Couches VGG"))
+                      command=lambda: (_vgg_win.withdraw(), btn_vgg.configure(text=_t("▾ Couches VGG", "▾ VGG Layers")))
                       ).pack(side="right", padx=4, pady=4)
         # Grid 4-per-row with shared StringVar → updates hidden widget on change
         _vgg_popup_entries = {}
@@ -1106,16 +1138,18 @@ class ConfigTab(ctk.CTkFrame):
                 _sv.trace_add("write", _make_trace(_layer))
                 _ep = ctk.CTkEntry(_fc, width=46, textvariable=_sv); _ep.pack(side="left")
                 _vgg_popup_entries[_layer] = (_sv, _ep)
-                ToolTip(_ep, _VGG_TIPS.get(_layer, f"Poids couche {_layer}.\n0.0 = ignorée  |  1.0 = plein poids"))
+                ToolTip(_ep, _VGG_TIPS.get(_layer, _t(f"Poids couche {_layer}.\n0.0 = ignorée  |  1.0 = plein poids",
+                                                         f"Layer {_layer} weight.\n0.0 = ignored  |  1.0 = full weight")))
         ctk.CTkLabel(_vgg_win,
-                     text="💡 conv5_4=1.0 (défaut)  ·  conv3+4 = style  ·  conv1+2 = détails",
+                     text=_t("💡 conv5_4=1.0 (défaut)  ·  conv3+4 = style  ·  conv1+2 = détails",
+                              "💡 conv5_4=1.0 (default)  ·  conv3+4 = style  ·  conv1+2 = details"),
                      text_color="#555", font=("Arial", 9)).pack(anchor="w", padx=8, pady=(2, 6))
 
         self._vgg_popup_entries = _vgg_popup_entries  # for config load sync
 
         def _toggle_vgg():
             if _vgg_win.winfo_viewable():
-                _vgg_win.withdraw(); btn_vgg.configure(text="▾ Couches VGG")
+                _vgg_win.withdraw(); btn_vgg.configure(text=_t("▾ Couches VGG", "▾ VGG Layers"))
             else:
                 # Sync popup entries from self.widgets (in case config was loaded)
                 for _l, (_sv2, _ep2) in _vgg_popup_entries.items():
@@ -1126,16 +1160,17 @@ class ConfigTab(ctk.CTkFrame):
                 by = btn_vgg.winfo_rooty()
                 _vgg_win.wm_geometry(f"+{bx}+{by}")
                 _vgg_win.deiconify(); _vgg_win.lift()
-                btn_vgg.configure(text="▲ Couches VGG")
+                btn_vgg.configure(text=_t("▲ Couches VGG", "▲ VGG Layers"))
 
-        btn_vgg = ctk.CTkButton(f_perc, text="▾ Couches VGG", width=115, fg_color="#2c3e50",
+        btn_vgg = ctk.CTkButton(f_perc, text=_t("▾ Couches VGG", "▾ VGG Layers"), width=115, fg_color="#2c3e50",
                                 command=_toggle_vgg); btn_vgg.pack(side="left", padx=5)
-        ToolTip(btn_vgg, "Sélection individuelle des couches VGG et leur poids.\nPoids > 0 = couche active.\nconv5_4=1.0 par défaut.\nconv1_2/conv2_2 = détails fins  |  conv3_4/conv4_4 = style/texture  |  conv5_4 = sémantique")
+        ToolTip(btn_vgg, _t("Sélection individuelle des couches VGG et leur poids.\nPoids > 0 = couche active.\nconv5_4=1.0 par défaut.\nconv1_2/conv2_2 = détails fins  |  conv3_4/conv4_4 = style/texture  |  conv5_4 = sémantique",
+                             "Individual VGG layer selection and weights.\nWeight > 0 = active layer.\nconv5_4=1.0 by default.\nconv1_2/conv2_2 = fine details  |  conv3_4/conv4_4 = style/texture  |  conv5_4 = semantics"))
 
         f_fdl = ctk.CTkFrame(f_loss_adv, fg_color="transparent"); f_fdl.pack(fill="x", pady=2)
-        chk_fdl = ctk.CTkCheckBox(f_fdl, text="FDL (Freq)", width=140, onvalue="true", offvalue="false"); chk_fdl.pack(side="left"); self.widgets["loss_fdl"] = chk_fdl; ToolTip(chk_fdl, TOOLTIPS.get("loss_fdl"))
+        chk_fdl = ctk.CTkCheckBox(f_fdl, text="FDL (Freq)", width=140, onvalue="true", offvalue="false"); chk_fdl.pack(side="left"); self.widgets["loss_fdl"] = chk_fdl; ToolTip(chk_fdl, get_tooltip("loss_fdl"))
         lbl_w = ctk.CTkLabel(f_fdl, text="W:", width=20); lbl_w.pack(side="left"); self.widgets["weight_loss_fdl"] = ctk.CTkEntry(f_fdl, width=50); self.widgets["weight_loss_fdl"].insert(0, "1.0"); self.widgets["weight_loss_fdl"].pack(side="left", padx=5)
-        self.widgets["fdl_model"] = ctk.CTkOptionMenu(f_fdl, values=["vgg", "dinov2", "resnet", "effnet"], width=90); self.widgets["fdl_model"].pack(side="left"); self.widgets["fdl_model"].set("vgg"); ToolTip(self.widgets["fdl_model"], TOOLTIPS.get("fdl_model"))
+        self.widgets["fdl_model"] = ctk.CTkOptionMenu(f_fdl, values=["vgg", "dinov2", "resnet", "effnet"], width=90); self.widgets["fdl_model"].pack(side="left"); self.widgets["fdl_model"].set("vgg"); ToolTip(self.widgets["fdl_model"], get_tooltip("fdl_model"))
 
         # Helper : popup d'options pour une loss (CTkToplevel persistant, caché par défaut)
         def _loss_popup(title, fields):
@@ -1184,7 +1219,7 @@ class ConfigTab(ctk.CTkFrame):
 
         # --- MS-SSIM ---
         f_mssim = ctk.CTkFrame(f_loss_adv, fg_color="transparent"); f_mssim.pack(fill="x", pady=2)
-        chk_mssim = ctk.CTkCheckBox(f_mssim, text="MS-SSIM", width=140, onvalue="true", offvalue="false"); chk_mssim.pack(side="left"); self.widgets["loss_mssim"] = chk_mssim; ToolTip(chk_mssim, TOOLTIPS.get("loss_mssim"))
+        chk_mssim = ctk.CTkCheckBox(f_mssim, text="MS-SSIM", width=140, onvalue="true", offvalue="false"); chk_mssim.pack(side="left"); self.widgets["loss_mssim"] = chk_mssim; ToolTip(chk_mssim, get_tooltip("loss_mssim"))
         ctk.CTkLabel(f_mssim, text="W:", width=20).pack(side="left"); self.widgets["weight_loss_mssim"] = ctk.CTkEntry(f_mssim, width=50); self.widgets["weight_loss_mssim"].insert(0, "1.0"); self.widgets["weight_loss_mssim"].pack(side="left", padx=5)
         _, _mssim_toggle = _loss_popup("MS-SSIM Options (NeoSR)", [
             ("mssim_window_size", "Window Size", "11",   "entry",  None, "Taille de la fenêtre Gaussienne.\nDéfaut : 11 (NeoSR)"),
@@ -1193,7 +1228,7 @@ class ConfigTab(ctk.CTkFrame):
             ("mssim_k2",          "K2",          "0.03", "entry",  None, "Constante de stabilité K2.\nDéfaut : 0.03"),
         ])
         _btn_mssim = ctk.CTkButton(f_mssim, text="⚙", width=30, fg_color="#2c3e50", command=lambda: _mssim_toggle(_btn_mssim)); _btn_mssim.pack(side="left", padx=5)
-        ToolTip(_btn_mssim, "Paramètres avancés MS-SSIM (NeoSR).")
+        ToolTip(_btn_mssim, _t("Paramètres avancés MS-SSIM (NeoSR).", "Advanced MS-SSIM parameters (NeoSR)."))
 
         # --- DISTS ---
         add_weighted_loss(f_loss_adv, "loss_dists", "DISTS", 1.0)
@@ -1203,14 +1238,15 @@ class ConfigTab(ctk.CTkFrame):
 
         # --- Focal Freq ---
         f_ff = ctk.CTkFrame(f_loss_adv, fg_color="transparent"); f_ff.pack(fill="x", pady=2)
-        chk_ff = ctk.CTkCheckBox(f_ff, text="Focal Freq", width=140, onvalue="true", offvalue="false"); chk_ff.pack(side="left"); self.widgets["loss_ff"] = chk_ff; ToolTip(chk_ff, TOOLTIPS.get("loss_ff"))
+        chk_ff = ctk.CTkCheckBox(f_ff, text="Focal Freq", width=140, onvalue="true", offvalue="false"); chk_ff.pack(side="left"); self.widgets["loss_ff"] = chk_ff; ToolTip(chk_ff, get_tooltip("loss_ff"))
         ctk.CTkLabel(f_ff, text="W:", width=20).pack(side="left"); self.widgets["weight_loss_ff"] = ctk.CTkEntry(f_ff, width=50); self.widgets["weight_loss_ff"].insert(0, "1.0"); self.widgets["weight_loss_ff"].pack(side="left", padx=5)
         ctk.CTkLabel(f_ff, text="α:", width=20).pack(side="left"); self.widgets["ff_alpha"] = ctk.CTkEntry(f_ff, width=50); self.widgets["ff_alpha"].insert(0, "1.0"); self.widgets["ff_alpha"].pack(side="left", padx=5)
-        ToolTip(self.widgets["ff_alpha"], "Alpha — poids des fréquences hautes.\n1.0 = équilibré. >1 = accent hautes fréquences.\nDéfaut : 1.0")
+        ToolTip(self.widgets["ff_alpha"], _t("Alpha — poids des fréquences hautes.\n1.0 = équilibré. >1 = accent hautes fréquences.\nDéfaut : 1.0",
+                                              "Alpha — high frequency weight.\n1.0 = balanced. >1 = emphasis on high frequencies.\nDefault: 1.0"))
 
         # --- Consistency (NeoSR only) ---
         f_cst = ctk.CTkFrame(f_loss_adv, fg_color="transparent"); f_cst.pack(fill="x", pady=2)
-        chk_cst = ctk.CTkCheckBox(f_cst, text="Consistency", width=140, onvalue="true", offvalue="false"); chk_cst.pack(side="left"); self.widgets["loss_consistency"] = chk_cst; ToolTip(chk_cst, TOOLTIPS.get("loss_consistency"))
+        chk_cst = ctk.CTkCheckBox(f_cst, text="Consistency", width=140, onvalue="true", offvalue="false"); chk_cst.pack(side="left"); self.widgets["loss_consistency"] = chk_cst; ToolTip(chk_cst, get_tooltip("loss_consistency"))
         ctk.CTkLabel(f_cst, text="W:", width=20).pack(side="left"); self.widgets["weight_loss_consistency"] = ctk.CTkEntry(f_cst, width=50); self.widgets["weight_loss_consistency"].insert(0, "1.0"); self.widgets["weight_loss_consistency"].pack(side="left", padx=5)
         _, _cst_toggle = _loss_popup("Consistency Options (NeoSR)", [
             ("consistency_blur",       "Blur",       True, "check", None,
@@ -1223,7 +1259,7 @@ class ConfigTab(ctk.CTkFrame):
              "Contrainte de luminosité.\nPénalise les écarts de luminosité perçue (canal L* CIE).\nÉvite que l'image sortie soit plus sombre ou plus claire que la cible.\nRecommandé : actif."),
         ])
         _btn_cst = ctk.CTkButton(f_cst, text="⚙", width=30, fg_color="#2c3e50", command=lambda: _cst_toggle(_btn_cst)); _btn_cst.pack(side="left", padx=5)
-        ToolTip(_btn_cst, "Activer/désactiver les contraintes de consistance (NeoSR).")
+        ToolTip(_btn_cst, _t("Activer/désactiver les contraintes de consistance (NeoSR).", "Enable/disable consistency constraints (NeoSR)."))
 
         # --- NCC (NeoSR only) ---
         add_weighted_loss(f_loss_adv, "loss_ncc", "NCC", 1.0)
@@ -1233,22 +1269,22 @@ class ConfigTab(ctk.CTkFrame):
 
         # --- LDL — criterion + ksize ---
         f_ldl = ctk.CTkFrame(f_loss_adv, fg_color="transparent"); f_ldl.pack(fill="x", pady=2)
-        chk_ldl = ctk.CTkCheckBox(f_ldl, text="LDL", width=140, onvalue="true", offvalue="false"); chk_ldl.pack(side="left"); self.widgets["loss_ldl"] = chk_ldl; ToolTip(chk_ldl, TOOLTIPS.get("loss_ldl"))
+        chk_ldl = ctk.CTkCheckBox(f_ldl, text="LDL", width=140, onvalue="true", offvalue="false"); chk_ldl.pack(side="left"); self.widgets["loss_ldl"] = chk_ldl; ToolTip(chk_ldl, get_tooltip("loss_ldl"))
         ctk.CTkLabel(f_ldl, text="W:", width=20).pack(side="left"); self.widgets["weight_loss_ldl"] = ctk.CTkEntry(f_ldl, width=50); self.widgets["weight_loss_ldl"].insert(0, "1.0"); self.widgets["weight_loss_ldl"].pack(side="left", padx=5)
-        self.widgets["ldl_criterion"] = ctk.CTkOptionMenu(f_ldl, values=["l1", "l2", "huber"], width=80); self.widgets["ldl_criterion"].pack(side="left", padx=5); self.widgets["ldl_criterion"].set("l1"); ToolTip(self.widgets["ldl_criterion"], "Critère LDL.\nl1 : Standard.\nl2 : Lissé.\nhuber : Hybride L1/L2.")
+        self.widgets["ldl_criterion"] = ctk.CTkOptionMenu(f_ldl, values=["l1", "l2", "huber"], width=80); self.widgets["ldl_criterion"].pack(side="left", padx=5); self.widgets["ldl_criterion"].set("l1"); ToolTip(self.widgets["ldl_criterion"], _t("Critère LDL.\nl1 : Standard.\nl2 : Lissé.\nhuber : Hybride L1/L2.", "LDL criterion.\nl1: Standard.\nl2: Smoothed.\nhuber: L1/L2 hybrid."))
         ctk.CTkLabel(f_ldl, text="ksize:", width=45).pack(side="left"); self.widgets["ldl_ksize"] = ctk.CTkEntry(f_ldl, width=45); self.widgets["ldl_ksize"].insert(0, "7"); self.widgets["ldl_ksize"].pack(side="left", padx=5)
-        ToolTip(self.widgets["ldl_ksize"], "Taille du kernel LDL (entier impair).\n7 = défaut.")
+        ToolTip(self.widgets["ldl_ksize"], _t("Taille du kernel LDL (entier impair).\n7 = défaut.", "LDL kernel size (odd integer).\n7 = default."))
 
         # --- Edge Loss (NeoSR only) ---
         f_edge = ctk.CTkFrame(f_loss_adv, fg_color="transparent"); f_edge.pack(fill="x", pady=2)
-        chk_edge = ctk.CTkCheckBox(f_edge, text="Edge Loss", width=140, onvalue="true", offvalue="false"); chk_edge.pack(side="left"); self.widgets["loss_edge"] = chk_edge; ToolTip(chk_edge, TOOLTIPS.get("loss_edge"))
+        chk_edge = ctk.CTkCheckBox(f_edge, text="Edge Loss", width=140, onvalue="true", offvalue="false"); chk_edge.pack(side="left"); self.widgets["loss_edge"] = chk_edge; ToolTip(chk_edge, get_tooltip("loss_edge"))
         ctk.CTkLabel(f_edge, text="W:", width=20).pack(side="left"); self.widgets["weight_loss_edge"] = ctk.CTkEntry(f_edge, width=50); self.widgets["weight_loss_edge"].insert(0, "0.05"); self.widgets["weight_loss_edge"].pack(side="left", padx=5)
-        self.widgets["edge_criterion"] = ctk.CTkOptionMenu(f_edge, values=["l1", "l2", "huber", "chc"], width=80); self.widgets["edge_criterion"].pack(side="left", padx=5); self.widgets["edge_criterion"].set("l1"); ToolTip(self.widgets["edge_criterion"], "Critère Edge Loss.\nl1/l2/huber : Standards.\nchc : Clipped Huber+Cosine (NeoSR uniquement).")
-        self.widgets["edge_corner"] = ctk.CTkCheckBox(f_edge, text="Corner", width=70, onvalue="true", offvalue="false"); self.widgets["edge_corner"].pack(side="left", padx=5); ToolTip(self.widgets["edge_corner"], "Activer la détection de coins.\nRenforce les angles et intersections.")
+        self.widgets["edge_criterion"] = ctk.CTkOptionMenu(f_edge, values=["l1", "l2", "huber", "chc"], width=80); self.widgets["edge_criterion"].pack(side="left", padx=5); self.widgets["edge_criterion"].set("l1"); ToolTip(self.widgets["edge_criterion"], _t("Critère Edge Loss.\nl1/l2/huber : Standards.\nchc : Clipped Huber+Cosine (NeoSR uniquement).", "Edge Loss criterion.\nl1/l2/huber: Standard.\nchc: Clipped Huber+Cosine (NeoSR only)."))
+        self.widgets["edge_corner"] = ctk.CTkCheckBox(f_edge, text="Corner", width=70, onvalue="true", offvalue="false"); self.widgets["edge_corner"].pack(side="left", padx=5); ToolTip(self.widgets["edge_corner"], _t("Activer la détection de coins.\nRenforce les angles et intersections.", "Enable corner detection.\nStrengthens angles and intersections."))
 
         # --- Wavelet Guided (NeoSR only) — dans le bloc normal ---
         row_wav = ctk.CTkFrame(f_loss_adv, fg_color="transparent"); row_wav.pack(fill="x", pady=2)
-        chk_wav = ctk.CTkCheckBox(row_wav, text="Wavelet Guided", onvalue="true", offvalue="false", width=140); chk_wav.pack(side="left"); self.widgets["loss_wavelet"] = chk_wav; ToolTip(chk_wav, TOOLTIPS.get("loss_wavelet"))
+        chk_wav = ctk.CTkCheckBox(row_wav, text="Wavelet Guided", onvalue="true", offvalue="false", width=140); chk_wav.pack(side="left"); self.widgets["loss_wavelet"] = chk_wav; ToolTip(chk_wav, get_tooltip("loss_wavelet"))
         lbl_w = ctk.CTkLabel(row_wav, text="W:", width=20); lbl_w.pack(side="left"); e_wav = ctk.CTkEntry(row_wav, width=40); e_wav.insert(0, "1.0"); e_wav.pack(side="left", padx=5); self.widgets["weight_loss_wavelet"] = e_wav
         lbl_i = ctk.CTkLabel(row_wav, text="Init:", width=30); lbl_i.pack(side="left"); e_init = ctk.CTkEntry(row_wav, width=50); e_init.insert(0, "10000"); e_init.pack(side="left", padx=5); self.widgets["wavelet_init"] = e_init
 
@@ -1256,53 +1292,53 @@ class ConfigTab(ctk.CTkFrame):
 
         # HSLuv
         f_hsluv = ctk.CTkFrame(f_loss_right, fg_color="transparent"); f_hsluv.pack(fill="x", pady=2, padx=6)
-        chk_hsluv = ctk.CTkCheckBox(f_hsluv, text="HSLuv", width=120, onvalue="true", offvalue="false"); chk_hsluv.pack(side="left"); self.widgets["loss_hsluv"] = chk_hsluv; ToolTip(chk_hsluv, TOOLTIPS.get("loss_hsluv", "HSLuv Loss — espace couleur perceptuellement uniforme."))
+        chk_hsluv = ctk.CTkCheckBox(f_hsluv, text="HSLuv", width=120, onvalue="true", offvalue="false"); chk_hsluv.pack(side="left"); self.widgets["loss_hsluv"] = chk_hsluv; ToolTip(chk_hsluv, get_tooltip("loss_hsluv", _t("HSLuv Loss — espace couleur perceptuellement uniforme.", "HSLuv Loss — perceptually uniform color space.")))
         ctk.CTkLabel(f_hsluv, text="W:", width=20).pack(side="left"); self.widgets["weight_loss_hsluv"] = ctk.CTkEntry(f_hsluv, width=42); self.widgets["weight_loss_hsluv"].insert(0, "1.0"); self.widgets["weight_loss_hsluv"].pack(side="left", padx=3)
-        ctk.CTkLabel(f_hsluv, text="H:", width=16).pack(side="left"); self.widgets["hsluv_hue_weight"] = ctk.CTkEntry(f_hsluv, width=38); self.widgets["hsluv_hue_weight"].insert(0, "0.33"); self.widgets["hsluv_hue_weight"].pack(side="left", padx=2); ToolTip(self.widgets["hsluv_hue_weight"], "Poids Teinte (Hue).\nInfluence la correction de teinte.\nDéfaut : 0.33  |  Augmenter si la teinte dévie.")
-        ctk.CTkLabel(f_hsluv, text="S:", width=16).pack(side="left"); self.widgets["hsluv_sat_weight"] = ctk.CTkEntry(f_hsluv, width=38); self.widgets["hsluv_sat_weight"].insert(0, "0.33"); self.widgets["hsluv_sat_weight"].pack(side="left", padx=2); ToolTip(self.widgets["hsluv_sat_weight"], "Poids Saturation.\nInfluence la vivacité des couleurs.\nDéfaut : 0.33  |  Augmenter si les couleurs semblent ternes.")
-        ctk.CTkLabel(f_hsluv, text="L:", width=16).pack(side="left"); self.widgets["hsluv_lum_weight"] = ctk.CTkEntry(f_hsluv, width=38); self.widgets["hsluv_lum_weight"].insert(0, "0.33"); self.widgets["hsluv_lum_weight"].pack(side="left", padx=2); ToolTip(self.widgets["hsluv_lum_weight"], "Poids Luminosité (Lightness).\nInfluence la correction de luminosité perçue.\nDéfaut : 0.33  |  Augmenter si la luminosité dévie.")
+        ctk.CTkLabel(f_hsluv, text="H:", width=16).pack(side="left"); self.widgets["hsluv_hue_weight"] = ctk.CTkEntry(f_hsluv, width=38); self.widgets["hsluv_hue_weight"].insert(0, "0.33"); self.widgets["hsluv_hue_weight"].pack(side="left", padx=2); ToolTip(self.widgets["hsluv_hue_weight"], _t("Poids Teinte (Hue).\nInfluence la correction de teinte.\nDéfaut : 0.33  |  Augmenter si la teinte dévie.", "Hue weight.\nInfluences hue correction.\nDefault: 0.33  |  Increase if hue drifts."))
+        ctk.CTkLabel(f_hsluv, text="S:", width=16).pack(side="left"); self.widgets["hsluv_sat_weight"] = ctk.CTkEntry(f_hsluv, width=38); self.widgets["hsluv_sat_weight"].insert(0, "0.33"); self.widgets["hsluv_sat_weight"].pack(side="left", padx=2); ToolTip(self.widgets["hsluv_sat_weight"], _t("Poids Saturation.\nInfluence la vivacité des couleurs.\nDéfaut : 0.33  |  Augmenter si les couleurs semblent ternes.", "Saturation weight.\nInfluences color vividness.\nDefault: 0.33  |  Increase if colors look dull."))
+        ctk.CTkLabel(f_hsluv, text="L:", width=16).pack(side="left"); self.widgets["hsluv_lum_weight"] = ctk.CTkEntry(f_hsluv, width=38); self.widgets["hsluv_lum_weight"].insert(0, "0.33"); self.widgets["hsluv_lum_weight"].pack(side="left", padx=2); ToolTip(self.widgets["hsluv_lum_weight"], _t("Poids Luminosité (Lightness).\nInfluence la correction de luminosité perçue.\nDéfaut : 0.33  |  Augmenter si la luminosité dévie.", "Lightness weight.\nInfluences perceived brightness correction.\nDefault: 0.33  |  Increase if brightness drifts."))
 
         # Cosim
         f_cosim = ctk.CTkFrame(f_loss_right, fg_color="transparent"); f_cosim.pack(fill="x", pady=2, padx=6)
-        chk_cosim = ctk.CTkCheckBox(f_cosim, text="Cosim", width=120, onvalue="true", offvalue="false"); chk_cosim.pack(side="left"); self.widgets["loss_cosim"] = chk_cosim; ToolTip(chk_cosim, TOOLTIPS.get("loss_cosim", "Cosine Similarity Loss."))
+        chk_cosim = ctk.CTkCheckBox(f_cosim, text="Cosim", width=120, onvalue="true", offvalue="false"); chk_cosim.pack(side="left"); self.widgets["loss_cosim"] = chk_cosim; ToolTip(chk_cosim, get_tooltip("loss_cosim", "Cosine Similarity Loss."))
         ctk.CTkLabel(f_cosim, text="W:", width=20).pack(side="left"); self.widgets["weight_loss_cosim"] = ctk.CTkEntry(f_cosim, width=42); self.widgets["weight_loss_cosim"].insert(0, "1.0"); self.widgets["weight_loss_cosim"].pack(side="left", padx=3)
-        ctk.CTkLabel(f_cosim, text="λ:", width=18).pack(side="left"); self.widgets["cosim_lambda"] = ctk.CTkEntry(f_cosim, width=42); self.widgets["cosim_lambda"].insert(0, "5"); self.widgets["cosim_lambda"].pack(side="left", padx=3); ToolTip(self.widgets["cosim_lambda"], "Lambda cosim.\nFacteur d'échelle de la pénalité angulaire.\nDéfaut : 5  |  Augmenter → correction couleur plus agressive.")
+        ctk.CTkLabel(f_cosim, text="λ:", width=18).pack(side="left"); self.widgets["cosim_lambda"] = ctk.CTkEntry(f_cosim, width=42); self.widgets["cosim_lambda"].insert(0, "5"); self.widgets["cosim_lambda"].pack(side="left", padx=3); ToolTip(self.widgets["cosim_lambda"], _t("Lambda cosim.\nFacteur d'échelle de la pénalité angulaire.\nDéfaut : 5  |  Augmenter → correction couleur plus agressive.", "Lambda cosim.\nAngular penalty scale factor.\nDefault: 5  |  Increase → more aggressive color correction."))
 
         # Color
         f_color = ctk.CTkFrame(f_loss_right, fg_color="transparent"); f_color.pack(fill="x", pady=2, padx=6)
-        chk_color = ctk.CTkCheckBox(f_color, text="Color", width=120, onvalue="true", offvalue="false"); chk_color.pack(side="left"); self.widgets["loss_color"] = chk_color; ToolTip(chk_color, TOOLTIPS.get("loss_color", "Color Loss — fidélité chromatique."))
+        chk_color = ctk.CTkCheckBox(f_color, text="Color", width=120, onvalue="true", offvalue="false"); chk_color.pack(side="left"); self.widgets["loss_color"] = chk_color; ToolTip(chk_color, get_tooltip("loss_color", _t("Color Loss — fidélité chromatique.", "Color Loss — chromatic fidelity.")))
         ctk.CTkLabel(f_color, text="W:", width=20).pack(side="left"); self.widgets["weight_loss_color"] = ctk.CTkEntry(f_color, width=42); self.widgets["weight_loss_color"].insert(0, "1.0"); self.widgets["weight_loss_color"].pack(side="left", padx=3)
-        self.widgets["color_criterion"] = ctk.CTkOptionMenu(f_color, values=["l1", "l2", "huber", "charbonnier"], width=105); self.widgets["color_criterion"].pack(side="left", padx=3); self.widgets["color_criterion"].set("l1"); ToolTip(self.widgets["color_criterion"], "Critère Color Loss.\nl1 : Erreur absolue — standard, recommandé.\nl2 : Quadratique — plus lissé.\nhuber : Hybride — robuste aux outliers.\ncharbonnier : L1 lissé — stable, recommandé Redux.")
+        self.widgets["color_criterion"] = ctk.CTkOptionMenu(f_color, values=["l1", "l2", "huber", "charbonnier"], width=105); self.widgets["color_criterion"].pack(side="left", padx=3); self.widgets["color_criterion"].set("l1"); ToolTip(self.widgets["color_criterion"], _t("Critère Color Loss.\nl1 : Erreur absolue — standard, recommandé.\nl2 : Quadratique — plus lissé.\nhuber : Hybride — robuste aux outliers.\ncharbonnier : L1 lissé — stable, recommandé Redux.", "Color Loss criterion.\nl1: Absolute error — standard, recommended.\nl2: Quadratic — smoother.\nhuber: Hybrid — robust to outliers.\ncharbonnier: Smooth L1 — stable, recommended Redux."))
 
         # Gradient Variance
         f_gv = ctk.CTkFrame(f_loss_right, fg_color="transparent"); f_gv.pack(fill="x", pady=2, padx=6)
-        chk_gv = ctk.CTkCheckBox(f_gv, text="Grad Variance", width=120, onvalue="true", offvalue="false"); chk_gv.pack(side="left"); self.widgets["loss_gv"] = chk_gv; ToolTip(chk_gv, TOOLTIPS.get("loss_gv", "Gradient Variance Loss."))
+        chk_gv = ctk.CTkCheckBox(f_gv, text="Grad Variance", width=120, onvalue="true", offvalue="false"); chk_gv.pack(side="left"); self.widgets["loss_gv"] = chk_gv; ToolTip(chk_gv, get_tooltip("loss_gv", "Gradient Variance Loss."))
         ctk.CTkLabel(f_gv, text="W:", width=20).pack(side="left"); self.widgets["weight_loss_gv"] = ctk.CTkEntry(f_gv, width=42); self.widgets["weight_loss_gv"].insert(0, "1.0"); self.widgets["weight_loss_gv"].pack(side="left", padx=3)
-        ctk.CTkLabel(f_gv, text="P:", width=16).pack(side="left"); self.widgets["gv_patch_size"] = ctk.CTkEntry(f_gv, width=38); self.widgets["gv_patch_size"].insert(0, "16"); self.widgets["gv_patch_size"].pack(side="left", padx=2); ToolTip(self.widgets["gv_patch_size"], "Patch size (pixels).\nTaille des patches pour le calcul de variance de gradient.\nDéfaut : 16  |  Augmenter → contexte plus large.")
-        self.widgets["gv_criterion"] = ctk.CTkOptionMenu(f_gv, values=["charbonnier", "l1", "l2", "huber"], width=105); self.widgets["gv_criterion"].pack(side="left", padx=3); self.widgets["gv_criterion"].set("charbonnier"); ToolTip(self.widgets["gv_criterion"], "Critère Gradient Variance.\ncharbonnier : Recommandé — L1 lissé, robuste.\nl1/l2/huber : alternatives standard.")
+        ctk.CTkLabel(f_gv, text="P:", width=16).pack(side="left"); self.widgets["gv_patch_size"] = ctk.CTkEntry(f_gv, width=38); self.widgets["gv_patch_size"].insert(0, "16"); self.widgets["gv_patch_size"].pack(side="left", padx=2); ToolTip(self.widgets["gv_patch_size"], _t("Patch size (pixels).\nTaille des patches pour le calcul de variance de gradient.\nDéfaut : 16  |  Augmenter → contexte plus large.", "Patch size (pixels).\nPatch size for gradient variance computation.\nDefault: 16  |  Increase → larger context."))
+        self.widgets["gv_criterion"] = ctk.CTkOptionMenu(f_gv, values=["charbonnier", "l1", "l2", "huber"], width=105); self.widgets["gv_criterion"].pack(side="left", padx=3); self.widgets["gv_criterion"].set("charbonnier"); ToolTip(self.widgets["gv_criterion"], _t("Critère Gradient Variance.\ncharbonnier : Recommandé — L1 lissé, robuste.\nl1/l2/huber : alternatives standard.", "Gradient Variance criterion.\ncharbonnier: Recommended — smooth L1, robust.\nl1/l2/huber: standard alternatives."))
 
         # Luma
         f_luma = ctk.CTkFrame(f_loss_right, fg_color="transparent"); f_luma.pack(fill="x", pady=2, padx=6)
-        chk_luma = ctk.CTkCheckBox(f_luma, text="Luma", width=120, onvalue="true", offvalue="false"); chk_luma.pack(side="left"); self.widgets["loss_luma"] = chk_luma; ToolTip(chk_luma, TOOLTIPS.get("loss_luma", "Luma Loss — luminance."))
+        chk_luma = ctk.CTkCheckBox(f_luma, text="Luma", width=120, onvalue="true", offvalue="false"); chk_luma.pack(side="left"); self.widgets["loss_luma"] = chk_luma; ToolTip(chk_luma, get_tooltip("loss_luma", "Luma Loss — luminance."))
         ctk.CTkLabel(f_luma, text="W:", width=20).pack(side="left"); self.widgets["weight_loss_luma"] = ctk.CTkEntry(f_luma, width=42); self.widgets["weight_loss_luma"].insert(0, "1.0"); self.widgets["weight_loss_luma"].pack(side="left", padx=3)
-        self.widgets["luma_criterion"] = ctk.CTkOptionMenu(f_luma, values=["l1", "l2", "huber", "charbonnier"], width=105); self.widgets["luma_criterion"].pack(side="left", padx=3); self.widgets["luma_criterion"].set("l1"); ToolTip(self.widgets["luma_criterion"], "Critère Luma Loss.\nl1 : Recommandé — erreur absolue sur la luminance.\ncharbonnier : Alternative lissée.")
+        self.widgets["luma_criterion"] = ctk.CTkOptionMenu(f_luma, values=["l1", "l2", "huber", "charbonnier"], width=105); self.widgets["luma_criterion"].pack(side="left", padx=3); self.widgets["luma_criterion"].set("l1"); ToolTip(self.widgets["luma_criterion"], _t("Critère Luma Loss.\nl1 : Recommandé — erreur absolue sur la luminance.\ncharbonnier : Alternative lissée.", "Luma Loss criterion.\nl1: Recommended — absolute error on luminance.\ncharbonnier: Smooth alternative."))
 
         # Contextual
         f_ctx = ctk.CTkFrame(f_loss_right, fg_color="transparent"); f_ctx.pack(fill="x", pady=2, padx=6)
-        chk_ctx = ctk.CTkCheckBox(f_ctx, text="Contextual", width=120, onvalue="true", offvalue="false"); chk_ctx.pack(side="left"); self.widgets["loss_contextual"] = chk_ctx; ToolTip(chk_ctx, TOOLTIPS.get("loss_contextual", "Contextual Loss."))
+        chk_ctx = ctk.CTkCheckBox(f_ctx, text="Contextual", width=120, onvalue="true", offvalue="false"); chk_ctx.pack(side="left"); self.widgets["loss_contextual"] = chk_ctx; ToolTip(chk_ctx, get_tooltip("loss_contextual", "Contextual Loss."))
         ctk.CTkLabel(f_ctx, text="W:", width=20).pack(side="left"); self.widgets["weight_loss_contextual"] = ctk.CTkEntry(f_ctx, width=42); self.widgets["weight_loss_contextual"].insert(0, "1.0"); self.widgets["weight_loss_contextual"].pack(side="left", padx=3)
-        self.widgets["ctx_distance_type"] = ctk.CTkOptionMenu(f_ctx, values=["cosine", "l2"], width=82); self.widgets["ctx_distance_type"].pack(side="left", padx=3); self.widgets["ctx_distance_type"].set("cosine"); ToolTip(self.widgets["ctx_distance_type"], "Métrique de distance entre patches VGG.\ncosine : Angle entre vecteurs — plus robuste aux changements d'échelle. Recommandé.\nl2 : Distance euclidienne — plus sensible à la magnitude.")
-        ctk.CTkLabel(f_ctx, text="BW:", width=28).pack(side="left"); self.widgets["ctx_band_width"] = ctk.CTkEntry(f_ctx, width=42); self.widgets["ctx_band_width"].insert(0, "0.5"); self.widgets["ctx_band_width"].pack(side="left", padx=3); ToolTip(self.widgets["ctx_band_width"], "Bandwidth (largeur de bande contextuelle).\nContrôle la tolérance aux décalages spatiaux entre patches.\nDéfaut : 0.5  |  Plus haut → plus de tolérance, pénalité plus douce.")
+        self.widgets["ctx_distance_type"] = ctk.CTkOptionMenu(f_ctx, values=["cosine", "l2"], width=82); self.widgets["ctx_distance_type"].pack(side="left", padx=3); self.widgets["ctx_distance_type"].set("cosine"); ToolTip(self.widgets["ctx_distance_type"], _t("Métrique de distance entre patches VGG.\ncosine : Angle entre vecteurs — plus robuste aux changements d'échelle. Recommandé.\nl2 : Distance euclidienne — plus sensible à la magnitude.", "Distance metric between VGG patches.\ncosine: Angle between vectors — more robust to scale changes. Recommended.\nl2: Euclidean distance — more sensitive to magnitude."))
+        ctk.CTkLabel(f_ctx, text="BW:", width=28).pack(side="left"); self.widgets["ctx_band_width"] = ctk.CTkEntry(f_ctx, width=42); self.widgets["ctx_band_width"].insert(0, "0.5"); self.widgets["ctx_band_width"].pack(side="left", padx=3); ToolTip(self.widgets["ctx_band_width"], _t("Bandwidth (largeur de bande contextuelle).\nContrôle la tolérance aux décalages spatiaux entre patches.\nDéfaut : 0.5  |  Plus haut → plus de tolérance, pénalité plus douce.", "Bandwidth (contextual bandwidth).\nControls tolerance to spatial shifts between patches.\nDefault: 0.5  |  Higher → more tolerance, softer penalty."))
         ctk.CTkLabel(f_loss_right, text="", height=4).pack()  # bottom padding
 
-        self.add_header(f, "Monitoring"); f_mon = ctk.CTkFrame(f, fg_color="transparent"); f_mon.pack(fill="x", pady=5)
+        self.add_header(f, _t("Monitoring", "Monitoring")); f_mon = ctk.CTkFrame(f, fg_color="transparent"); f_mon.pack(fill="x", pady=5)
         row_tb = ctk.CTkFrame(f_mon, fg_color="transparent"); row_tb.pack(fill="x", pady=2)
-        chk_tb = ctk.CTkCheckBox(row_tb, text="Serveur TB", onvalue="true", offvalue="false", width=100); chk_tb.pack(side="left"); self.widgets["auto_tensorboard"] = chk_tb; ToolTip(chk_tb, TOOLTIPS.get("auto_tensorboard"))
-        btn_restart = ctk.CTkButton(row_tb, text="♻️", width=30, fg_color="#e67e22", command=self.restart_tb); btn_restart.pack(side="left", padx=5); ToolTip(btn_restart, "Relancer TensorBoard")
+        chk_tb = ctk.CTkCheckBox(row_tb, text=_t("Serveur TB", "TB Server"), onvalue="true", offvalue="false", width=100); chk_tb.pack(side="left"); self.widgets["auto_tensorboard"] = chk_tb; ToolTip(chk_tb, get_tooltip("auto_tensorboard"))
+        btn_restart = ctk.CTkButton(row_tb, text="♻️", width=30, fg_color="#e67e22", command=self.restart_tb); btn_restart.pack(side="left", padx=5); ToolTip(btn_restart, _t("Relancer TensorBoard", "Restart TensorBoard"))
         lbl_p = ctk.CTkLabel(row_tb, text="Port:", width=30); lbl_p.pack(side="left"); e_tb = ctk.CTkEntry(row_tb, width=60); e_tb.insert(0, "6006"); e_tb.pack(side="left", padx=5); self.widgets["port_tb"] = e_tb
-        chk_log = ctk.CTkCheckBox(f_mon, text="Générer Logs", onvalue="true", offvalue="false"); chk_log.pack(anchor="w", pady=2); self.widgets["use_tb_logger"] = chk_log; chk_log.select()
-        chk_ngr = ctk.CTkCheckBox(f_mon, text="Tunnel Ngrok", onvalue="true", offvalue="false"); chk_ngr.pack(anchor="w", pady=2); self.widgets["auto_ngrok"] = chk_ngr; ToolTip(chk_ngr, TOOLTIPS.get("auto_ngrok"))
-        self.add_header(f, "Chargement & Perceptual"); f_data = ctk.CTkFrame(f, fg_color="transparent"); f_data.pack(fill="x")
+        chk_log = ctk.CTkCheckBox(f_mon, text=_t("Générer Logs", "Generate Logs"), onvalue="true", offvalue="false"); chk_log.pack(anchor="w", pady=2); self.widgets["use_tb_logger"] = chk_log; chk_log.select()
+        chk_ngr = ctk.CTkCheckBox(f_mon, text=_t("Tunnel Ngrok", "Ngrok Tunnel"), onvalue="true", offvalue="false"); chk_ngr.pack(anchor="w", pady=2); self.widgets["auto_ngrok"] = chk_ngr; ToolTip(chk_ngr, get_tooltip("auto_ngrok"))
+        self.add_header(f, _t("Chargement & Perceptual", "Loading & Perceptual")); f_data = ctk.CTkFrame(f, fg_color="transparent"); f_data.pack(fill="x")
         self.add_label_tip(f_data, "Prefetch Mode :", "prefetch_mode"); self.widgets["prefetch_mode"] = ctk.CTkOptionMenu(f_data, values=["cuda", "cpu", "None"]); self.widgets["prefetch_mode"].pack(side="left", padx=10)
         self.add_label_tip(f_data, "Workers/GPU :", "num_worker"); self.widgets["num_worker_per_gpu"] = ctk.CTkEntry(f_data, width=50); self.widgets["num_worker_per_gpu"].insert(0, "4"); self.widgets["num_worker_per_gpu"].pack(side="left", padx=10)
         return outer
@@ -1311,34 +1347,42 @@ class ConfigTab(ctk.CTkFrame):
     # ─── PAGE: VÉRIFICATION AI ─────────────────────────────────
     def create_page_ai_check(self):
         f = ctk.CTkScrollableFrame(self.page_container, fg_color="transparent")
-        self.add_header(f, "Vérification de Configuration par IA")
-        ctk.CTkLabel(f, text="Envoyez votre configuration à une IA pour analyse avant l'entraînement.",
+        self.add_header(f, _t("Vérification de Configuration par IA", "AI Configuration Check"))
+        ctk.CTkLabel(f, text=_t("Envoyez votre configuration à une IA pour analyse avant l'entraînement.",
+                                 "Send your configuration to an AI for analysis before training."),
                      text_color="#AAA").pack(anchor="w", padx=10, pady=(0, 10))
 
         # Templates section
         f_tpl = ctk.CTkFrame(f, fg_color="#1a1a2e", corner_radius=8)
         f_tpl.pack(fill="x", padx=5, pady=5)
-        ctk.CTkLabel(f_tpl, text="Templates de Configuration", font=("Roboto", 13, "bold"),
+        ctk.CTkLabel(f_tpl, text=_t("Templates de Configuration", "Configuration Templates"), font=("Roboto", 13, "bold"),
                      text_color="#9b59b6").pack(anchor="w", padx=10, pady=(8, 5))
-        ctk.CTkLabel(f_tpl, text="Charge une configuration pre-reglee pour des cas d'usage typiques.",
+        ctk.CTkLabel(f_tpl, text=_t("Charge une configuration pre-reglee pour des cas d'usage typiques.",
+                                     "Load a pre-configured setup for typical use cases."),
                      text_color="#AAA", font=("Roboto", 10)).pack(anchor="w", padx=10, pady=(0, 5))
 
         row_tpl = ctk.CTkFrame(f_tpl, fg_color="transparent")
         row_tpl.pack(fill="x", padx=10, pady=(0, 10))
-        ctk.CTkLabel(row_tpl, text="Template :", width=120, anchor="w").pack(side="left")
+        ctk.CTkLabel(row_tpl, text=_t("Template :", "Template:"), width=120, anchor="w").pack(side="left")
         self.widgets["template_choice"] = ctk.CTkOptionMenu(
             row_tpl, values=["(aucun)"] + list_templates(), width=250
         )
         self.widgets["template_choice"].pack(side="left", padx=5)
         ToolTip(self.widgets["template_choice"],
-                "Selectionnez un template pour charger des hyperparametres pre-regles.\n"
-                "Templates disponibles :\n"
-                "  Anime 4x PSNR/GAN — anime/illustration\n"
-                "  Photo Realiste 2x/4x — photos\n"
-                "  Pixel Art 4x — retro games\n"
-                "  Video Compressee 4x — anime DVD/BluRay rip avec banding")
+                _t("Sélectionnez un template pour charger des hyperparamètres pré-réglés.\n"
+                   "Templates disponibles :\n"
+                   "  Anime 4x PSNR/GAN — anime/illustration\n"
+                   "  Photo Réaliste 2x/4x — photos\n"
+                   "  Pixel Art 4x — retro games\n"
+                   "  Vidéo Compressée 4x — anime DVD/BluRay rip avec banding",
+                   "Select a template to load pre-configured hyperparameters.\n"
+                   "Available templates:\n"
+                   "  Anime 4x PSNR/GAN — anime/illustration\n"
+                   "  Realistic Photo 2x/4x — photos\n"
+                   "  Pixel Art 4x — retro games\n"
+                   "  Compressed Video 4x — anime DVD/BluRay rip with banding"))
         self.widgets["btn_load_template"] = ctk.CTkButton(
-            row_tpl, text="Charger Template", fg_color="#9b59b6", width=150,
+            row_tpl, text=_t("Charger Template", "Load Template"), fg_color="#9b59b6", width=150,
             command=self._load_template
         )
         self.widgets["btn_load_template"].pack(side="left", padx=5)
@@ -1356,26 +1400,26 @@ class ConfigTab(ctk.CTkFrame):
 
         # API Selection
         f_api = ctk.CTkFrame(f, fg_color="#1a1a2e", corner_radius=8); f_api.pack(fill="x", padx=5, pady=5)
-        ctk.CTkLabel(f_api, text="Configuration API", font=("Roboto", 13, "bold"),
+        ctk.CTkLabel(f_api, text=_t("Configuration API", "API Configuration"), font=("Roboto", 13, "bold"),
                      text_color="#3498db").pack(anchor="w", padx=10, pady=(8, 5))
 
         row1 = ctk.CTkFrame(f_api, fg_color="transparent"); row1.pack(fill="x", padx=10, pady=3)
-        ctk.CTkLabel(row1, text="Fournisseur AI :", width=120, anchor="w").pack(side="left")
+        ctk.CTkLabel(row1, text=_t("Fournisseur AI :", "AI Provider:"), width=120, anchor="w").pack(side="left")
         self.widgets["ai_api"] = ctk.CTkOptionMenu(row1, values=list(self._ai_models.keys()), width=200,
                                                      command=self._on_ai_provider_change)
         self.widgets["ai_api"].pack(side="left", padx=5); self.widgets["ai_api"].set("OpenRouter (Gratuit)")
 
         row2 = ctk.CTkFrame(f_api, fg_color="transparent"); row2.pack(fill="x", padx=10, pady=3)
-        ctk.CTkLabel(row2, text="Clé API :", width=120, anchor="w").pack(side="left")
+        ctk.CTkLabel(row2, text=_t("Clé API :", "API Key:"), width=120, anchor="w").pack(side="left")
         self.widgets["ai_api_key"] = ctk.CTkEntry(row2, width=350, show="*"); self.widgets["ai_api_key"].pack(side="left", padx=5)
         # Load saved key for current provider
         provider = "OpenRouter (Gratuit)"
         saved_key = self.settings.get(f"api_key_{provider}", self.settings.get("ai_api_key", ""))
         if saved_key: self.widgets["ai_api_key"].insert(0, saved_key)
-        ctk.CTkLabel(row2, text="(depuis Parametres)", text_color="#888", font=("Roboto", 9)).pack(side="left", padx=5)
+        ctk.CTkLabel(row2, text=_t("(depuis Paramètres)", "(from Settings)"), text_color="#888", font=("Roboto", 9)).pack(side="left", padx=5)
 
         row3 = ctk.CTkFrame(f_api, fg_color="transparent"); row3.pack(fill="x", padx=10, pady=3)
-        ctk.CTkLabel(row3, text="Modèle :", width=120, anchor="w").pack(side="left")
+        ctk.CTkLabel(row3, text=_t("Modèle :", "Model:"), width=120, anchor="w").pack(side="left")
         self.widgets["ai_model"] = ctk.CTkOptionMenu(row3, values=self._ai_models["OpenRouter (Gratuit)"], width=280,
                                                        command=lambda x: self._on_ai_model_change(x))
         self.widgets["ai_model"].pack(side="left", padx=5)
@@ -1396,13 +1440,15 @@ class ConfigTab(ctk.CTkFrame):
         # Test API connection button + cache controls
         row_test = ctk.CTkFrame(f_api, fg_color="transparent"); row_test.pack(fill="x", padx=10, pady=(5, 8))
         self.widgets["btn_test_api"] = ctk.CTkButton(
-            row_test, text="🔌 Tester la Connexion API", fg_color="#16a085",
+            row_test, text=_t("🔌 Tester la Connexion API", "🔌 Test API Connection"), fg_color="#16a085",
             width=200, command=self._test_api_connection
         )
         self.widgets["btn_test_api"].pack(side="left", padx=5)
         ToolTip(self.widgets["btn_test_api"],
-                "Envoie un message minimal 'OK' pour valider que la cle API et le modele fonctionnent.\n"
-                "Tres rapide et tres bon marche (quelques tokens).")
+                _t("Envoie un message minimal 'OK' pour valider que la clé API et le modèle fonctionnent.\n"
+                   "Très rapide et très bon marché (quelques tokens).",
+                   "Sends a minimal 'OK' message to validate that the API key and model work.\n"
+                   "Very fast and very cheap (a few tokens)."))
 
         self.widgets["lbl_test_result"] = ctk.CTkLabel(row_test, text="", text_color="#888")
         self.widgets["lbl_test_result"].pack(side="left", padx=10)
@@ -1410,16 +1456,19 @@ class ConfigTab(ctk.CTkFrame):
         # Cache controls
         row_cache = ctk.CTkFrame(f_api, fg_color="transparent"); row_cache.pack(fill="x", padx=10, pady=(0, 8))
         self.widgets["ai_use_cache"] = ctk.CTkCheckBox(
-            row_cache, text="Utiliser le cache (eviter les appels redondants)"
+            row_cache, text=_t("Utiliser le cache (éviter les appels redondants)",
+                               "Use cache (avoid redundant API calls)")
         )
         self.widgets["ai_use_cache"].pack(side="left", padx=5)
         self.widgets["ai_use_cache"].select()
         ToolTip(self.widgets["ai_use_cache"],
-                "Si la meme config a deja ete analysee, reutiliser la reponse precedente\n"
-                "au lieu de re-payer un appel API. Cache valide 30 jours.")
+                _t("Si la même config a déjà été analysée, réutiliser la réponse précédente\n"
+                   "au lieu de re-payer un appel API. Cache valide 30 jours.",
+                   "If the same config has already been analyzed, reuse the previous response\n"
+                   "instead of paying for another API call. Cache valid 30 days."))
 
         self.widgets["btn_clear_cache"] = ctk.CTkButton(
-            row_cache, text="Vider Cache", fg_color="#666", width=100,
+            row_cache, text=_t("Vider Cache", "Clear Cache"), fg_color="#666", width=100,
             command=self._clear_ai_cache
         )
         self.widgets["btn_clear_cache"].pack(side="right", padx=5)
@@ -1428,72 +1477,84 @@ class ConfigTab(ctk.CTkFrame):
 
         # Scope
         f_scope = ctk.CTkFrame(f, fg_color="#1a1a2e", corner_radius=8); f_scope.pack(fill="x", padx=5, pady=5)
-        ctk.CTkLabel(f_scope, text="L'IA vérifiera :", font=("Roboto", 13, "bold"),
+        ctk.CTkLabel(f_scope, text=_t("L'IA vérifiera :", "The AI will check:"), font=("Roboto", 13, "bold"),
                      text_color="#e67e22").pack(anchor="w", padx=10, pady=(8, 5))
-        for c in ["Cohérence architecture / scale / batch / patch",
-                   "Compatibilité des losses avec le moteur",
-                   "Recommandations LR / scheduler / optimiseur",
-                   "Estimation VRAM et risques de OOM",
-                   "Bonnes pratiques PSNR vs GAN",
-                   "Erreurs courantes et pièges"]:
+        for c in [_t("Cohérence architecture / scale / batch / patch",
+                      "Architecture / scale / batch / patch consistency"),
+                  _t("Compatibilité des losses avec le moteur",
+                      "Loss compatibility with the engine"),
+                  _t("Recommandations LR / scheduler / optimiseur",
+                      "LR / scheduler / optimizer recommendations"),
+                  _t("Estimation VRAM et risques de OOM",
+                      "VRAM estimation and OOM risks"),
+                  _t("Bonnes pratiques PSNR vs GAN",
+                      "PSNR vs GAN best practices"),
+                  _t("Erreurs courantes et pièges",
+                      "Common mistakes and pitfalls")]:
             ctk.CTkLabel(f_scope, text=f"  {c}", text_color="#CCC", anchor="w").pack(anchor="w", padx=15, pady=1)
         ctk.CTkLabel(f_scope, text="", height=5).pack()
 
         # Mode
         f_mode = ctk.CTkFrame(f, fg_color="transparent"); f_mode.pack(fill="x", padx=5, pady=5)
-        self.widgets["ai_send_mode"] = ctk.CTkOptionMenu(f_mode, values=["Texte résumé (léger)", "Config complète (détaillé)"], width=250)
+        self.widgets["ai_send_mode"] = ctk.CTkOptionMenu(f_mode, values=[_t("Texte résumé (léger)", "Summary text (light)"), _t("Config complète (détaillé)", "Full config (detailed)")], width=250)
         self.widgets["ai_send_mode"].pack(side="left", padx=5)
-        self.widgets["ai_send_mode"].set("Config complète (détaillé)")
+        self.widgets["ai_send_mode"].set(_t("Config complète (détaillé)", "Full config (detailed)"))
 
         # Context & Questions
         f_ctx = ctk.CTkFrame(f, fg_color="#1a1a2e", corner_radius=8); f_ctx.pack(fill="x", padx=5, pady=5)
-        ctk.CTkLabel(f_ctx, text="Contexte supplementaire (optionnel)", font=("Roboto", 13, "bold"),
+        ctk.CTkLabel(f_ctx, text=_t("Contexte supplémentaire (optionnel)", "Additional context (optional)"), font=("Roboto", 13, "bold"),
                      text_color="#27ae60").pack(anchor="w", padx=10, pady=(8, 3))
 
         ctx_row1 = ctk.CTkFrame(f_ctx, fg_color="transparent"); ctx_row1.pack(fill="x", padx=10, pady=2)
-        ctk.CTkLabel(ctx_row1, text="Type de dataset :", width=140, anchor="w").pack(side="left")
+        ctk.CTkLabel(ctx_row1, text=_t("Type de dataset :", "Dataset type:"), width=140, anchor="w").pack(side="left")
         self.widgets["ai_ctx_dataset"] = ctk.CTkOptionMenu(ctx_row1, width=200,
             values=["(auto-detect)", "Anime / Illustration", "Photo realiste", "Texte / Document", "Medical / Scientifique", "Jeux video / Pixel art", "Mixte"])
         self.widgets["ai_ctx_dataset"].pack(side="left", padx=5)
         self.widgets["ai_ctx_dataset"].set("(auto-detect)")
-        ToolTip(self.widgets["ai_ctx_dataset"], "Type de contenu dans votre dataset. Aide l'IA a mieux evaluer la config.")
+        ToolTip(self.widgets["ai_ctx_dataset"], _t("Type de contenu dans votre dataset. Aide l'IA à mieux évaluer la config.",
+                                                     "Content type in your dataset. Helps the AI better evaluate the config."))
         ctx_row2 = ctk.CTkFrame(f_ctx, fg_color="transparent"); ctx_row2.pack(fill="x", padx=10, pady=2)
-        ctk.CTkLabel(ctx_row2, text="But du modele :", width=140, anchor="w").pack(side="left")
+        ctk.CTkLabel(ctx_row2, text=_t("But du modèle :", "Model goal:"), width=140, anchor="w").pack(side="left")
         self.widgets["ai_ctx_goal"] = ctk.CTkOptionMenu(ctx_row2, width=200,
         values=["(non specifie)", "PSNR (fidelite pixel)", "GAN (qualite percue)", "PSNR puis GAN (pipeline)", "Denoise", "Deblur", "Compression artifact", "Debanding"])
         self.widgets["ai_ctx_goal"].pack(side="left", padx=5)
         self.widgets["ai_ctx_goal"].set("(non specifie)")
-        ToolTip(self.widgets["ai_ctx_goal"], "Objectif de l'entrainement: fidelite pixel (PSNR) ou qualite percue (GAN)")
+        ToolTip(self.widgets["ai_ctx_goal"], _t("Objectif de l'entraînement : fidélité pixel (PSNR) ou qualité perçue (GAN)",
+                                                  "Training objective: pixel fidelity (PSNR) or perceived quality (GAN)"))
 
         ctx_row3 = ctk.CTkFrame(f_ctx, fg_color="transparent"); ctx_row3.pack(fill="x", padx=10, pady=2)
-        ctk.CTkLabel(ctx_row3, text="Temps alloue :", width=140, anchor="w").pack(side="left")
+        ctk.CTkLabel(ctx_row3, text=_t("Temps alloué :", "Time allocated:"), width=140, anchor="w").pack(side="left")
         self.widgets["ai_ctx_time"] = ctk.CTkOptionMenu(ctx_row3, width=200,
             values=["(non specifie)", "< 2 heures", "2-6 heures", "6-24 heures", "1-3 jours", "3-7 jours", "> 1 semaine"])
         self.widgets["ai_ctx_time"].pack(side="left", padx=5)
         self.widgets["ai_ctx_time"].set("(non specifie)")
-        ToolTip(self.widgets["ai_ctx_time"], "Temps que vous pouvez allouer a l'entrainement. Influence les recommandations d'iterations.")
+        ToolTip(self.widgets["ai_ctx_time"], _t("Temps que vous pouvez allouer à l'entraînement. Influence les recommandations d'itérations.",
+                                                  "Time you can allocate to training. Influences iteration recommendations."))
 
         ctx_row4 = ctk.CTkFrame(f_ctx, fg_color="transparent"); ctx_row4.pack(fill="x", padx=10, pady=2)
-        ctk.CTkLabel(ctx_row4, text="Taille dataset :", width=140, anchor="w").pack(side="left")
+        ctk.CTkLabel(ctx_row4, text=_t("Taille dataset :", "Dataset size:"), width=140, anchor="w").pack(side="left")
         self.widgets["ai_ctx_ds_size"] = ctk.CTkEntry(ctx_row4, width=160, placeholder_text="ex: 5000 images, 50Go...")
         self.widgets["ai_ctx_ds_size"].pack(side="left", padx=5)
         ctk.CTkButton(ctx_row4, text="Auto", width=55, height=24, fg_color="#2c6e49",
                       command=self._autodetect_dataset_size).pack(side="left", padx=2)
-        ToolTip(self.widgets["ai_ctx_ds_size"], "Taille du dataset d'entrainement. Cliquez 'Auto' pour compter les images dans le dossier Train HQ.")
+        ToolTip(self.widgets["ai_ctx_ds_size"], _t("Taille du dataset d'entraînement. Cliquez 'Auto' pour compter les images dans le dossier Train HQ.",
+                                                     "Training dataset size. Click 'Auto' to count images in the Train HQ folder."))
 
-        ctk.CTkLabel(f_ctx, text="Questions / notes supplementaires :", text_color="#AAA",
+        ctk.CTkLabel(f_ctx, text=_t("Questions / notes supplémentaires :", "Questions / additional notes:"), text_color="#AAA",
                      font=("Roboto", 11)).pack(anchor="w", padx=10, pady=(5, 2))
         self.widgets["ai_ctx_notes"] = ctk.CTkTextbox(f_ctx, height=60, font=("Roboto", 11))
         self.widgets["ai_ctx_notes"].pack(fill="x", padx=10, pady=(0, 8))
 
         # Auto system info checkbox
-        self.widgets["ai_include_sysinfo"] = ctk.CTkCheckBox(f_ctx, text="Inclure infos systeme (CPU, GPU, RAM, stockage)")
+        self.widgets["ai_include_sysinfo"] = ctk.CTkCheckBox(f_ctx, text=_t("Inclure infos système (CPU, GPU, RAM, stockage)",
+                                                                               "Include system info (CPU, GPU, RAM, storage)"))
         self.widgets["ai_include_sysinfo"].pack(anchor="w", padx=10, pady=(0, 8))
         self.widgets["ai_include_sysinfo"].select()
-        ToolTip(self.widgets["ai_include_sysinfo"], "Detecte automatiquement CPU, GPU, RAM et espace disque pour des recommandations adaptees a votre materiel")
+        ToolTip(self.widgets["ai_include_sysinfo"], _t("Détecte automatiquement CPU, GPU, RAM et espace disque pour des recommandations adaptées à votre matériel.",
+                                                         "Automatically detects CPU, GPU, RAM and disk space for recommendations tailored to your hardware."))
 
         # Launch button
-        ctk.CTkButton(f, text="Analyser ma Configuration", fg_color="#8e44ad", height=40,
+        ctk.CTkButton(f, text=_t("Analyser ma Configuration", "Analyze my Configuration"), fg_color="#8e44ad", height=40,
                       font=("Roboto", 14, "bold"), command=self.check_config_ai).pack(fill="x", padx=20, pady=15)
 
         # Result area
@@ -1505,18 +1566,23 @@ class ConfigTab(ctk.CTkFrame):
     # ─── PAGE: PIPELINE PSNR → GAN ──────────────────────────
     def create_page_pipeline(self):
         f = ctk.CTkScrollableFrame(self.page_container, fg_color="transparent")
-        self.add_header(f, "Pipeline Automatise PSNR -> GAN")
+        self.add_header(f, _t("Pipeline Automatisé PSNR -> GAN", "Automated Pipeline PSNR -> GAN"))
 
         # Explanation
         f_info = ctk.CTkFrame(f, fg_color="#1a1a2e", corner_radius=8); f_info.pack(fill="x", padx=5, pady=5)
-        ctk.CTkLabel(f_info, text="Comment ca marche :", font=("Roboto", 13, "bold"),
+        ctk.CTkLabel(f_info, text=_t("Comment ça marche :", "How it works:"), font=("Roboto", 13, "bold"),
                      text_color="#3498db").pack(anchor="w", padx=10, pady=(8, 3))
         for txt in [
-            "1. Configurez votre modele dans les pages General, Architecture, Datasets, etc.",
-            "2. Ici, definissez uniquement les SURCHARGES par phase (iters, LR, losses).",
-            "3. Phase 1 (PSNR) entraine sans GAN pour la fidelite structurelle.",
-            "4. Phase 2 (GAN) charge le pretrain PSNR et active le discriminateur.",
-            "5. Vous pouvez aussi charger des fichiers .toml/.yml existants pour chaque phase."
+            _t("1. Configurez votre modèle dans les pages Général, Architecture, Datasets, etc.",
+               "1. Configure your model in the General, Architecture, Datasets pages, etc."),
+            _t("2. Ici, définissez uniquement les SURCHARGES par phase (iters, LR, losses).",
+               "2. Here, define only the OVERRIDES per phase (iters, LR, losses)."),
+            _t("3. Phase 1 (PSNR) entraîne sans GAN pour la fidélité structurelle.",
+               "3. Phase 1 (PSNR) trains without GAN for structural fidelity."),
+            _t("4. Phase 2 (GAN) charge le pretrain PSNR et active le discriminateur.",
+               "4. Phase 2 (GAN) loads the PSNR pretrain and enables the discriminator."),
+            _t("5. Vous pouvez aussi charger des fichiers .toml/.yml existants pour chaque phase.",
+               "5. You can also load existing .toml/.yml files for each phase.")
         ]:
             ctk.CTkLabel(f_info, text=f"  {txt}", text_color="#AAA", anchor="w", wraplength=700).pack(anchor="w", padx=15, pady=1)
         ctk.CTkLabel(f_info, text="", height=3).pack()
@@ -1524,9 +1590,9 @@ class ConfigTab(ctk.CTkFrame):
         # Phase 1: PSNR
         f_p1 = ctk.CTkFrame(f, fg_color="#1a2e1a", corner_radius=8); f_p1.pack(fill="x", padx=5, pady=5)
         h1 = ctk.CTkFrame(f_p1, fg_color="transparent"); h1.pack(fill="x", padx=10, pady=(8, 3))
-        ctk.CTkLabel(h1, text="Phase 1 -- PSNR (Fidelite)", font=("Roboto", 14, "bold"),
+        ctk.CTkLabel(h1, text=_t("Phase 1 -- PSNR (Fidélité)", "Phase 1 -- PSNR (Fidelity)"), font=("Roboto", 14, "bold"),
                      text_color="#2ecc71").pack(side="left")
-        ctk.CTkButton(h1, text="Charger .toml/.yml", fg_color="#444", width=130, height=25,
+        ctk.CTkButton(h1, text=_t("Charger .toml/.yml", "Load .toml/.yml"), fg_color="#444", width=130, height=25,
                       command=lambda: self._load_phase_config("psnr")).pack(side="right")
 
         for key, label, default, tip in [
@@ -1543,7 +1609,7 @@ class ConfigTab(ctk.CTkFrame):
             self.widgets[key] = e; ToolTip(lbl, tip)
 
         f_p1_loss = ctk.CTkFrame(f_p1, fg_color="transparent"); f_p1_loss.pack(fill="x", padx=10, pady=3)
-        ctk.CTkLabel(f_p1_loss, text="Losses :", width=140, anchor="w").pack(side="left")
+        ctk.CTkLabel(f_p1_loss, text=_t("Losses :", "Losses:"), width=140, anchor="w").pack(side="left")
         self.widgets["pipe_psnr_pixel"] = ctk.CTkCheckBox(f_p1_loss, text="Pixel (L1)", width=85)
         self.widgets["pipe_psnr_pixel"].pack(side="left"); self.widgets["pipe_psnr_pixel"].select()
         self.widgets["pipe_psnr_percep"] = ctk.CTkCheckBox(f_p1_loss, text="Perceptual", width=85)
@@ -1567,9 +1633,9 @@ class ConfigTab(ctk.CTkFrame):
         # Phase 2: GAN
         f_p2 = ctk.CTkFrame(f, fg_color="#2e1a1a", corner_radius=8); f_p2.pack(fill="x", padx=5, pady=5)
         h2 = ctk.CTkFrame(f_p2, fg_color="transparent"); h2.pack(fill="x", padx=10, pady=(8, 3))
-        ctk.CTkLabel(h2, text="Phase 2 -- GAN (Textures Realistes)", font=("Roboto", 14, "bold"),
+        ctk.CTkLabel(h2, text=_t("Phase 2 -- GAN (Textures Réalistes)", "Phase 2 -- GAN (Realistic Textures)"), font=("Roboto", 14, "bold"),
                      text_color="#e74c3c").pack(side="left")
-        ctk.CTkButton(h2, text="Charger .toml/.yml", fg_color="#444", width=130, height=25,
+        ctk.CTkButton(h2, text=_t("Charger .toml/.yml", "Load .toml/.yml"), fg_color="#444", width=130, height=25,
                       command=lambda: self._load_phase_config("gan")).pack(side="right")
 
         for key, label, default, tip in [
@@ -1588,7 +1654,7 @@ class ConfigTab(ctk.CTkFrame):
             self.widgets[key] = e; ToolTip(lbl, tip)
 
         f_p2_disc = ctk.CTkFrame(f_p2, fg_color="transparent"); f_p2_disc.pack(fill="x", padx=10, pady=3)
-        ctk.CTkLabel(f_p2_disc, text="Discriminateur :", width=140, anchor="w").pack(side="left")
+        ctk.CTkLabel(f_p2_disc, text=_t("Discriminateur :", "Discriminator:"), width=140, anchor="w").pack(side="left")
         self.widgets["pipe_disc"] = ctk.CTkOptionMenu(f_p2_disc, values=["(depuis config)", "UNet", "DUNet", "PatchGAN", "MetaGAN", "EA2-FPN"], width=140)
         self.widgets["pipe_disc"].pack(side="left"); self.widgets["pipe_disc"].set("(depuis config)")
         ctk.CTkLabel(f_p2_disc, text="GAN Type :", width=80).pack(side="left", padx=(15, 0))
@@ -1596,7 +1662,7 @@ class ConfigTab(ctk.CTkFrame):
         self.widgets["pipe_gan_type"].pack(side="left"); self.widgets["pipe_gan_type"].set("(depuis config)")
 
         f_p2_extra = ctk.CTkFrame(f_p2, fg_color="transparent"); f_p2_extra.pack(fill="x", padx=10, pady=3)
-        ctk.CTkLabel(f_p2_extra, text="Losses extra :", width=140, anchor="w").pack(side="left")
+        ctk.CTkLabel(f_p2_extra, text=_t("Losses extra :", "Extra losses:"), width=140, anchor="w").pack(side="left")
         self.widgets["pipe_gan_pixel"] = ctk.CTkCheckBox(f_p2_extra, text="Pixel", width=55)
         self.widgets["pipe_gan_pixel"].pack(side="left"); self.widgets["pipe_gan_pixel"].select()
         self.widgets["pipe_gan_percep"] = ctk.CTkCheckBox(f_p2_extra, text="Perceptual", width=85)
@@ -1613,31 +1679,33 @@ class ConfigTab(ctk.CTkFrame):
 
         # Current config summary (auto-populated from main pages)
         f_sum = ctk.CTkFrame(f, fg_color="#1a1a2e", corner_radius=8); f_sum.pack(fill="x", padx=5, pady=5)
-        ctk.CTkLabel(f_sum, text="Config actuelle (depuis les pages principales) :", font=("Roboto", 12, "bold"),
+        ctk.CTkLabel(f_sum, text=_t("Config actuelle (depuis les pages principales) :", "Current config (from main pages):"), font=("Roboto", 12, "bold"),
                      text_color="#f39c12").pack(anchor="w", padx=10, pady=(8, 3))
-        self.lbl_pipe_summary = ctk.CTkLabel(f_sum, text="Cliquez 'Actualiser' pour voir le resume.", text_color="#888",
+        self.lbl_pipe_summary = ctk.CTkLabel(f_sum, text=_t("Cliquez 'Actualiser' pour voir le résumé.", "Click 'Refresh' to see the summary."), text_color="#888",
                                               justify="left", anchor="w", wraplength=700)
         self.lbl_pipe_summary.pack(anchor="w", padx=15, pady=3)
-        ctk.CTkButton(f_sum, text="Actualiser le resume", fg_color="#555", width=160, height=25,
+        ctk.CTkButton(f_sum, text=_t("Actualiser le résumé", "Refresh summary"), fg_color="#555", width=160, height=25,
                       command=self._refresh_pipeline_summary).pack(anchor="w", padx=10, pady=(3, 8))
 
         # Options
         f_adv = ctk.CTkFrame(f, fg_color="#1a1a2e", corner_radius=8); f_adv.pack(fill="x", padx=5, pady=5)
         ctk.CTkLabel(f_adv, text="Options", font=("Roboto", 13, "bold"),
                      text_color="#f39c12").pack(anchor="w", padx=10, pady=(8, 5))
-        self.widgets["pipe_use_amp"] = ctk.CTkCheckBox(f_adv, text="AMP (FP16) pour les deux phases")
+        self.widgets["pipe_use_amp"] = ctk.CTkCheckBox(f_adv, text=_t("AMP (FP16) pour les deux phases", "AMP (FP16) for both phases"))
         self.widgets["pipe_use_amp"].pack(anchor="w", padx=15, pady=2); self.widgets["pipe_use_amp"].select()
-        self.widgets["pipe_auto_pretrain"] = ctk.CTkCheckBox(f_adv, text="Charger auto le meilleur pretrain PSNR pour la Phase 2")
+        self.widgets["pipe_auto_pretrain"] = ctk.CTkCheckBox(f_adv, text=_t("Charger auto le meilleur pretrain PSNR pour la Phase 2",
+                                                                              "Auto-load best PSNR pretrain for Phase 2"))
         self.widgets["pipe_auto_pretrain"].pack(anchor="w", padx=15, pady=2); self.widgets["pipe_auto_pretrain"].select()
-        self.widgets["pipe_save_best"] = ctk.CTkCheckBox(f_adv, text="Sauvegarder le meilleur modele (validation PSNR)")
+        self.widgets["pipe_save_best"] = ctk.CTkCheckBox(f_adv, text=_t("Sauvegarder le meilleur modèle (validation PSNR)",
+                                                                          "Save best model (PSNR validation)"))
         self.widgets["pipe_save_best"].pack(anchor="w", padx=15, pady=2); self.widgets["pipe_save_best"].select()
         ctk.CTkLabel(f_adv, text="", height=3).pack()
 
         # Buttons
         f_btn = ctk.CTkFrame(f, fg_color="transparent"); f_btn.pack(fill="x", padx=5, pady=10)
-        ctk.CTkButton(f_btn, text="Test Rapide (2K + 2K iters)", fg_color="#e67e22", height=40,
+        ctk.CTkButton(f_btn, text=_t("Test Rapide (2K + 2K iters)", "Quick Test (2K + 2K iters)"), fg_color="#e67e22", height=40,
                       width=250, font=("Roboto", 13), command=self.pipeline_test).pack(side="left", padx=10)
-        ctk.CTkButton(f_btn, text="Lancer Pipeline Complet", fg_color="#27ae60", height=40,
+        ctk.CTkButton(f_btn, text=_t("Lancer Pipeline Complet", "Launch Full Pipeline"), fg_color="#27ae60", height=40,
                       width=250, font=("Roboto", 13, "bold"), command=self.pipeline_full).pack(side="left", padx=10)
 
         return f
@@ -1693,9 +1761,10 @@ class ConfigTab(ctk.CTkFrame):
                     self.widgets[key].delete(0, "end")
                     self.widgets[key].insert(0, val)
                     filled += 1
-            messagebox.showinfo("Pipeline", f"Config {phase.upper()} chargee depuis:\n{os.path.basename(p)}\n({filled} champs remplis)")
+            messagebox.showinfo("Pipeline", _t(f"Config {phase.upper()} chargée depuis :\n{os.path.basename(p)}\n({filled} champs remplis)",
+                                               f"Config {phase.upper()} loaded from:\n{os.path.basename(p)}\n({filled} fields filled)"))
         except Exception as e:
-            messagebox.showerror("Erreur", f"Impossible de charger: {e}")
+            messagebox.showerror(_t("Erreur", "Error"), _t(f"Impossible de charger : {e}", f"Unable to load: {e}"))
 
     def _refresh_pipeline_summary(self):
         """Refresh the pipeline summary from main config pages."""
@@ -1708,14 +1777,17 @@ class ConfigTab(ctk.CTkFrame):
         ds_gt = self.widgets.get("dataroot_gt", ctk.CTkEntry(self))
 
         try:
-            summary = (
+            summary = _t(
                 f"Moteur: {engine.get()}  |  Architecture: {arch.get()}  |  Scale: {scale.get()}x\n"
+                f"Batch: {batch.get()}  |  Patch GT: {patch.get()}  |  Optimizer: {optim.get()}\n"
+                f"Dataset GT: {ds_gt.get()}",
+                f"Engine: {engine.get()}  |  Architecture: {arch.get()}  |  Scale: {scale.get()}x\n"
                 f"Batch: {batch.get()}  |  Patch GT: {patch.get()}  |  Optimizer: {optim.get()}\n"
                 f"Dataset GT: {ds_gt.get()}"
             )
             self.lbl_pipe_summary.configure(text=summary, text_color="#CCC")
         except Exception:
-            self.lbl_pipe_summary.configure(text="Erreur lecture config.", text_color="#e74c3c")
+            self.lbl_pipe_summary.configure(text=_t("Erreur lecture config.", "Error reading config."), text_color="#e74c3c")
 
 
     # ─── CHECK CONFIG VIA AI ─────────────────────────────────
@@ -1753,11 +1825,11 @@ class ConfigTab(ctk.CTkFrame):
 
         if not api_key:
             self.widgets["lbl_test_result"].configure(
-                text="❌ Cle API vide", text_color="#e74c3c"
+                text=_t("❌ Clé API vide", "❌ Empty API key"), text_color="#e74c3c"
             )
             return
 
-        self.widgets["lbl_test_result"].configure(text="⏳ Test en cours...", text_color="#f39c12")
+        self.widgets["lbl_test_result"].configure(text=_t("⏳ Test en cours...", "⏳ Testing..."), text_color="#f39c12")
         self.widgets["btn_test_api"].configure(state="disabled")
         self.update_idletasks()
 
@@ -1788,32 +1860,37 @@ class ConfigTab(ctk.CTkFrame):
         from tkinter import messagebox
         stats = cache_stats()
         if stats["count"] == 0:
-            messagebox.showinfo("Cache", "Le cache est deja vide.")
+            messagebox.showinfo("Cache", _t("Le cache est déjà vide.", "The cache is already empty."))
             return
-        if messagebox.askyesno("Vider le cache",
-                                f"Supprimer {stats['count']} reponses cachees "
-                                f"({stats['size_kb']:.1f} KB) ?"):
+        if messagebox.askyesno(_t("Vider le cache", "Clear cache"),
+                                _t(f"Supprimer {stats['count']} réponses cachées "
+                                   f"({stats['size_kb']:.1f} KB) ?",
+                                   f"Delete {stats['count']} cached responses "
+                                   f"({stats['size_kb']:.1f} KB)?")):
             count = clear_cache()
-            messagebox.showinfo("Cache", f"{count} reponses supprimees.")
+            messagebox.showinfo("Cache", _t(f"{count} réponses supprimées.", f"{count} responses deleted."))
 
     def _load_template(self):
         """Load a configuration template into the UI."""
         from tkinter import messagebox
         choice = self.widgets["template_choice"].get()
         if not choice or choice == "(aucun)":
-            messagebox.showinfo("Template", "Selectionnez un template.")
+            messagebox.showinfo("Template", _t("Sélectionnez un template.", "Select a template."))
             return
 
         tpl = get_template(choice)
         if not tpl:
-            messagebox.showerror("Template", f"Template '{choice}' non trouve.")
+            messagebox.showerror("Template", _t(f"Template '{choice}' non trouvé.", f"Template '{choice}' not found."))
             return
 
         # Confirm before overwriting
-        if not messagebox.askyesno("Charger Template",
-                                    f"Charger '{choice}' ?\n\n"
-                                    f"{tpl.get('_description', '')}\n\n"
-                                    f"Les valeurs actuelles seront ecrasees."):
+        if not messagebox.askyesno(_t("Charger Template", "Load Template"),
+                                    _t(f"Charger '{choice}' ?\n\n"
+                                       f"{tpl.get('_description', '')}\n\n"
+                                       f"Les valeurs actuelles seront écrasées.",
+                                       f"Load '{choice}'?\n\n"
+                                       f"{tpl.get('_description', '')}\n\n"
+                                       f"Current values will be overwritten.")):
             return
 
         # Apply each value to the widgets
@@ -1845,9 +1922,10 @@ class ConfigTab(ctk.CTkFrame):
                     applied += 1
             except Exception:
                 skipped.append(key)
-        msg = f"Template '{choice}' charge.\n  Applique : {applied} valeurs"
+        msg = _t(f"Template '{choice}' chargé.\n  Appliqué : {applied} valeurs",
+                 f"Template '{choice}' loaded.\n  Applied: {applied} values")
         if skipped:
-            msg += f"\n  Ignore : {len(skipped)} (cles inconnues)"
+            msg += _t(f"\n  Ignoré : {len(skipped)} (clés inconnues)", f"\n  Skipped: {len(skipped)} (unknown keys)")
         messagebox.showinfo("Template", msg)
 
     def _collect_system_info(self) -> str:
@@ -1886,7 +1964,8 @@ class ConfigTab(ctk.CTkFrame):
         gt_widget = self.widgets.get("dataroot_gt")
         folder = gt_widget.get().strip() if gt_widget else ""
         if not folder or not os.path.isdir(folder):
-            messagebox.showwarning("Auto-detect", "Configurez d'abord un dossier Train HQ (GT) valide dans l'onglet Datasets.")
+            messagebox.showwarning("Auto-detect", _t("Configurez d'abord un dossier Train HQ (GT) valide dans l'onglet Datasets.",
+                                                   "First configure a valid Train HQ (GT) folder in the Datasets tab."))
             return
         img_exts = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff"}
         try:
@@ -1899,14 +1978,15 @@ class ConfigTab(ctk.CTkFrame):
                 size_entry.delete(0, "end")
                 size_entry.insert(0, f"{count} images")
         except Exception as e:
-            messagebox.showerror("Auto-detect", f"Erreur: {e}")
+            messagebox.showerror("Auto-detect", _t(f"Erreur : {e}", f"Error: {e}"))
 
     def check_config_ai(self):
         """Send current config to AI API for review."""
         # Save API key
         api_key = self.widgets["ai_api_key"].get().strip()
         if not api_key:
-            messagebox.showerror("Erreur", "Veuillez entrer votre clé API.\n\nVous pouvez sauvegarder vos clés dans\nParamètres > Clés API.")
+            messagebox.showerror(_t("Erreur", "Error"), _t("Veuillez entrer votre clé API.\n\nVous pouvez sauvegarder vos clés dans\nParamètres > Clés API.",
+                                                            "Please enter your API key.\n\nYou can save your keys in\nSettings > API Keys."))
             return
         # Save key for this provider
         api_choice = self.widgets["ai_api"].get()
@@ -2007,14 +2087,14 @@ class ConfigTab(ctk.CTkFrame):
                         pass
                 self.after(0, lambda: self._show_ai_result(result))
             except Exception as e:
-                self.after(0, lambda: self._show_ai_result(f"Erreur: {e}"))
+                self.after(0, lambda: self._show_ai_result(_t(f"Erreur : {e}", f"Error: {e}")))
 
         threading.Thread(target=worker, daemon=True).start()
         # Show loading in result box
         if hasattr(self, 'ai_result_box'):
             self.ai_result_box.configure(state="normal")
             self.ai_result_box.delete("1.0", "end")
-            self.ai_result_box.insert("1.0", "Analyse en cours... Veuillez patienter.")
+            self.ai_result_box.insert("1.0", _t("Analyse en cours... Veuillez patienter.", "Analysis in progress... Please wait."))
             self.ai_result_box.configure(state="disabled")
 
     def _call_ai_api(self, api_choice: str, api_key: str, prompt: str) -> str:
@@ -2083,7 +2163,7 @@ class ConfigTab(ctk.CTkFrame):
                 "messages": [{"role": "user", "content": prompt}]
             }).encode()
         else:
-            return "API non supportée."
+            return _t("API non supportée.", "API not supported.")
 
         req = urllib.request.Request(url, data=body, headers=headers, method="POST")
         try:
@@ -2117,7 +2197,7 @@ class ConfigTab(ctk.CTkFrame):
 
         # Also show in popup for convenience
         win = ctk.CTkToplevel(self)
-        win.title("Analyse AI de la Configuration")
+        win.title(_t("Analyse AI de la Configuration", "AI Configuration Analysis"))
         win.geometry("700x500")
         win.attributes("-topmost", True)  # Force foreground
         win.after(500, lambda: win.attributes("-topmost", False))  # Release after showing
@@ -2126,7 +2206,7 @@ class ConfigTab(ctk.CTkFrame):
             if os.path.exists(icon_path): win.iconbitmap(icon_path)
         except Exception: pass
 
-        ctk.CTkLabel(win, text="Analyse de votre configuration", font=("Roboto", 16, "bold"),
+        ctk.CTkLabel(win, text=_t("Analyse de votre configuration", "Analysis of your configuration"), font=("Roboto", 16, "bold"),
                      text_color="#3498db").pack(pady=(15, 5))
         txt = ctk.CTkTextbox(win, wrap="word")
         txt.pack(fill="both", expand=True, padx=15, pady=10)
@@ -2134,9 +2214,9 @@ class ConfigTab(ctk.CTkFrame):
         txt.configure(state="disabled")
 
         f_btn = ctk.CTkFrame(win, fg_color="transparent"); f_btn.pack(pady=10)
-        ctk.CTkButton(f_btn, text="Copier", width=100,
+        ctk.CTkButton(f_btn, text=_t("Copier", "Copy"), width=100,
                       command=lambda: (win.clipboard_clear(), win.clipboard_append(text))).pack(side="left", padx=5)
-        ctk.CTkButton(f_btn, text="Fermer", width=100, fg_color="#666",
+        ctk.CTkButton(f_btn, text=_t("Fermer", "Close"), width=100, fg_color="#666",
                       command=win.destroy).pack(side="left", padx=5)
 
     # ─── PIPELINE PSNR → GAN ──────────────────────────────────
@@ -2150,10 +2230,14 @@ class ConfigTab(ctk.CTkFrame):
         gan_iter = self.widgets["pipe_gan_iter"].get()
         confirm = messagebox.askyesno(
             "Pipeline PSNR → GAN",
-            f"Lancer le pipeline complet ?\n\n"
-            f"Phase 1 (PSNR) : {psnr_iter} itérations\n"
-            f"Phase 2 (GAN) : {gan_iter} itérations\n\n"
-            f"L'entraînement basculera automatiquement de PSNR à GAN."
+            _t(f"Lancer le pipeline complet ?\n\n"
+               f"Phase 1 (PSNR) : {psnr_iter} itérations\n"
+               f"Phase 2 (GAN) : {gan_iter} itérations\n\n"
+               f"L'entraînement basculera automatiquement de PSNR à GAN.",
+               f"Launch the full pipeline?\n\n"
+               f"Phase 1 (PSNR): {psnr_iter} iterations\n"
+               f"Phase 2 (GAN): {gan_iter} iterations\n\n"
+               f"Training will automatically switch from PSNR to GAN.")
         )
         if confirm:
             self._launch_pipeline(test_mode=False)
@@ -2232,16 +2316,20 @@ class ConfigTab(ctk.CTkFrame):
         ok, msg = self.config_handler.generate_config(data_p1, p1_path)
 
         if not ok:
-            messagebox.showerror("Erreur", f"Erreur génération Phase 1:\n{msg}")
+            messagebox.showerror(_t("Erreur", "Error"), _t(f"Erreur génération Phase 1 :\n{msg}", f"Phase 1 generation error:\n{msg}"))
             return
 
         mode = "TEST " if test_mode else ""
         messagebox.showinfo(
             f"Pipeline {mode}PSNR → GAN",
-            f"Phase 1 (PSNR) : {psnr_iter} iters → {p1_path}\n\n"
-            f"La Phase 2 (GAN) sera générée automatiquement\n"
-            f"à la fin de la Phase 1 avec le pretrain PSNR.\n\n"
-            f"Lancement de la Phase 1..."
+            _t(f"Phase 1 (PSNR) : {psnr_iter} iters → {p1_path}\n\n"
+               f"La Phase 2 (GAN) sera générée automatiquement\n"
+               f"à la fin de la Phase 1 avec le pretrain PSNR.\n\n"
+               f"Lancement de la Phase 1...",
+               f"Phase 1 (PSNR): {psnr_iter} iters → {p1_path}\n\n"
+               f"Phase 2 (GAN) will be generated automatically\n"
+               f"at the end of Phase 1 using the PSNR pretrain.\n\n"
+               f"Launching Phase 1...")
         )
 
         # Launch Phase 1 via RunTab
@@ -2249,7 +2337,7 @@ class ConfigTab(ctk.CTkFrame):
             self.run_tab_ref.pipeline_mode = pipeline_data
             self.run_tab_ref.external_start(p1_path)
         else:
-            messagebox.showerror("Erreur", "Lien vers l'onglet Entraînement non établi.")
+            messagebox.showerror(_t("Erreur", "Error"), _t("Lien vers l'onglet Entraînement non établi.", "Link to the Training tab not established."))
 
     def restart_tb(self):
         if sys.platform == "win32": subprocess.run(["taskkill", "/F", "/IM", "tensorboard.exe"], capture_output=True)
@@ -2266,8 +2354,9 @@ class ConfigTab(ctk.CTkFrame):
         cmd = [py_path, "-m", "tensorboard.main", "--logdir", tb_logdir, f"--port={port}", "--bind_all"]
         try:
             subprocess.Popen(cmd, creationflags=subprocess.CREATE_NO_WINDOW if sys.platform=='win32' else 0)
-            messagebox.showinfo("TensorBoard", f"Serveur redémarré sur le port {port}.\nLogdir : {tb_logdir}")
-        except Exception as e: messagebox.showerror("Erreur", str(e))
+            messagebox.showinfo("TensorBoard", _t(f"Serveur redémarré sur le port {port}.\nLogdir : {tb_logdir}",
+                                                   f"Server restarted on port {port}.\nLogdir: {tb_logdir}"))
+        except Exception as e: messagebox.showerror(_t("Erreur", "Error"), str(e))
 
     def toggle_gan_options(self):
         is_gan = str(self.widgets["use_gan"].get()).lower() == "true"
@@ -2495,8 +2584,8 @@ class ConfigTab(ctk.CTkFrame):
         if not gt_val or not os.path.isdir(gt_val):
             messagebox.showerror(
                 "Tester OTF",
-                "Dossier GT Val introuvable.\n"
-                "Définissez-le dans l'onglet Datasets (champ 'Val GT')."
+                _t("Dossier GT Val introuvable.\nDéfinissez-le dans l'onglet Datasets (champ 'Val GT').",
+                   "GT Val folder not found.\nSet it in the Datasets tab (field 'Val GT').")
             )
             return
 
@@ -2517,7 +2606,7 @@ class ConfigTab(ctk.CTkFrame):
                         if os.path.splitext(fn)[1].lower() in exts])
 
         if not files:
-            messagebox.showwarning("Tester OTF", "Aucune image trouvée dans le dossier GT Val.")
+            messagebox.showwarning("Tester OTF", _t("Aucune image trouvée dans le dossier GT Val.", "No images found in the GT Val folder."))
             return
 
         # Output folder: sibling of val/ to avoid polluting GT with extra images
@@ -2529,12 +2618,12 @@ class ConfigTab(ctk.CTkFrame):
 
         # Progress popup
         pop = ctk.CTkToplevel(self)
-        pop.title("Génération OTF en cours…")
+        pop.title(_t("Génération OTF en cours…", "OTF generation in progress…"))
         pop.geometry("380x120")
         pop.resizable(False, False)
         pop.grab_set()
         total = len(files) * n_var
-        lbl_status = ctk.CTkLabel(pop, text=f"Initialisation… 0 / {total}", font=("Arial", 11))
+        lbl_status = ctk.CTkLabel(pop, text=_t(f"Initialisation… 0 / {total}", f"Initializing… 0 / {total}"), font=("Arial", 11))
         lbl_status.pack(pady=(18, 8))
         bar = ctk.CTkProgressBar(pop, width=340)
         bar.pack(padx=20)
@@ -2575,7 +2664,7 @@ class ConfigTab(ctk.CTkFrame):
                         pop.destroy()
                     except Exception:
                         pass
-                    messagebox.showerror("Erreur OTF", msg)
+                    messagebox.showerror(_t("Erreur OTF", "OTF Error"), msg)
                 pop.after(0, _on_err)
 
         threading.Thread(target=worker, daemon=True).start()
@@ -2588,7 +2677,7 @@ class ConfigTab(ctk.CTkFrame):
 
         src = self.widgets["deg_preview_src"].get().strip()
         if not src or not os.path.isfile(src):
-            messagebox.showwarning("Aperçu", "Sélectionnez d'abord une image source.")
+            messagebox.showwarning(_t("Aperçu", "Preview"), _t("Sélectionnez d'abord une image source.", "Select a source image first."))
             return
 
         try:
@@ -2605,7 +2694,7 @@ class ConfigTab(ctk.CTkFrame):
                 hq_img.thumbnail((768, 768), Image.LANCZOS)
             lq_img, log = apply_otf_pipeline(hq_img, cfg, scale=scale)
         except Exception as e:
-            messagebox.showerror("Aperçu", f"Erreur : {e}")
+            messagebox.showerror(_t("Aperçu", "Preview"), _t(f"Erreur : {e}", f"Error: {e}"))
             return
 
         # Save originals for zoom
@@ -2653,7 +2742,7 @@ class ConfigTab(ctk.CTkFrame):
         # LQ
         col_lq = ctk.CTkFrame(row, fg_color="transparent")
         col_lq.pack(side="left", padx=10)
-        scale_lbl = f"x{scale}" if scale != 1 else "même taille"
+        scale_lbl = f"x{scale}" if scale != 1 else _t("même taille", "same size")
         ctk.CTkLabel(col_lq, text=f"Résultat OTF (LQ {scale_lbl} — {lq_img.size[0]}×{lq_img.size[1]})",
                      text_color="#e67e22", font=("Roboto", 11, "bold")).pack()
         lq_photo = ImageTk.PhotoImage(lq_disp)
@@ -2663,7 +2752,8 @@ class ConfigTab(ctk.CTkFrame):
         lbl_lq.bind("<Button-1>", lambda e: self._deg_zoom_preview(which="lq"))
 
         # Steps log
-        log_text = " | ".join(log) if log else "(aucune dégradation appliquée — vérifiez les probabilités)"
+        log_text = " | ".join(log) if log else _t("(aucune dégradation appliquée — vérifiez les probabilités)",
+                                                    "(no degradation applied — check the probabilities)")
         ctk.CTkLabel(self.widgets["deg_preview_area"], text=log_text,
                      text_color="#AAA", font=("Roboto", 9), wraplength=900
                      ).pack(pady=(0, 8))
@@ -2675,11 +2765,13 @@ class ConfigTab(ctk.CTkFrame):
 
         ref = self._deg_preview_refs.get(f"{which}_orig")
         if ref is None:
-            messagebox.showinfo("Zoom", "Aucune image chargée. Cliquez d'abord sur 'Régénérer'.")
+            messagebox.showinfo(_t("Zoom", "Zoom"), _t("Aucune image chargée. Cliquez d'abord sur 'Régénérer'.",
+                                                     "No image loaded. Click 'Regenerate' first."))
             return
 
         win = ctk.CTkToplevel(self)
-        win.title(f"Zoom — {'HQ source' if which == 'hq' else 'LQ après OTF'}")
+        win.title(_t(f"Zoom — {'HQ source' if which == 'hq' else 'LQ après OTF'}",
+                     f"Zoom — {'HQ source' if which == 'hq' else 'LQ after OTF'}"))
         win.geometry("1100x800")
         win.transient(self)
 
@@ -2726,8 +2818,10 @@ class ConfigTab(ctk.CTkFrame):
             canvas.create_image(x, y, image=photo)
             zoom_pct = int(state["zoom"] * 100)
             info.configure(
-                text=f"Original: {w_orig}×{h_orig}  •  Affiché: {disp_w}×{disp_h}  •  Zoom: {zoom_pct}%  "
-                     f"(molette = zoom, clic+glisser = pan, double-clic = reset)"
+                text=_t(f"Original: {w_orig}×{h_orig}  •  Affiché: {disp_w}×{disp_h}  •  Zoom: {zoom_pct}%  "
+                        f"(molette = zoom, clic+glisser = pan, double-clic = reset)",
+                        f"Original: {w_orig}×{h_orig}  •  Display: {disp_w}×{disp_h}  •  Zoom: {zoom_pct}%  "
+                        f"(scroll = zoom, click+drag = pan, double-click = reset)")
             )
 
         def on_wheel(event):
@@ -3031,7 +3125,7 @@ class ConfigTab(ctk.CTkFrame):
         
         # Gestion intelligente de l'infobulle (clé ou texte brut)
         if tip_text:
-            text = TOOLTIPS.get(tip_text, tip_text) # Essaie de trouver la clé, sinon utilise le texte
+            text = get_tooltip(tip_text, tip_text) # Essaie de trouver la clé, sinon utilise le texte
             ToolTip(lbl, text)
             
         if str(default).lower() in ["true", "false"]: e = ctk.CTkOptionMenu(f, values=["true", "false"]); e.set(str(default).lower())
@@ -3040,14 +3134,14 @@ class ConfigTab(ctk.CTkFrame):
 
     def add_header(self, parent, text): ctk.CTkLabel(parent, text=text, font=("Roboto", 16, "bold"), text_color="#3B8ED0", anchor="w").pack(fill="x", pady=(15, 5))
     def add_label_tip(self, parent, text, tip_key=None):
-        lbl = ctk.CTkLabel(parent, text=text); lbl.pack(side="left", padx=5); ToolTip(lbl, TOOLTIPS.get(tip_key, "")) if tip_key else None
+        lbl = ctk.CTkLabel(parent, text=text); lbl.pack(side="left", padx=5); ToolTip(lbl, get_tooltip(tip_key, "")) if tip_key else None
     def row_entry(self, parent, label, key, tip_key=None):
         f = ctk.CTkFrame(parent, fg_color="transparent"); f.pack(fill="x", pady=2)
-        lbl = ctk.CTkLabel(f, text=label, width=150, anchor="w"); lbl.pack(side="left"); ToolTip(lbl, TOOLTIPS.get(tip_key, "")) if tip_key else None
+        lbl = ctk.CTkLabel(f, text=label, width=150, anchor="w"); lbl.pack(side="left"); ToolTip(lbl, get_tooltip(tip_key, "")) if tip_key else None
         e = ctk.CTkEntry(f); e.bind("<KeyRelease>", lambda e: self.refresh_ui_stats()); e.pack(side="left", fill="x", expand=True); self.widgets[key] = e
     def row_file_picker(self, parent, label, key, is_file=False, default="", save_key=None, tip_key=None):
         f = ctk.CTkFrame(parent, fg_color="transparent"); f.pack(fill="x", pady=2)
-        lbl = ctk.CTkLabel(f, text=label, width=150, anchor="w"); lbl.pack(side="left"); ToolTip(lbl, TOOLTIPS.get(tip_key, "")) if tip_key else None
+        lbl = ctk.CTkLabel(f, text=label, width=150, anchor="w"); lbl.pack(side="left"); ToolTip(lbl, get_tooltip(tip_key, "")) if tip_key else None
         e = ctk.CTkEntry(f); e.pack(side="left", fill="x", expand=True, padx=(0, 5)); 
         if default: e.insert(0, default)
         self.widgets[key] = e; ctk.CTkButton(f, text="...", width=30, command=lambda: self.browse(e, is_file, save_key)).pack(side="left")
@@ -3153,8 +3247,8 @@ class ConfigTab(ctk.CTkFrame):
                         _seed_w.delete(0, "end")
                         _seed_w.insert(0, "0")
                         _seed_w.configure(state="disabled", text_color="#666666")
-                messagebox.showinfo("OK", "Configuration chargée !")
-            else: messagebox.showerror("Erreur", data)
+                messagebox.showinfo("OK", _t("Configuration chargée !", "Configuration loaded!"))
+            else: messagebox.showerror(_t("Erreur", "Error"), data)
 
     def save_action(self):
         data = {}
@@ -3198,7 +3292,7 @@ class ConfigTab(ctk.CTkFrame):
         )
         
         if p:
-            succ, msg = self.config_handler.generate_config(data, p); messagebox.showinfo("Info", msg) if succ else messagebox.showerror("Erreur", msg)
+            succ, msg = self.config_handler.generate_config(data, p); messagebox.showinfo("Info", msg) if succ else messagebox.showerror(_t("Erreur", "Error"), msg)
             return p
         return None
 
@@ -3219,4 +3313,4 @@ class ConfigTab(ctk.CTkFrame):
             if self.run_tab_ref:
                 self.run_tab_ref.external_start(toml_path)
             else:
-                messagebox.showerror("Erreur", "Lien vers l'onglet Entraînement non établi.")
+                messagebox.showerror(_t("Erreur", "Error"), _t("Lien vers l'onglet Entraînement non établi.", "Link to the Training tab is not established."))

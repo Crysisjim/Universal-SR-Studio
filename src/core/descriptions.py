@@ -327,6 +327,326 @@ TOOLTIPS = {
     "num_modules": "Nombre de modules.",
 }
 
+# --- TOOLTIPS (ENGLISH) ---
+TOOLTIPS_EN = {
+    # ================= GENERAL =================
+    "name": "Experiment name.\nCreates a folder in 'experiments/'.\nTip: Use a prefix like '4x_MyModel'.",
+    "engine": "Training engine.\n- NeoSR: Recommended (Optimized, modern).\n- TraiNNer-Redux: For legacy compatibility.",
+    "scale": "Upscaling factor.\nMust exactly match the size difference between your LQ and HQ folders.",
+    "use_gan": "Enable GAN mode (Adversarial).\n[+] Advantage: Realistic textures, fine details.\n[-] Risk: Hallucinations, artifacts, instability.",
+    "manual_seed": "Random seed.\nFixes randomness for reproducible results.\n- 10: Standard.\n- Random: Changes every run.",
+
+    # ================= DATASETS =================
+    "dataroot_gt": "HR folder (Ground Truth).\nPerfect reference images (PNG/JPG).",
+    "dataroot_lq": "LQ folder (Low Quality).\nIf empty, the software will generate LQ on-the-fly (OTF) but it is slower.",
+    "val_gt": "HR folder for validation.\nUsed to compute PSNR/SSIM during training.",
+    "val_lq": "LQ folder for validation.\nMust match the files in the Val HR folder.",
+    "val_freq": "Validation frequency (every N iterations).\n[+] Higher (10000+): Faster training (fewer interruptions).\n[-] Lower (1000-5000): Fine tracking of PSNR/SSIM curves and early problem detection.\n[Tip] 5000 for normal tracking, 1000 for debugging.",
+    "tile": "Tile size for validation.\nImportant to avoid Out of Memory errors on large images.\n- 0: Full image.\n- 200: Recommended.",
+    "resume_state": ".state file to resume a training run.\nUseful after a crash or to continue a model.",
+    "pretrain_model": ".pth file for Transfer Learning.\nStarting from a pre-trained model greatly accelerates results.",
+    "dataset_mode": "Dataset mode.\n- OTF: Generates degradations (noise, blur) on-the-fly. Recommended for generalization.\n- Paired: Pre-prepared static HQ and LQ folders.",
+
+    # --- AUGMENTATIONS ---
+    "aug_mixup": "MixUp: Blends two images by transparency.\nHelps the network understand smooth transitions.",
+    "aug_cutmix": "CutMix: Pastes a square from image A onto image B.\nForces the network to look at the whole image, not just easy zones.",
+    "aug_resizemix": "ResizeMix: Resizes an image and pastes it into another.\nMore stable variant of CutMix.",
+    "aug_cutblur": "CutBlur: Pastes a Low Quality (LQ) region onto a High Quality (HQ) image.\nTeaches the network to handle mixed sharp/blurry zones. Very powerful.",
+
+    # ================= HYPERPARAMETERS (TRAINING) =================
+    "batch_size": "Number of images processed simultaneously by the GPU.\n[+] Higher: More stable and faster training.\n[-] Lower: Less VRAM required, but more chaotic convergence.\n(1080Ti: 4 to 8 recommended).",
+    "patch_size": "Size of image crops seen by the network.\n[+] Higher (96, 128): Better global coherence, learns large structures.\n[-] Lower (32, 48, 64): Saves VRAM, focused on local textures.\n[!] Must be a multiple of the Window Size.",
+    "total_iter": "Training lifetime.\n- Finetuning: 50k - 150k.\n- From Scratch: 300k - 500k+.",
+    "warmup_iter": "Warmup iterations.\nProgressively ramps up the Learning Rate from 0 to the target value.\n- -1: Disabled (Standard).\n- 5000: Recommended to stabilize large models.",
+    "pixel_reduction": "Loss reduction method.\n- Mean: Average of errors (Standard, Stable).\n- Sum: Sum of errors (More aggressive, stronger gradients).",
+    "pixel_criterion": "Pixel loss function type.\n\n--- NeoSR ---\n* L1Loss: Absolute error. Gives slightly blurry but stable images.\n* MSELoss (L2): Quadratic error. Even smoother than L1. Can create saturation artifacts.\n* HuberLoss: Hybrid L1/L2 (robust to outliers). Recommended for NeoSR.\n* chc: Clipped Huber + Cosine Similarity. Better color coherence. NeoSR only.\n\n--- TraiNNer-Redux ---\n* charbonnierloss: Smoothed L1 near zero. Recommended Redux (default).\n* l1loss: Standard absolute error.\n* mseloss: Standard quadratic error.\n\n[Recommendation] NeoSR: HuberLoss or chc. Redux: charbonnierloss.",
+    "accumulate": "Gradient Accumulation.\nSimulates a large Batch Size.\nEx: Batch 4 + Accumulate 4 = Effective Batch 16 (Very stable).",
+    "match_lq_colors": "Color correction.\nForces the LQ histogram to match the GT before training.\nFixes sources with washed-out colors.",
+
+    "optim_g": "Optimization algorithm (The brain of learning).\n\n--- NeoSR ---\n* Adam / AdamW: Standard, robust. lr=5e-4, betas=[0.9, 0.99].\n* NAdam: Adam + Nesterov momentum. Faster convergence.\n* Adan: State-of-the-Art. 3 betas, lr=5e-4. Slightly heavier VRAM but excellent.\n* AdamW_Win: Winograd variant, mode 'win2'. Experimental.\n* AdamW_SF / Adan_SF: Schedule-Free! No scheduler needed.\n  [!] Set schedule_free=true MANDATORY.\n* SOAP_SF: Preconditioned (Gap-Aware). lr=1e-3 recommended.\n\n--- TraiNNer-Redux ---\n* Adam / AdamW / NAdam / RAdam / SGD: Standard PyTorch optimizers.\n* Adadelta / Adagrad: Adaptive, per-parameter learning rate. Rarely used.\n\n[+] Higher lr → fast convergence but unstable.\n[-] Lower lr → stable but slow.",
+    "scheduler": "Learning Rate reduction strategy.\n\n--- NeoSR ---\n* MultiStepLR: Drops LR at milestones. Classic.\n* CosineAnnealing: Cosine descent to eta_min. Excellent for finetuning.\n* CosineAnnealingRestart: Cosine + periodic restarts.\n* CyclicLR / OneCycleLR: Oscillation between bounds.\n[!] Useless with _SF (Schedule-Free) optimizers.\n\n--- TraiNNer-Redux ---\n* MultiStepLR / StepLR: Fixed steps.\n* CosineAnnealingLR: Cosine descent.\n* ExponentialLR: Exponential decay (gamma^epoch).\n* ReduceLROnPlateau: Drops LR when loss plateaus.",
+    "lr": "Learning Rate.\n[+] Higher (1e-3, 5e-4): Fast convergence, risk of divergence (exploding loss).\n[-] Lower (1e-4, 5e-5): Learns slowly but more precise for finetuning.\n\nRecommended values:\n- From Scratch: 5e-4\n- Finetuning from pretrain: 1e-4 to 5e-5\n- GAN phase (after PSNR): 1e-4",
+    "save_freq": "Automatic save frequency (.pth).\nEx: 5000 = Save every 5000 iterations.\n[+] More frequent: Finer checkpoints, less loss on crash.\n[-] More frequent: More disk usage, heavier experiments folder.",
+    "save_img": "Save validation images to disk.\nAllows visual inspection of progress in the 'visualization' folder.\n[+] True: Practical for visual quality auditing.\n[-] True: Can generate many files (~100KB per image × freq).",
+    "milestones": "For MultiStepLR: Iterations where LR is divided by gamma.\nEx: '75000, 112500' for a 150k training run.\nGeneral rule: 50% and 75% of total_iter.",
+
+    # ================= SYSTEM / ADVANCED =================
+    "use_amp": "Automatic Mixed Precision.\n\n--- NeoSR ---\n[!] False MANDATORY on GTX 1080 Ti (Pascal) — FP16 unstable/crashes.\n[+] FP16 accelerates on RTX 2000/3000/4000.\n\n--- TraiNNer-Redux ---\n[+] AMP FP16 WORKS on Pascal (sm_61) + PyTorch 2.7 (tested ✅ 9.4 it/s).\n[+] BF16 gives +30% boost on RTX 3000+ (Tensor Cores).\n[+] BF16 also works on Pascal without compile (bf16_nocl mode).\n[!] Difference NeoSR vs Redux: Redux handles AMP FP16 better on older GPUs.",
+    "bfloat16": "BF16 (Brain Float) format.\n[+] True: Better stability than FP16.\n[+] RTX 3070 Ti Laptop bench: ultracompact 7.15 it/s (fp16) → 9.33 it/s (bf16) = +30% via Tensor Cores.\n[-] Only works on RTX 3000/4000 (Ampere+) in native mode.\n[i] On Pascal: bf16_nocl (without compile) works at normal speed.",
+    "grad_clip": "Gradient Clipping.\nCuts extreme values to avoid NaN (Not a Number) errors.\nEssential for unstable GANs.",
+    "deterministic": (
+        "Deterministic mode (torch.use_deterministic_algorithms).\n\n"
+        "[+] Exact reproducibility: same seed → same result on every run.\n"
+        "[-] Slows training by 5 to 20% (some CUDA ops have no deterministic impl.).\n"
+        "[-] Warnings 'does not have a deterministic implementation' in logs (warn_only=True).\n\n"
+        "--- TraiNNer-Redux ---\n"
+        "Controlled by the 'deterministic: true/false' field in the YAML.\n\n"
+        "--- NeoSR ---\n"
+        "Automatically enabled when manual_seed is defined in the TOML.\n"
+        "To disable: remove manual_seed from the option file.\n\n"
+        "⚠️ Do not enable in production — reserved for reproducibility tests."
+    ),
+    "ema": "Exponential Moving Average.\nKeeps a 'smoothed' version of the model in parallel.\nOften gives better final results.",
+    "use_tb_logger": "Enable TensorBoard logs.\nAllows viewing Loss, PSNR curves and validation images.",
+    "auto_tensorboard": "Automatically launches TensorBoard at training start.\nOpens http://localhost:6006 in your browser to view curves in real time.\n[+] Passive monitoring without leaving the application.\n[-] Consumes a bit of RAM (~100 MB).",
+    "auto_ngrok": "Launches a public Ngrok tunnel for TensorBoard.\nAllows viewing graphs from any device (phone, tablet).\nRequires Ngrok to be installed and configured (ngrok config add-authtoken...).\n[!] The URL changes on every restart.",
+    "port_tb": "Port for the TensorBoard server (Default: 6006).\nChange it if the port is already used by another service.",
+    "port_ngrok": "Local port targeted by Ngrok (Must match the TB port).",
+    "num_gpu": "Number of graphics cards used.\n- 1: Standard.\n- auto: Attempts to use all available cards (Experimental).",
+    "fast_matmul": "Enable TF32 precision (Tensor Float 32) via torch.backends.cuda.matmul.fp32_precision.\n[+] Accelerates training on RTX 3000/4000 (Ampere+).\n[-] Minimal precision loss (invisible in SR).\n\n⚠️ INCOMPATIBLE — Pascal (GTX 1080 Ti, sm_61) + PyTorch 2.7:\n   AttributeError: Unknown attribute fp32_precision\n   → Automatically disabled on your GPU.\n⚠️ Also crashes on RTX 3070 Ti Laptop + PyTorch 2.7 (unresolved bug).",
+    "compile": "Torch Compile (torch.compile).\n[+] JIT compilation of the model — real speed gain at inference.\n[-] Requires Triton — absent on native Windows.\n\n⚠️ On Windows: torch.compile fails systematically:\n   'torch.compile requires triton'\n   → Automatically disabled on Windows.\n[i] Works on Linux / WSL2 with PyTorch + Triton installed.\n[i] Startup time +30-60s on first run (CUDA compilation).",
+
+    # ================= OPTIMIZATION (TRAIN) =================
+    "sam": "Sharpness-Aware Minimization (SAM).\nSeeks 'flat' regions of the Loss for perfect generalization.\n[+] Often better results on the test set.\n[-] Training 2x slower (does 2 computations per iteration).",
+    "sam_init": "Iteration from which to activate SAM.\nTip: Enable after 50% of training.",
+    "eco": "Efficient Computing Optimization.\n[+] Periodically reduces VRAM/Compute usage.\n[-] May slightly disturb final convergence.",
+    "eco_init": "Start iteration for ECO mode.",
+    "schedule_free": "Schedule-Free mode (Adan/AdamW).\nThe optimizer manages the Learning Rate itself.\n[+] No need to configure Scheduler/Milestones.\n[-] Less control over the end of training.",
+    "warmup_steps": "Internal warmup steps for the optimizer.\nDifferent from the global 'Warmup Iter'. Leave at -1 unless expert.",
+
+    # ================= DISCRIMINATOR & GAN =================
+    "net_d_type": "Discriminator (Judge) architecture.\n* UNet: Standard, balanced.\n* PatchGAN: Focused on fine texture.\n* MetaGAN: Very powerful, heavy.\n* EA2FPN: Advanced, good edge detection.\n* DUNet: Dense UNet.",
+    "gan_loss_weight": "GAN strength.\n[+] Higher: More details, risk of artifacts.\n[-] Lower: More stable, risk of being too blurry.\nStandard: 0.05",
+    "real_label_val": "Target value for real images (1.0).\nSometimes reduced to 0.9 (Label Smoothing) to stabilize.",
+    "fake_label_val": "Target value for generated images (0.0).",
+    "gan_type": "Adversarial Loss type.\n\n--- NeoSR (gan_opt) ---\n* BCE: Binary Cross-Entropy. Standard, effective, most used.\n* MSE: Mean Squared Error. More stable than BCE, less sharp.\n* Huber: Hybrid L1/MSE. Robust to outliers.\n\n--- TraiNNer-Redux (ganloss) ---\n* vanilla: Equivalent to BCE. Standard.\n* LSGAN: Least Squares. More stable than vanilla.\n* Hinge: Geometric. Gives sharp contours. Used by StyleGAN.\n* WGAN: Wasserstein. Very stable (no crash), slow convergence.\n\n[!] Types are NOT interchangeable between engines.",
+    "lr_d": "Learning Rate for the Discriminator.\nTip: Set a lower value than the Generator (e.g. 5e-5 vs 1e-4) to prevent the Judge from dominating too much.",
+
+    # ================= LOADING =================
+    "prefetch_mode": "Data prefetching.\n* Cuda: Fast, uses VRAM.\n* CPU: Slow, saves VRAM.",
+    "num_worker": "CPU threads for preparing images.\n1080 Ti: Set between 2 and 4.\nToo high = CPU overload.",
+
+    # ================= LOSSES (LOSS FUNCTIONS) =================
+    "loss_pixel": "Pixel Loss (L1 / L2 / Huber / CHC).\nThe foundation of all training. Forces the image to be mathematically close to the target pixel by pixel.\n\n--- NeoSR ---\nTypes: L1Loss, MSELoss (L2), HuberLoss, chc (Clipped Huber + Cosine Similarity).\nchc improves color coherence and reduces noise.\n\n--- Redux ---\nTypes: l1loss, mseloss, charbonnierloss (Charbonnier = smoothed L1, recommended).\n\n[+] Increase weight → image more mathematically faithful.\n[-] Too much weight → blurry image (loses fine textures).",
+    "loss_percep": "Perceptual Loss (VGG19).\nUses a pre-trained VGG network to compare visual 'features'.\nCreates structural sharpness and realistic textures.\n\n--- NeoSR ---\nOptions: criterion (l1/l2/huber/chc), patchloss (Patch Loss for local focus), ipk (Image Patch Kernel).\nlayer_weights: conv1_2=0.1, conv3_4=1.0, conv4_4=1.0, conv5_4=1.0.\n\n--- Redux ---\nType: perceptualloss. Includes Focal Distribution (num_proj_fd) + FP16 variant.\ncriterion: charbonnier (default), l1.\n\n[+] Increase → sharper textures, fine details.\n[-] Too much weight → artifacts, hallucinations.\n[!] Consumes +1-2 GB VRAM (loads VGG19).",
+    "percep_criterion": "Comparison method for VGG Perceptual.\n- L1: Strict, very sharp. Risk of checkerboard artifacts.\n- L2/MSE: Softer, fewer artifacts.\n- Huber: Hybrid L1/L2, robust to outliers. Recommended NeoSR.\n- Charbonnier: Like L1 but smoothed. Recommended Redux.\n- CHC: Clipped Huber + Cosine Similarity (NeoSR only).",
+    "percep_layer": "VGG layer used to extract features.\n* conv1_2 (0.1): Very local — noise, grain, pixels.\n* conv2_2 (0.1): Fine textures — lines, edges.\n* conv3_4 (1.0): Medium shapes — standard.\n* conv4_4 (1.0): Complex textures — recommended SR.\n* conv5_4 (1.0): Semantic/abstract — recommended GAN.\n\nHigher weight = this layer influences the result more.",
+    "fdl_model": "Model for FDL (Frequency Distribution Loss).\n- vgg: VGG19, classic, good for structure.\n- dinov2: Facebook Transformer. Better understanding of textures and semantics.\n- resnet: ResNet101, alternative.\n- effnet: EfficientNet v1.\n\nnum_proj: number of projections (24 by default, 256 in the original paper).\n[+] More projections → better perceptual quality.\n[-] Slower (heavy performance hit).",
+
+    "loss_wavelet": "Wavelet Guided Loss (WGSR).\nSeparates high and low frequencies via wavelets.\nGreatly stabilizes GANs by guiding each component separately.\n\n[!] Best in finetuning (enable after ~40K iters via wavelet_init).\n[!] NeoSR only.",
+    "weight_loss_wavelet": "Wavelet Loss weight.",
+    "wavelet_init": "Wavelet Loss activation delay (iterations).\nEx: 80000 = activates only after 80K iters.\nRecommended: train at least 40K before enabling.",
+    "loss_fdl": "Frequency Distribution Loss (FDL).\nPerceptual loss based on frequency distribution.\nBackbones: DINOv2, VGG19, ResNet101, EfficientNet.\n\n[+] Excellent for restoring grain and complex textures.\n[+] Complementary to Perceptual Loss.\n[-] Heavy computation (num_proj=24 vs 256 original).\n[!] NeoSR only.",
+    "loss_ldl": "LDL Loss (Local Discriminative Learning).\nPenalizes artifacts in high-frequency regions (details).\ncriterion: l1, l2, huber. ksize: kernel size (7 by default).\n\n[+] Preserves fine details without blurring.\n[+] Good complement to L1.\n[!] Available NeoSR and Redux.",
+    "loss_consistency": "Consistency Loss.\nForces color and brightness coherence between output and target.\nUses Oklab and CIE L* color spaces + Cosine Similarity.\n\nOptions: blur (smoothing), cosim (cosine similarity), saturation/brightness.\nmatch_lq_colors: match LQ colors instead of GT.\n\n[!] NeoSR only.",
+    "loss_edge": "Edge Loss (Gradient-Weighted, GW Loss).\nForces the network to refine contours and high frequencies.\ncriterion: l1, l2, huber, chc. corner: enable corner detection.\n\n[+] Sharper lines, cleaner transitions.\n[!] NeoSR only.",
+    "loss_mssim": "MS-SSIM Loss (Multi-Scale SSIM).\nMeasures structural similarity at multiple scales.\n\n--- NeoSR ---\nOptions: window_size=11, sigma=1.5, K1=0.01, K2=0.03.\n\n--- Redux ---\nType: mssimloss. Options: channels=3, downsample=false, is_prod=true, color_space=yiq.\nVariant sssiml1 available (combines SSIM + L1).\n\n[+] Better than L1 for perceived structure.\n[-] May slightly smooth very fine details.",
+    "loss_dists": "DISTS Loss.\nMeasures texture/structure distance via VGG16.\n\n[+] Excellent tolerance for textures (grain, grass) unlike LPIPS.\n[+] Can be used alone as perceptual loss.\n[-] Consumes VRAM (+VGG16).\n[!] Available NeoSR (dists_loss) and Redux (distsloss).",
+    "loss_msswd": "Multiscale Sliced Wasserstein Distance.\nColor coherence loss based on Wasserstein distance.\nnum_scale=3, num_proj=24 (128 in the paper).\n\n[+] Ideal for random textures (grass, water, asphalt).\n[+] Complementary to Consistency Loss.\n[-] Heavy computation.\n[!] NeoSR only.",
+    "loss_ff": "Focal Frequency Loss (FFL).\nForces the network to generate missing frequencies in the spectrum.\nalpha=1.0, patch_factor=1, ave_spectrum=true.\n\n[+] Recovers high frequencies (hard details).\n[-] Can cause instabilities without pretrain.\n[!] Available NeoSR (ff_loss) and Redux (ffloss).",
+    "loss_ncc": "NCC Loss (Normalized Cross-Correlation).\nMeasures normalized correlation between output and target.\n\n[+] Robust to contrast/brightness changes.\n[!] NeoSR only.",
+    "loss_kl": "KL Loss (Kullback-Leibler Divergence).\nMeasures statistical divergence between distributions.\n\n[!] Enable ONLY with a pretrain. From scratch → NaN/incorrect results.\n[!] NeoSR only.",
+    "loss_gan": "GAN Loss.\nThe discriminator forces the generator to produce realistic images.\n\n--- NeoSR ---\nTypes: bce (default), mse, huber.\n\n--- Redux ---\nType: ganloss. gan_type: vanilla (default).\nmultiscaleganloss: multi-scale for better details.\n\n[+] Sharp and realistic textures.\n[-] +30% VRAM, unstable training, risk of artifacts.\nRecommended weight: 0.1–0.3.",
+
+    # Redux-specific losses
+    "loss_hsluv": "HSLuv Loss (Redux only).\nMeasures color difference in HSLuv color space (perceptually uniform).\nhue_weight=0.33, saturation_weight=0.33, lightness_weight=0.33.\n\n[+] Better color reproduction than L1/L2.\n[+] Separate weights for hue/saturation/lightness.",
+    "loss_cosim": "Cosine Similarity Loss (Redux only).\nMeasures the angle between pixel vectors.\ncosim_lambda=5.\n\n[+] Good for global color coherence.",
+    "loss_color": "Color Loss (Redux only).\nPenalizes color shifts between output and target.\ncriterion: l1.\n\n[+] Prevents chromatic drift.",
+    "loss_gv": "Gradient Variance Loss (Redux only).\nEncourages smooth gradients in the image.\npatch_size=16, criterion=charbonnier.\n\n[+] Reduces edge artifacts.\n[+] Good complement to Perceptual Loss.",
+    "loss_contextual": "Contextual Loss (Redux only).\nCompares local patches via VGG19.\ndistance_type=cosine, band_width=0.5.\n\n[+] Tolerates small spatial shifts.\n[-] Very heavy computation.",
+    "loss_luma": "Luma Loss (Redux only).\nPenalizes luminance errors only.\ncriterion: l1.\n\n[+] Useful if colors are good but brightness deviates.",
+
+    # ================= METRICS =================
+    "metric_psnr": "Peak Signal-to-Noise Ratio.\nMathematical measure of pixel-by-pixel fidelity.\n[+] Universal standard, fast to compute.\n[-] Does not detect blur (a blurry image can have a good PSNR).\n[-] Does not always correlate with perceived quality.",
+    "metric_ssim": "Structural Similarity.\n[+] Measures structure, contrast and luminance.\n[+] Closer to human perception than PSNR.\n[-] Still limited for fine textures.",
+    "metric_dists": "DISTS Metric.\n[+] Measures texture quality (grain, details, realism).\n[+] Closer to human judgment than PSNR/SSIM.\n[-] Slower to compute.",
+    "metric_lpips": "LPIPS (Perceptual).\nMeasures visual distance (Lower = Better). <0.10 is excellent.",
+    "metric_niqe": "NIQE (Naturalness).\nNo-Reference score. Evaluates whether the image looks 'natural' without comparing it.",
+
+    # ================= DEGRADATIONS (OTF) =================
+    "deg_level": "Degradation profile (Preset).\nSelecting a level will automatically adjust the sliders below.\n- Light: Light cleanup.\n- Medium: Standard.\n- Heavy: Extreme restoration.",
+    "deg_shuffle_prob": "Probability of shuffling the degradation order (Blur/Resize/Noise).\nAllows covering more real-world cases.",
+    "final_sinc_prob": "Sinc filter (Ringing/Gibbs).\nSimulates echoes around lines (typical of old anime/DVD).\n[+] Essential for cleaning up old encodings.",
+
+    # --- STAGE 1 ---
+    "resize_prob": "Probabilities [Up, Down, Keep].\nEx: [0.2, 0.7, 0.1] = 20% Upscale, 70% Downscale, 10% Original size.",
+    "resize_range": "Resize range [Min, Max].\nEx: [0.3, 1.5] = Image can be reduced to 30% or enlarged to 150%.",
+    "gaussian_noise_prob": "Probability of applying Gaussian noise (Standard grain).",
+    "noise_range": "Noise intensity [Min, Max] (Sigma).\nEx: [0, 15] = From clean to very noisy.",
+    "poisson_scale_range": "Poisson noise (Shot Noise).\nSimulates digital sensor noise (depends on luminosity).",
+    "gray_noise_prob": "Probability that the noise is black & white (instead of RGB color).",
+    "blur_prob": "Probability of applying blur.",
+    "blur_kernel_size": "Physical size of the blur kernel (Odd number).\n[+] Large (21): Very wide/soft blur.\n[-] Small (7): Light/sharp blur.",
+    "blur_sigma": "Blur standard deviation [Min, Max].\nControls the actual blur intensity.",
+    "kernel_list": "Possible blur types (Iso, Aniso, Plateau...).\nThe longer the list, the better the model generalizes.",
+    "kernel_prob": "Probabilities associated with the list above.",
+    "betag_range": "Blur shape (Generalized Gaussian).\nControls whether the blur is sharp or flat.",
+    "betap_range": "Blur shape (Plateau).\nControls the width of the central plateau of the kernel.",
+    "sinc_prob": "Probability of applying a Sinc (Ringing) kernel in the blur stage.",
+
+    # --- STAGE 2 ---
+    "second_blur_prob": "Probability of enabling the 2nd degradation stage.\nSimulates an already compressed image being re-encoded.",
+    "resize_prob2": "Resize Probabilities (Pass 2).",
+    "resize_range2": "Resize Range (Pass 2).",
+    "blur_kernel_size2": "Blur Kernel Size (Pass 2).",
+    "blur_sigma2": "Blur Intensity (Pass 2).",
+    "compression_prob2": "Compression Probability (Pass 2).",
+    "gaussian_noise_prob2": "Noise Probability (Pass 2).",
+    "noise_range2": "Noise Intensity (Pass 2).",
+    "poisson_scale_range2": "Poisson Noise (Pass 2).",
+    "gray_noise_prob2": "Gray Noise (Pass 2).",
+    "sinc_prob2": "Sinc Probability (Pass 2).",
+    "betag_range2": "Beta G (Pass 2).",
+    "betap_range2": "Beta P (Pass 2).",
+
+    # --- COMPRESSION STAGE 1 ---
+    "compression_prob": "Probability of applying compression (JPEG or WebP) at pass 1.\n[+] Simulates degradation by video stream compression.",
+    "compression_range": "Compression quality range [Min, Max].\nEx: [30, 95]. 30 = heavily compressed (blocks), 95 = clean.",
+
+    # --- FINAL ---
+    "jpeg_prob": "Probability of applying final JPEG compression.",
+    "jpeg_range": "JPEG quality range [Min, Max].\nEx: [30, 95]. 30 is heavily compressed (blocks), 95 is clean.",
+    "jpeg_range2": "Range for double JPEG (Simulation of successive recordings).",
+
+    # --- QUANTIZATION / BANDING (OTF Custom) ---
+    "banding_prob": "Probability of applying a banding effect (quantized gradients).\n\nBanding simulates old sources (DVD, old encodings, screencaps).\nIn OTF mode, injected after the main degradations.\n\n[+] Improves robustness to sources with color bands.\n[+] Essential for anime / old video datasets.\n[-] Slightly slows data loading.",
+    "banding_levels_range": "Range of quantization levels for banding [Min, Max].\nEx: [16, 64].\n- Low (8-16): Very visible banding, like old GIFs.\n- Medium (32-64): Subtle banding, typical of old H.264 encoding.\n- High (128+): Very light effect, almost imperceptible.",
+    "posterize_prob": "Probability of applying a posterization effect (level reduction per channel).\n\nPosterization is more aggressive than banding — reduces levels in each R/G/B channel independently.\n\n[+] Simulates sources with reduced color depth.\n[+] Complementary to banding to cover more real defects.\n[-] Can create strong visual artifacts if bits are too low.",
+    "posterize_bits_range": "Range of bits for posterization [Min, Max].\nEx: [3, 6].\n- 2-3 bits: Very visible 'cartoon' poster (4-8 colors per channel).\n- 4-5 bits: Moderate degradation, simulates lossy encodings.\n- 6-7 bits: Very subtle effect.",
+
+    # --- OPTICAL / ANALOG (OTF Custom) ---
+    "chroma_prob": "Probability of applying 4:2:0 chroma subsampling.\n\nSimulates YCbCr video compression (JPEG, MPEG, DVD). Colored edges are blurred horizontally and vertically.\n\n[+] Very realistic for video/screencap sources.\n[+] Fast — no parameters to adjust.\n[-] No effect on grayscale images.",
+    "ca_prob": "Probability of applying chromatic aberration.\n\nShifts the R and B channels in opposite directions (horizontal), simulating a poor quality lens or old camera.\n\n[+] Adds a realistic optical defect.\n[+] Complementary to other degradations for CRT/VHS data.\n[-] Can create visible color fringes at strong shifts.",
+    "ca_shift_range": "Pixel shift range for chromatic aberration [Min, Max].\nEx: [1, 5].\n- 1-2 px: Subtle effect, nearly imperceptible.\n- 3-5 px: Visible color fringe on edges.\n- 6+ px: Strong effect, like old scanner or poor optics.",
+    "halation_prob": "Probability of applying a film halation effect.\n\nVery bright areas 'bleed' a warm glow into neighboring pixels, as seen on photographic film or CRTs.\n\n[+] Essential for cinema/old-school anime datasets.\n[+] Gives an organic character to the image.\n[-] Can saturate highlights if strength is too high.",
+    "halation_strength_range": "Halation intensity range [Min, Max].\nEx: [0.05, 0.3].\n- 0.05-0.1: Very subtle glow, realistic film.\n- 0.15-0.3: Visible bloom, typical super-8 or old reel.\n- 0.5+: Stylized effect, not realistic.",
+    "salt_pepper_prob": "Probability of applying salt & pepper noise.\n\nRandom white (salt) or black (pepper) pixels, typical of degraded analog sensors, old CCDs, or corrupted transmissions.\n\n[+] Simulates old scanners and basic digital cameras.\n[+] Very different from Gaussian noise — trains the model to ignore isolated pixels.\n[-] Visually intrusive if amount is too high.",
+    "salt_pepper_amount_range": "Range of proportion of affected pixels [Min, Max].\nEx: [0.001, 0.05].\n- 0.001-0.005: Very discreet noise (1 pixel in 200-1000).\n- 0.01-0.03: Moderate noise, visible but realistic.\n- 0.05+: Strong noise, heavily degraded images.",
+    "vhs_prob": "Probability of applying VHS/analog artifacts.\n\nCombines: chroma bleeding (shifted G/B channels), horizontal line dropouts simulating failed read heads.\n\n[+] Essential for datasets from VHS recordings, tapes, old TV captures.\n[+] Covers multiple real defects in a single effect.\n[-] Can interact with chroma_subsampling — both together = very strong effect.",
+    "vhs_strength_range": "VHS artifact intensity range [Min, Max].\nEx: [0.1, 0.5].\n- 0.1-0.2: Light bleeding, rare lines.\n- 0.3-0.5: Clearly visible VHS effects.\n- 0.7+: Very damaged tape, not realistic.",
+    "aliasing_prob": "Probability of applying aliasing on lines.\n\nDownscale + nearest-neighbor upscale creates staircase artifacts on diagonal edges and thin lines — typical of insufficient resolution or brutal resize.\n\n[+] Trains the model to restore sharp edges from scalar artifacts.\n[+] Useful for low-resolution sources brutally upscaled (pixel art, old scans, screenshots).\n[-] At high probability can mask image structures.",
+    "aliasing_scale_range": "Scale factor range for aliasing [Min, Max].\nEx: [0.5, 0.85].\n- 0.85-0.95: Subtle aliasing, slightly pixelated edges.\n- 0.65-0.80: Visible staircase artifacts on diagonals.\n- 0.5-0.6: Strong aliasing, marked pixelation.",
+    "interlace_weave_prob": "Probability of applying Weave interlacing.\n\nReplaces odd lines with those from a vertically shifted field → creates 'comb teeth' on diagonal edges. Most identifiable artifact from interlaced video (VHS, MPEG-2 SD, non-deinterlaced DVD).\n\n[+] Essential for datasets from TV captures, VHS, or interlaced DVDs.\n[+] Very recognizable artifact — trains the model effectively.",
+    "interlace_weave_strength_range": "Weave effect intensity [Min, Max].\n1.0 = full interlacing, 0.5 = 50/50 blend.",
+    "interlace_flicker_prob": "Probability of applying field flicker.\n\nAlternates brighter even lines and darker odd lines, simulating 50/60 Hz brightness variation of interlaced CRT televisions.\n\n[+] Subtle but realistic — improves robustness on PAL/NTSC TV sources.",
+    "interlace_flicker_strength_range": "Flicker intensity [Min, Max].\nEx: [0.1, 0.4]. 0.4 = even line +40%, odd line -40%.",
+    "interlace_blend_prob": "Probability of applying field blending.\n\nBlends the image with a vertically shifted version, simulating ghosting between two interlaced fields or averaging deinterlacing (bob filter).\n\n[+] Simulates the motion blur typical of low-end deinterlacers.",
+    "interlace_blend_strength_range": "Blending intensity [Min, Max].\n1.0 = maximum blend (strong ghost), 0.3 = light ghosting.",
+    "film_grain_prob": "Probability of applying cinema grain.\n\nLuminance-dependent grain (strong in midtones, weak in pure blacks and highlights) — reproduces real film behavior. Can use coarse grain (size > 1) for 8mm or 16mm films.\n\n[+] Very different from Gaussian noise — trains the model to distinguish grain from signal.",
+    "film_grain_strength_range": "Cinema grain intensity [Min, Max].\nEx: [0.03, 0.12]. 0.12 = visible 16mm film grain.",
+    "film_grain_size_range": "Grain size in pixels [Min, Max].\nEx: [1, 2].\n- 1: Fine grain (35mm, digital).\n- 2-3: Medium grain (16mm).\n- 4+: Very coarse grain (Super-8, telecine).",
+    "oversharp_prob": "Probability of applying over-sharpening (USM halos).\n\nSimulates edge halos generated by an overly aggressive Unsharp Mask filter — an artifact ubiquitous in consumer cameras, video compression pipelines, and basic upscalers.\n\n[+] Very useful for datasets from consumer cameras or re-encoded YouTube videos.\n[+] Forces the model to recognize halos as artifacts, not as signal.",
+    "oversharp_strength_range": "Over-sharpening halo intensity [Min, Max].\nEx: [0.5, 2.0]. 2.0 = very visible halos (low-end camera).",
+    "scanlines_prob": "Probability of applying CRT scanlines.\n\nDarkens every N lines, simulating the black lines between phosphor rows on a CRT screen. Classic artifact from captures of retro games, emulators, or tube televisions.\n\n[+] Useful for retro game or CRT-scanned content datasets.",
+    "scanlines_strength_range": "Scanline darkening intensity [Min, Max].\nEx: [0.2, 0.5]. 0.5 = line darkened by 50%.",
+    "scanlines_spacing_range": "Spacing between dark scanlines in lines [Min, Max].\nEx: [2, 4].\n- 2: One dark line every 2 (very pronounced effect).\n- 4: One dark line every 4 (subtle).",
+
+    # ================= ARCHITECTURE PARAMETERS =================
+    # --- COMMON ---
+    "window_size": "Attention window (Transformer).\n[+] 16/32: Sees wider, better for repeated patterns.\n[-] 8: Less VRAM, faster computation.",
+    "num_feat": "Number of internal channels (Neurons).\n[+] 64/128: 'Smarter' model, slower.\n[-] 48: 'Light' model, fast.",
+    "embed_dim": "Embedding dimension (Similar to num_feat).\nStandard: 180 (Heavy), 60 (Light).",
+    "upscale": "Scale factor (fixed by your project).",
+    "upsampling": "Scale factor (fixed by your project).",
+
+    # --- OTHERS ---
+    "block_num": "Number of attention blocks.",
+    "flash_attn": "Flash Attention.\n[+] True: Massive acceleration.\n[-] False: Maximum compatibility.",
+    "squeeze_factor": "Internal compression factor (HAT/DRCT).\nInfluences computation complexity.",
+    "compress_ratio": "Compression ratio for attention.",
+    "split_size": "Attention split (DAT/RGT).\nControls how the image is divided for processing.",
+    "depth": "Network depth (Number of layers).\n[+] Deeper = Better quality, slower.",
+    "depths": "Depth per stage (List).\nEx: [6, 6, 6, 6].",
+    "n_blocks": "Number of processing blocks.",
+    "expansion_ratio": "Feed-Forward Network (FFN) expansion factor.",
+    "expansion_factor": "Channel expansion factor (Similar to above).",
+    "use_ea": "Efficient Attention (VRAM optimization).",
+    "use_dysample": "DySample Upscaling.\nMore modern than PixelShuffle, avoids checkerboard effect.",
+    "unshuffle_mod": "PixelUnshuffle.\nReduces spatial size by increasing channels.",
+    "img_size": "Internal image size for training (often equal to patch_size).",
+    "norm": "Layer normalization (True/False).",
+    "n_resgroups": "Residual groups (RCAN).",
+    "n_resblocks": "Blocks per group (RCAN).",
+    "reduction": "Channel reduction factor (RCAN).",
+    "qkv_bias": "Bias for Query/Key/Value (Attention).",
+    "drop_rate": "Dropout rate (Intentional forgetting to prevent overfitting).",
+    "attn_drop_rate": "Attention dropout rate.",
+    "drop_path_rate": "Path dropout rate (Stochastic Depth).",
+    "ape": "Absolute Positional Encoding.",
+    "patch_norm": "Patch normalization.",
+    "mean_norm": "Mean normalization.",
+    "d8": "Use of D8 (Internal Rotation/Flip).",
+    "num_heads": "Number of attention heads (Multi-Head Attention).",
+    "gc": "Growth Channel (DRCT).",
+    "conv_scale": "Convolution scale.",
+    "overlap_ratio": "Window overlap ratio.",
+    "img_range": "Pixel value range (1.0 or 255.0).",
+    "resi_connection": "Residual connection type (1conv, 3conv...).",
+    "upsampler": (
+        "Upscaling method for the generator:\n\n"
+        "• dys (DySample) — Dynamically learned sampling points. "
+        "Best overall quality for SPANPlus/SPAN. ✅ Recommended.\n\n"
+        "• pixelshuffle — Standard Pixel Shuffle with ICNR init. "
+        "Good quality/speed balance.\n\n"
+        "• pixelshuffledirect — Simplified Pixel Shuffle without ICNR. "
+        "Faster, slightly lower quality. Default on most architectures.\n\n"
+        "• nearest+conv — Nearest-neighbor + conv. Fastest, for edge/mobile.\n\n"
+        "• conv — Simple conv. SPANPlus only, scale=1 only (restoration/denoising without upscale).\n\n"
+        "• ps — Alias for pixelshuffle."
+    ),
+    "num_in_ch": "Number of input channels. 3 = RGB (standard). 1 = grayscale.",
+    "num_out_ch": "Number of output channels. Must match num_in_ch. Standard: 3.",
+
+    # --- DISCRIMINATORS ---
+    "dims": "Layer dimensions (List).\nEx: [48, 96, 192]. Controls network size.",
+    "blocks": "Number of blocks per stage (List).\nEx: [3, 3, 9, 3].",
+    "attention": "Attention in the Discriminator (MetaGAN).\n[+] True: Better texture quality.\n[-] False: Much less VRAM used.",
+    "head_dim": "Attention head dimension.",
+    "segmentation_channels": "Channels for segmentation (EA2FPN).",
+    "pyramid_channels": "Channels for feature pyramid (EA2FPN).",
+    "use_sn": "Spectral Normalization.\nGAN stabilizer. Generally leave on True.",
+    "use_sigmoid": "Uses Sigmoid activation at output (0-1).",
+    "skip_connection": "Skip Connections for UNet.",
+    "num_layers": "Number of layers (PatchGAN).",
+    "act": "Activation function (e.g. lrelu).",
+    "category_size": "Category size (ATD).",
+    "dw_size": "Depth-Wise kernel size.",
+    "num_conv": "Number of convolutions (Compact).",
+    "act_type": "Activation type.",
+    "split_size_0": "Split size dimension 0.",
+    "split_size_1": "Split size dimension 1.",
+    "pro": "Pro mode (CuGAN).",
+    "nf": "Number of filters.",
+    "num_head": "Number of heads.",
+    "ITL_blocks": "ITL blocks (DITN).",
+    "SAL_blocks": "SAL blocks (DITN).",
+    "attn_type": "Attention type (SDPA...).",
+    "hidden_rate": "Hidden rate.",
+    "base_win_size": "Base window size.",
+    "hier_win_ratios": "Hierarchical window ratios.",
+    "interval_size": "Interval.",
+    "n_feats": "Number of features.",
+    "dilation": "Dilation.",
+    "res_scale": "Residual scale.",
+    "channels": "Channels.",
+    "num_DFEB": "Number of DFEB blocks.",
+    "im_feat": "Image features.",
+    "attn_feat": "Attention features.",
+    "kernel_size": "Kernel size.",
+    "split_ratio": "Split ratio.",
+    "lk_type": "Large kernel type.",
+    "c_ratio": "C ratio.",
+    "embed_dims": "Embedding dimensions.",
+    "num_stages": "Number of stages.",
+    "mlp_ratios": "MLP ratio.",
+    "num_grow_ch": "Growth channels.",
+    "feature_channels": "Number of internal channels in the network (model width).\n\nHigher value = wider network: better representation capacity, but heavier VRAM and slower to train.\n\nCommon values by architecture:\n• SPAN / SPANPlus standard: 48–52\n• SPANPlus light (_s): 32–48\n• CFSR / FlexNet: 64–96\n• MoESR / MoSRv2: 48–64\n\n[↑] Increase → better quality, +VRAM\n[↓] Reduce → faster, lighter model",
+    "num_modules": "Number of modules.",
+}
+
+
+def get_tooltip(key: str, default: str = "") -> str:
+    """Return tooltip in active language (FR or EN)."""
+    try:
+        from src.core.translations import get_translator
+        tr = get_translator()
+        if tr and getattr(tr, 'language', 'fr') == 'en':
+            return TOOLTIPS_EN.get(key, TOOLTIPS.get(key, default))
+    except Exception:
+        pass
+    return TOOLTIPS.get(key, default)
+
+
 # --- PARAMÈTRES DYNAMIQUES GÉNÉRATEURS (NEOSR) ---
 ARCH_FIELDS = {
     "omnisr": [

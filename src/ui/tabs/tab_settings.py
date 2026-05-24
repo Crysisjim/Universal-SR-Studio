@@ -128,12 +128,12 @@ class SettingsTab(ctk.CTkFrame):
         self.tab_view = ctk.CTkTabview(self)
         self.tab_view.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
         
-        self.tab_engines = self.tab_view.add("Moteurs IA")
-        self.tab_sys = self.tab_view.add("Système & Dépendances")
-        self.tab_lang = self.tab_view.add("Langue & Notif.")
-        self.tab_apikeys = self.tab_view.add("Cles API")
-        self.tab_gallery = self.tab_view.add("Galerie & Patch TB")
-        self.tab_about = self.tab_view.add("A Propos")
+        self.tab_engines = self.tab_view.add(_t("Moteurs IA", "AI Engines"))
+        self.tab_sys = self.tab_view.add(_t("Système & Dépendances", "System & Dependencies"))
+        self.tab_lang = self.tab_view.add(_t("Langue & Notif.", "Language & Notif."))
+        self.tab_apikeys = self.tab_view.add(_t("Cles API", "API Keys"))
+        self.tab_gallery = self.tab_view.add(_t("Galerie & Patch TB", "Gallery & TB Patch"))
+        self.tab_about = self.tab_view.add(_t("A Propos", "About"))
 
         self.setup_engines_tab()
         self.setup_system_tab()
@@ -183,7 +183,7 @@ class SettingsTab(ctk.CTkFrame):
 
     def change_color(self, color_name):
         self.settings.set("theme_color", color_name)
-        messagebox.showinfo("Changement de Thème", f"Le thème '{color_name}' a été sauvegardé.\n\nVeuillez redémarrer l'application.")
+        messagebox.showinfo(_t("Changement de Thème", "Theme Changed"), _t(f"Le thème '{color_name}' a été sauvegardé.\n\nVeuillez redémarrer l'application.", f"Theme '{color_name}' saved.\n\nPlease restart the application."))
 
     def save_aida(self):
         val = "true" if self.chk_aida.get() else "false"
@@ -195,7 +195,7 @@ class SettingsTab(ctk.CTkFrame):
         protected = ["datasets", "experiments", "datsheet", "models", "weights"]
         found = [i for i in os.listdir(path) if i.lower() in protected]
         if found:
-            messagebox.showwarning("PROTECTION DONNEES", f"Suppression BLOQUÉE : Dossiers sensibles détectés ({found}).")
+            messagebox.showwarning(_t("PROTECTION DONNEES", "DATA PROTECTION"), _t(f"Suppression BLOQUÉE : Dossiers sensibles détectés ({found}).", f"Deletion BLOCKED: sensitive folders detected ({found})."))
             return False
         return True
 
@@ -263,7 +263,7 @@ log('[OK] TERMINE !')
 """
         try:
             with open(installer_script_path, "w", encoding="utf-8") as f: f.write(script_content)
-        except Exception: return messagebox.showerror("Erreur", "Impossible d'ecrire le script.")
+        except Exception: return messagebox.showerror(_t("Erreur", "Error"), _t("Impossible d'ecrire le script.", "Cannot write the script."))
         cmd = [sys.executable, installer_script_path]
         self.launch_console("Installation Runtime", cmd, self.base_engine_path)
 
@@ -309,11 +309,11 @@ except Exception as e:
         try:
             with open(script_path, "w", encoding="utf-8") as f: f.write(script_content)
         except Exception as e:
-            messagebox.showerror("Erreur", f"Échec création script: {e}")
+            messagebox.showerror(_t("Erreur", "Error"), _t(f"Échec création script: {e}", f"Script creation failed: {e}"))
             return
 
         cmd = [sys.executable, script_path]
-        self.launch_console(f"Mise à jour (Deps + msgspec)", cmd, cwd)
+        self.launch_console(_t("Mise à jour (Deps + msgspec)", "Update (Deps + msgspec)"), cmd, cwd)
 
 
     # --- INSTALLATION COMPLETE (SCRIPT) ---
@@ -459,7 +459,7 @@ log("[OK] TERMINE !")
         r2 = ctk.CTkFrame(self._gpu_advisory_body, fg_color="transparent")
         r2.pack(fill="x", pady=(2, 0))
         ctk.CTkLabel(r2,
-                     text=f"PyTorch recommandé : {rec['torch_version']} + CUDA {rec['cuda_tag']}",
+                     text=_t(f"PyTorch recommandé : {rec['torch_version']} + CUDA {rec['cuda_tag']}", f"Recommended PyTorch: {rec['torch_version']} + CUDA {rec['cuda_tag']}"),
                      font=("Consolas", 11), text_color="#ddd").pack(side="left")
 
         # Row 3 : Features (green) + Limitations (orange)
@@ -568,7 +568,7 @@ log("[OK] TERMINE !")
             with open(tmp, "w", encoding="utf-8") as f:
                 f.write(script)
         except Exception as e:
-            messagebox.showerror("Erreur", f"Impossible d'écrire le script : {e}")
+            messagebox.showerror(_t("Erreur", "Error"), _t(f"Impossible d'écrire le script : {e}", f"Cannot write the script: {e}"))
             return
         self.launch_console(f"PyTorch → {engine_name}", [sys.executable, tmp], cwd)
 
@@ -599,16 +599,16 @@ log("[OK] TERMINE !")
             if not self.force_delete_folder(path): return
             os.makedirs(path, exist_ok=True)
         elif os.path.exists(path) and os.listdir(path) and not os.path.exists(os.path.join(path, ".git")):
-             if messagebox.askyesno("Corrompu", "Dossier invalide. Réinstaller ?"): self.wipe_and_full_install(url, path, engine_name); return
+             if messagebox.askyesno(_t("Corrompu", "Corrupted"), _t("Dossier invalide. Réinstaller ?", "Invalid folder. Reinstall?")): self.wipe_and_full_install(url, path, engine_name); return
 
         py = self.get_portable_python_path()
         if not py:
-            if messagebox.askyesno("Requis", "Python 3.11 Portable requis. Télécharger ?"): self.install_portable_python()
+            if messagebox.askyesno(_t("Requis", "Required"), _t("Python 3.11 Portable requis. Télécharger ?", "Python 3.11 Portable required. Download?")): self.install_portable_python()
             return
         self.launch_engine_install_script(url, path, engine_name, py)
 
     def wipe_and_full_install(self, url, path, engine_name):
-        if messagebox.askyesno("Confirm", "Tout supprimer ?"): self.check_and_launch_install(url, path, engine_name, wipe=True)
+        if messagebox.askyesno(_t("Confirm", "Confirm"), _t("Tout supprimer ?", "Delete everything?")): self.check_and_launch_install(url, path, engine_name, wipe=True)
 
     def launch_console(self, title, command, cwd):
         if not shutil.which("git"): return messagebox.showerror("Err", "Git not found")
@@ -651,9 +651,9 @@ log("[OK] TERMINE !")
 
         row_py = ctk.CTkFrame(f_top, fg_color="transparent", height=30); row_py.pack(fill="x", padx=10, pady=(5, 10))
         py = self.get_portable_python_path()
-        st, col = ("✅ Python 3.11 Portable (Prêt)", "#2ecc71") if py else ("❌ Python Portable manquant", "#e74c3c")
+        st, col = (_t("✅ Python 3.11 Portable (Prêt)", "✅ Python 3.11 Portable (Ready)"), "#2ecc71") if py else (_t("❌ Python Portable manquant", "❌ Python Portable missing"), "#e74c3c")
         ctk.CTkLabel(row_py, text=st, text_color=col, font=("Consolas", 12, "bold")).pack(side="left")
-        if not py: ctk.CTkButton(row_py, text="📥 Télécharger", height=24, fg_color="#8e44ad", command=self.install_portable_python).pack(side="right")
+        if not py: ctk.CTkButton(row_py, text=_t("📥 Télécharger", "📥 Download"), height=24, fg_color="#8e44ad", command=self.install_portable_python).pack(side="right")
 
         # ── GPU & PyTorch advisory ──────────────────────────────────────────
         self._gpu_advisory_frame = ctk.CTkFrame(f_top, fg_color="#1a1a2e", corner_radius=8)
@@ -786,7 +786,7 @@ except ImportError:
         else:
             ctk.CTkLabel(frame, text="✨ TOUT EST PRÊT", text_color="#2ecc71", font=("Arial", 12, "bold")).pack(pady=5)
             # Bouton de secours au cas où
-            ctk.CTkButton(frame, text="Forcer Réinstallation", fg_color="#444", height=24,
+            ctk.CTkButton(frame, text=_t("Forcer Réinstallation", "Force Reinstall"), fg_color="#444", height=24,
                           command=lambda: self.check_and_launch_install(self.repos[name], cwd, name)).pack(fill="x", pady=(5,0))
     # ─── LANGUAGE TAB ────────────────────────────────────────
     def setup_notifications_tab(self):
@@ -823,11 +823,11 @@ except ImportError:
             try:
                 from src.core.toast_notifications import show_toast
                 ok = show_toast("Universal SR Studio",
-                                "Notification de test - tout fonctionne !")
+                                _t("Notification de test - tout fonctionne !", "Test notification - everything works!"))
                 if not ok:
                     messagebox.showinfo("Notification",
-                        "Aucun backend disponible.\n"
-                        "Installez win11toast :  pip install win11toast")
+                        _t("Aucun backend disponible.\nInstallez win11toast :  pip install win11toast",
+                           "No backend available.\nInstall win11toast:  pip install win11toast"))
             except Exception as e:
                 messagebox.showerror("Notification", str(e))
 
@@ -878,14 +878,14 @@ except ImportError:
         # ── Sons d'événements (error / warning / about) ───────────────
         evt_frame = ctk.CTkFrame(f, fg_color="#1a1a2e", corner_radius=8)
         evt_frame.pack(fill="x", padx=20, pady=(5, 15))
-        ctk.CTkLabel(evt_frame, text="Sons d'evenements",
+        ctk.CTkLabel(evt_frame, text=_t("Sons d'evenements", "Event sounds"),
                      font=("Roboto", 14, "bold"), text_color="#3498db").pack(
                      anchor="w", padx=15, pady=(10, 4))
 
         _evt_sounds = [
-            ("sound_error_enabled",   "error",   "Son d'erreur grave  (crash, erreur critique)"),
-            ("sound_warning_enabled", "warning", "Son d'avertissement (erreur non fatale dans un batch)"),
-            ("sound_about_enabled",   "about",   "Son de la section A Propos"),
+            ("sound_error_enabled",   "error",   _t("Son d'erreur grave  (crash, erreur critique)", "Critical error sound  (crash, fatal error)")),
+            ("sound_warning_enabled", "warning", _t("Son d'avertissement (erreur non fatale dans un batch)", "Warning sound (non-fatal error in a batch)")),
+            ("sound_about_enabled",   "about",   _t("Son de la section A Propos", "About section sound")),
         ]
         self._evt_sound_vars = {}
         for key, snd, label in _evt_sounds:
@@ -900,7 +900,7 @@ except ImportError:
                           command=lambda s=snd: self._test_event_sound(s)).pack(side="right")
 
         ctk.CTkLabel(evt_frame,
-                     text="Fichiers : assets/error.WAV  •  warning.WAV  •  about.WAV",
+                     text=_t("Fichiers : assets/error.WAV  •  warning.WAV  •  about.WAV", "Files: assets/error.WAV  •  warning.WAV  •  about.WAV"),
                      text_color="#555", font=("Roboto", 9)).pack(anchor="w", padx=15, pady=(4, 10))
 
     def _test_event_sound(self, sound_name: str):
@@ -909,13 +909,13 @@ except ImportError:
         snd_path = os.path.join(os.path.dirname(os.path.abspath(sys.argv[0])),
                                 "assets", f"{sound_name}.WAV")
         if not os.path.isfile(snd_path):
-            messagebox.showwarning("Son", f"Fichier assets/{sound_name}.WAV introuvable")
+            messagebox.showwarning(_t("Son", "Sound"), _t(f"Fichier assets/{sound_name}.WAV introuvable", f"File assets/{sound_name}.WAV not found"))
             return
         try:
             import winsound
             winsound.PlaySound(snd_path, winsound.SND_FILENAME | winsound.SND_ASYNC)
         except Exception as e:
-            messagebox.showerror("Son", f"Erreur lecture: {e}")
+            messagebox.showerror(_t("Son", "Sound"), _t(f"Erreur lecture: {e}", f"Playback error: {e}"))
 
     def _play_about_sound(self):
         """Play about.WAV when the A Propos tab becomes visible."""
@@ -941,7 +941,7 @@ except ImportError:
         import sys
         sound_path = os.path.join(os.path.dirname(os.path.abspath(sys.argv[0])), "assets", "success.wav")
         if not os.path.exists(sound_path):
-            messagebox.showwarning("Son", "Fichier assets/success.wav introuvable")
+            messagebox.showwarning(_t("Son", "Sound"), _t("Fichier assets/success.wav introuvable", "File assets/success.wav not found"))
             return
         volume = self._volume_val.get()
         try:
@@ -956,7 +956,7 @@ except ImportError:
                 import subprocess
                 subprocess.Popen(["aplay", "-q", sound_path], stderr=subprocess.DEVNULL)
         except Exception as e:
-            messagebox.showerror("Son", f"Erreur lecture: {e}")
+            messagebox.showerror(_t("Son", "Sound"), _t(f"Erreur lecture: {e}", f"Playback error: {e}"))
 
     def setup_apikeys_tab(self):
         f = self.tab_apikeys
@@ -1016,7 +1016,7 @@ except ImportError:
 
     def setup_language_tab(self):
         f = self.tab_lang
-        ctk.CTkLabel(f, text="Langue / Language", font=("Roboto", 18, "bold")).pack(pady=(20, 10))
+        ctk.CTkLabel(f, text=_t("Langue / Language", "Language / Langue"), font=("Roboto", 18, "bold")).pack(pady=(20, 10))
         ctk.CTkLabel(f, text=_t("Choisissez la langue du programme.\nLes options, infobulles et descriptions seront traduites.",
                                 "Choose the interface language.\nOptions, tooltips and descriptions will be translated."),
                      text_color="#AAA").pack(pady=(0, 15))
@@ -1024,7 +1024,7 @@ except ImportError:
         lang_frame = ctk.CTkFrame(f, fg_color="transparent")
         lang_frame.pack(pady=10)
 
-        ctk.CTkLabel(lang_frame, text="Langue :").pack(side="left", padx=(0, 10))
+        ctk.CTkLabel(lang_frame, text=_t("Langue :", "Language:")).pack(side="left", padx=(0, 10))
         current_lang = self.settings.get("language", "fr")
         self.lang_var = ctk.StringVar(value=current_lang)
         lang_menu = ctk.CTkOptionMenu(
@@ -1045,11 +1045,13 @@ except ImportError:
             from src.core.translations import set_language
             set_language(lang_code)
             self.lbl_lang_info.configure(
-                text=f"✅ Langue changée : {choice}\n⚠️ Redémarrez l'application pour appliquer complètement."
+                text=_t(f"✅ Langue changée : {choice}\n⚠️ Redémarrez l'application pour appliquer complètement.",
+                        f"✅ Language changed: {choice}\n⚠️ Restart the application to fully apply.")
             )
         except ImportError:
             self.lbl_lang_info.configure(
-                text=f"✅ Langue enregistrée : {choice}\n⚠️ Redémarrez l'application pour appliquer."
+                text=_t(f"✅ Langue enregistrée : {choice}\n⚠️ Redémarrez l'application pour appliquer.",
+                        f"✅ Language saved: {choice}\n⚠️ Restart the application to apply.")
             )
 
 
@@ -1140,12 +1142,12 @@ except ImportError:
 
         # Options
         opt_row = ctk.CTkFrame(sec_a, fg_color="transparent"); opt_row.pack(fill="x", padx=10, pady=5)
-        ctk.CTkLabel(opt_row, text="Port :", width=80, anchor="w").pack(side="left")
+        ctk.CTkLabel(opt_row, text=_t("Port :", "Port:"), width=80, anchor="w").pack(side="left")
         self._gal_port_entry = ctk.CTkEntry(opt_row, width=80)
         self._gal_port_entry.pack(side="left", padx=5)
         self._gal_port_entry.insert(0, str(self.settings.get("gallery_port", "8765")))
         self._gal_ngrok_var = ctk.CTkCheckBox(
-            opt_row, text="Tunnel Ngrok (accès distant)",
+            opt_row, text=_t("Tunnel Ngrok (accès distant)", "Ngrok tunnel (remote access)"),
             command=lambda: self.settings.set("gallery_ngrok", bool(self._gal_ngrok_var.get()))
         )
         if self.settings.get("gallery_ngrok", False):
@@ -1156,7 +1158,7 @@ except ImportError:
         auto_row = ctk.CTkFrame(sec_a, fg_color="transparent"); auto_row.pack(fill="x", padx=10, pady=2)
         self._gal_auto_start_var = ctk.CTkCheckBox(
             auto_row,
-            text="Auto-démarrer la galerie au lancement de l'entrainement",
+            text=_t("Auto-démarrer la galerie au lancement de l'entrainement", "Auto-start gallery when training starts"),
             command=lambda: self.settings.set("gallery_auto_start_with_training",
                                               bool(self._gal_auto_start_var.get()))
         )
@@ -1167,7 +1169,7 @@ except ImportError:
         auto_row2 = ctk.CTkFrame(sec_a, fg_color="transparent"); auto_row2.pack(fill="x", padx=10, pady=2)
         self._gal_auto_stop_var = ctk.CTkCheckBox(
             auto_row2,
-            text="Auto-arrêter la galerie à l'arrêt de l'entrainement",
+            text=_t("Auto-arrêter la galerie à l'arrêt de l'entrainement", "Auto-stop gallery when training stops"),
             command=lambda: self.settings.set("gallery_auto_stop_with_training",
                                               bool(self._gal_auto_stop_var.get()))
         )
@@ -1178,7 +1180,7 @@ except ImportError:
         auto_row3 = ctk.CTkFrame(sec_a, fg_color="transparent"); auto_row3.pack(fill="x", padx=10, pady=2)
         self._tb_auto_start_var = ctk.CTkCheckBox(
             auto_row3,
-            text="Auto-démarrer TensorBoard au lancement de l'entrainement (démarre le serveur TB)",
+            text=_t("Auto-démarrer TensorBoard au lancement de l'entrainement (démarre le serveur TB)", "Auto-start TensorBoard when training starts (starts TB server)"),
             command=lambda: self.settings.set("tb_auto_start_with_training",
                                               bool(self._tb_auto_start_var.get()))
         )
@@ -1192,7 +1194,7 @@ except ImportError:
             self.settings.set("tb_auto_open_browser", True)
         self._tb_auto_browser_var = ctk.CTkCheckBox(
             auto_row4,
-            text="Auto-ouvrir le navigateur sur http://localhost:6006 quand TB est prêt",
+            text=_t("Auto-ouvrir le navigateur sur http://localhost:6006 quand TB est prêt", "Auto-open browser at http://localhost:6006 when TB is ready"),
             command=lambda: self.settings.set("tb_auto_open_browser",
                                               bool(self._tb_auto_browser_var.get()))
         )
@@ -1205,7 +1207,7 @@ except ImportError:
             self.settings.set("ngrok_auto_from_config", False)
         self._ngrok_auto_var = ctk.CTkCheckBox(
             auto_row5,
-            text="Autoriser le lancement automatique de Ngrok depuis la config (monitoring.auto_ngrok)",
+            text=_t("Autoriser le lancement automatique de Ngrok depuis la config (monitoring.auto_ngrok)", "Allow automatic Ngrok launch from config (monitoring.auto_ngrok)"),
             command=lambda: self.settings.set("ngrok_auto_from_config",
                                               bool(self._ngrok_auto_var.get()))
         )
@@ -1215,18 +1217,18 @@ except ImportError:
 
         # Buttons
         btn_row = ctk.CTkFrame(sec_a, fg_color="transparent"); btn_row.pack(fill="x", padx=10, pady=8)
-        self._gal_btn_start = ctk.CTkButton(btn_row, text="▶ Démarrer", fg_color="#27ae60",
+        self._gal_btn_start = ctk.CTkButton(btn_row, text=_t("▶ Démarrer", "▶ Start"), fg_color="#27ae60",
                                              width=140, command=self._gal_start_clicked)
         self._gal_btn_start.pack(side="left", padx=5)
-        self._gal_btn_stop = ctk.CTkButton(btn_row, text="⏹ Arrêter", fg_color="#e74c3c",
+        self._gal_btn_stop = ctk.CTkButton(btn_row, text=_t("⏹ Arrêter", "⏹ Stop"), fg_color="#e74c3c",
                                             width=120, command=self._gal_stop_clicked, state="disabled")
         self._gal_btn_stop.pack(side="left", padx=5)
-        self._gal_btn_open = ctk.CTkButton(btn_row, text="🌐 Ouvrir", fg_color="#3498db",
+        self._gal_btn_open = ctk.CTkButton(btn_row, text=_t("🌐 Ouvrir", "🌐 Open"), fg_color="#3498db",
                                             width=120, command=self._gal_open_clicked, state="disabled")
         self._gal_btn_open.pack(side="left", padx=5)
 
         # Status + QR area
-        self._gal_status_label = ctk.CTkLabel(sec_a, text="État : Arrêté",
+        self._gal_status_label = ctk.CTkLabel(sec_a, text=_t("État : Arrêté", "Status: Stopped"),
                                                 text_color="#888", anchor="w", justify="left",
                                                 font=("Consolas", 11))
         self._gal_status_label.pack(anchor="w", fill="x", padx=10, pady=(5, 5))
@@ -1235,21 +1237,27 @@ except ImportError:
 
         if not is_qrcode_available():
             ctk.CTkLabel(self._gal_qr_frame,
-                         text="💡 Installer 'qrcode' pour afficher un QR code scannable au démarrage : pip install qrcode[pil]",
+                         text=_t("💡 Installer 'qrcode' pour afficher un QR code scannable au démarrage : pip install qrcode[pil]",
+                                 "💡 Install 'qrcode' to show a scannable QR code on startup: pip install qrcode[pil]"),
                          text_color="#666", font=("Roboto", 9)).pack(anchor="w")
 
         # ─── Section B: NeoSR/Redux TB image patch ───
         sec_b = ctk.CTkFrame(scroll, fg_color="#1a1a2e", corner_radius=8)
         sec_b.pack(fill="x", padx=5, pady=8)
-        ctk.CTkLabel(sec_b, text="B. Patch NeoSR/Redux pour images TensorBoard",
+        ctk.CTkLabel(sec_b, text=_t("B. Patch NeoSR/Redux pour images TensorBoard", "B. NeoSR/Redux patch for TensorBoard images"),
                      font=("Roboto", 13, "bold"), text_color="#9b59b6"
                      ).pack(anchor="w", padx=10, pady=(8, 5))
         ctk.CTkLabel(sec_b,
-                     text="Modifie le CODE SOURCE de NeoSR ou traiNNer-Redux pour qu'il envoie\n"
-                          "les images de validation dans TensorBoard (en plus de les sauvegarder sur disque).\n"
-                          "→ Pointez sur la RACINE de l'engine (ex: C:/Users/.../IA_Engine/neosr),\n"
-                          "  pas un dossier d'expérimentation/logs.\n"
-                          "Idempotent et réversible (backup .usr_bak créé). Max 4 images par validation.",
+                     text=_t("Modifie le CODE SOURCE de NeoSR ou traiNNer-Redux pour qu'il envoie\n"
+                             "les images de validation dans TensorBoard (en plus de les sauvegarder sur disque).\n"
+                             "→ Pointez sur la RACINE de l'engine (ex: C:/Users/.../IA_Engine/neosr),\n"
+                             "  pas un dossier d'expérimentation/logs.\n"
+                             "Idempotent et réversible (backup .usr_bak créé). Max 4 images par validation.",
+                             "Modifies the SOURCE CODE of NeoSR or traiNNer-Redux to send\n"
+                             "validation images to TensorBoard (in addition to saving to disk).\n"
+                             "→ Point to the engine ROOT folder (e.g. C:/Users/.../IA_Engine/neosr),\n"
+                             "  not an experiment/logs folder.\n"
+                             "Idempotent and reversible (backup .usr_bak created). Max 4 images per validation."),
                      text_color="#AAA", font=("Roboto", 10), justify="left", wraplength=900
                      ).pack(anchor="w", padx=10, pady=(0, 10))
 
@@ -1272,7 +1280,7 @@ except ImportError:
 
         # Quick selectors
         quick_row = ctk.CTkFrame(sec_b, fg_color="transparent"); quick_row.pack(fill="x", padx=10, pady=3)
-        ctk.CTkLabel(quick_row, text="Raccourcis :", anchor="w").pack(side="left", padx=(80, 5))
+        ctk.CTkLabel(quick_row, text=_t("Raccourcis :", "Shortcuts:"), anchor="w").pack(side="left", padx=(80, 5))
 
         def _set_neosr():
             self._tbp_path_entry.delete(0, "end"); self._tbp_path_entry.insert(0, self.neosr_path)
@@ -1286,20 +1294,20 @@ except ImportError:
                       command=_set_neosr).pack(side="left", padx=2)
         ctk.CTkButton(quick_row, text="traiNNer-Redux", fg_color="#666", width=140,
                       command=_set_redux).pack(side="left", padx=2)
-        ctk.CTkButton(quick_row, text="🔄 Vérifier statut", fg_color="#3498db",
+        ctk.CTkButton(quick_row, text=_t("🔄 Vérifier statut", "🔄 Check status"), fg_color="#3498db",
                       width=140, command=self._tbp_refresh).pack(side="left", padx=10)
 
         # Status
-        self._tbp_status_label = ctk.CTkLabel(sec_b, text="(non vérifié)",
+        self._tbp_status_label = ctk.CTkLabel(sec_b, text=_t("(non vérifié)", "(not checked)"),
                                                 text_color="#888", anchor="w", justify="left",
                                                 font=("Consolas", 10), wraplength=900)
         self._tbp_status_label.pack(anchor="w", fill="x", padx=10, pady=5)
 
         # Action buttons
         tbp_btns = ctk.CTkFrame(sec_b, fg_color="transparent"); tbp_btns.pack(fill="x", padx=10, pady=8)
-        ctk.CTkButton(tbp_btns, text="✅ Appliquer le Patch", fg_color="#27ae60",
+        ctk.CTkButton(tbp_btns, text=_t("✅ Appliquer le Patch", "✅ Apply Patch"), fg_color="#27ae60",
                       width=180, command=self._tbp_apply_clicked).pack(side="left", padx=5)
-        ctk.CTkButton(tbp_btns, text="❌ Retirer le Patch", fg_color="#e74c3c",
+        ctk.CTkButton(tbp_btns, text=_t("❌ Retirer le Patch", "❌ Remove Patch"), fg_color="#e74c3c",
                       width=180, command=self._tbp_remove_clicked).pack(side="left", padx=5)
 
         # Initial check
@@ -1324,18 +1332,18 @@ except ImportError:
         self.settings.set("gallery_ngrok", bool(with_ngrok))
 
         if not directory or not os.path.isdir(directory):
-            messagebox.showerror("Erreur", "Sélectionnez un dossier valide.")
+            messagebox.showerror(_t("Erreur", "Error"), _t("Sélectionnez un dossier valide.", "Select a valid folder."))
             return
         try:
             port = int(port_str) if port_str else 0
         except ValueError:
-            messagebox.showerror("Erreur", "Port invalide.")
+            messagebox.showerror(_t("Erreur", "Error"), _t("Port invalide.", "Invalid port."))
             return
 
         srv = get_server()
         result = srv.start(directory, port=port, with_ngrok=bool(with_ngrok))
         if not result.get("ok"):
-            messagebox.showerror("Erreur", result.get("error", "Échec inconnu"))
+            messagebox.showerror(_t("Erreur", "Error"), result.get("error", _t("Échec inconnu", "Unknown failure")))
             return
 
         self._gal_btn_start.configure(state="disabled")
@@ -1343,12 +1351,12 @@ except ImportError:
         self._gal_btn_open.configure(state="normal")
 
         url_for_qr = result.get("ngrok_url") or result.get("local_url")
-        lines = [f"✅ Serveur actif", f"   Local : {result['local_url']}"]
+        lines = [_t("✅ Serveur actif", "✅ Server active"), f"   {_t('Local', 'Local')} : {result['local_url']}"]
         if result.get("ngrok_url"):
-            lines.append(f"   Public : {result['ngrok_url']}")
+            lines.append(f"   {_t('Public', 'Public')} : {result['ngrok_url']}")
         elif with_ngrok and result.get("ngrok_warning"):
             lines.append(f"   ⚠ {result['ngrok_warning']}")
-        lines.append(f"   Dossier : {directory}")
+        lines.append(f"   {_t('Dossier', 'Folder')} : {directory}")
         self._gal_status_label.configure(text="\n".join(lines), text_color="#2ecc71")
 
         # QR code
@@ -1365,7 +1373,7 @@ except ImportError:
                     qr_row.pack(fill="x", pady=5)
                     tk.Label(qr_row, image=photo, bg="#1a1a2e").pack(side="left", padx=5)
                     ctk.CTkLabel(qr_row,
-                                 text=f"📱 Scannez avec votre téléphone\n\nURL : {url_for_qr}",
+                                 text=_t(f"📱 Scannez avec votre téléphone\n\nURL : {url_for_qr}", f"📱 Scan with your phone\n\nURL: {url_for_qr}"),
                                  text_color="#3498db", justify="left", font=("Roboto", 11)
                                  ).pack(side="left", padx=15)
                 except Exception as e:
@@ -1384,14 +1392,14 @@ except ImportError:
         self._gal_btn_start.configure(state="normal")
         self._gal_btn_stop.configure(state="disabled")
         self._gal_btn_open.configure(state="disabled")
-        self._gal_status_label.configure(text="État : Arrêté", text_color="#888")
+        self._gal_status_label.configure(text=_t("État : Arrêté", "Status: Stopped"), text_color="#888")
 
     def _gal_open_clicked(self):
         import webbrowser
         from src.core.gallery_server import get_server
         srv = get_server()
         if not srv.is_running():
-            messagebox.showwarning("Galerie", "Le serveur n'est pas actif.")
+            messagebox.showwarning(_t("Galerie", "Gallery"), _t("Le serveur n'est pas actif.", "The server is not running."))
             return
         st = srv.status()
         # Prefer local URL for the in-app open (more reliable, no ngrok cold start)
@@ -1401,14 +1409,14 @@ except ImportError:
         if url:
             webbrowser.open(url)
         else:
-            messagebox.showerror("Galerie", "URL non disponible — relancez le serveur.")
+            messagebox.showerror(_t("Galerie", "Gallery"), _t("URL non disponible — relancez le serveur.", "URL unavailable — restart the server."))
 
     # ── TB patch actions ──
     def _tbp_refresh(self):
         from src.core.tb_image_patch import get_patch_status, find_validation_file
         root = self._tbp_path_entry.get().strip().replace("\\", "/")
         if not root:
-            self._tbp_status_label.configure(text="(chemin vide)", text_color="#888")
+            self._tbp_status_label.configure(text=_t("(chemin vide)", "(empty path)"), text_color="#888")
             return
 
         # Heuristic: if user pointed inside experiments/, walk up to find engine root
@@ -1428,18 +1436,28 @@ except ImportError:
 
         if suggested_root and suggested_root != root:
             self._tbp_status_label.configure(
-                text=f"⚠ Vous avez pointé un dossier d'expérimentation, pas la racine de l'engine.\n"
-                     f"   Le patch modifie le code source du moteur (NeoSR/Redux), pas les logs.\n"
-                     f"   → Suggestion : utilisez « {suggested_root} »\n"
-                     f"   Cliquez sur le bouton 'NeoSR' (raccourci) ou modifiez le chemin manuellement.",
+                text=_t(
+                    f"⚠ Vous avez pointé un dossier d'expérimentation, pas la racine de l'engine.\n"
+                    f"   Le patch modifie le code source du moteur (NeoSR/Redux), pas les logs.\n"
+                    f"   → Suggestion : utilisez « {suggested_root} »\n"
+                    f"   Cliquez sur le bouton 'NeoSR' (raccourci) ou modifiez le chemin manuellement.",
+                    f"⚠ You pointed to an experiments folder, not the engine root.\n"
+                    f"   The patch modifies the engine source code (NeoSR/Redux), not the logs.\n"
+                    f"   → Suggestion: use « {suggested_root} »\n"
+                    f"   Click the 'NeoSR' button (shortcut) or change the path manually."
+                ),
                 text_color="#f39c12"
             )
             return
 
         if not os.path.isdir(root):
             self._tbp_status_label.configure(
-                text=f"❌ Dossier introuvable : {root}\n"
-                     f"   → Vérifiez votre installation NeoSR/Redux.",
+                text=_t(
+                    f"❌ Dossier introuvable : {root}\n"
+                    f"   → Vérifiez votre installation NeoSR/Redux.",
+                    f"❌ Folder not found: {root}\n"
+                    f"   → Check your NeoSR/Redux installation."
+                ),
                 text_color="#e74c3c"
             )
             return
@@ -1462,26 +1480,44 @@ except ImportError:
                     sub_check.append(f"{sub}/ ✗")
 
             self._tbp_status_label.configure(
-                text=f"❌ Aucun fichier de validation trouvé dans :\n   {root}\n\n"
-                     f"   Sous-dossiers détectés : {', '.join(sub_check)}\n"
-                     f"   Fichiers cherchés : {', '.join(tried)}\n"
-                     f"   Recherche : tout fichier model*.py contenant 'nondist_validation' + 'imwrite'.\n\n"
-                     f"   💡 Le patch modifie le code source de l'engine pour logger les images de validation\n"
-                     f"      dans TensorBoard. Pointez sur la racine de NeoSR ou traiNNer-Redux.",
+                text=_t(
+                    f"❌ Aucun fichier de validation trouvé dans :\n   {root}\n\n"
+                    f"   Sous-dossiers détectés : {', '.join(sub_check)}\n"
+                    f"   Fichiers cherchés : {', '.join(tried)}\n"
+                    f"   Recherche : tout fichier model*.py contenant 'nondist_validation' + 'imwrite'.\n\n"
+                    f"   💡 Le patch modifie le code source de l'engine pour logger les images de validation\n"
+                    f"      dans TensorBoard. Pointez sur la racine de NeoSR ou traiNNer-Redux.",
+                    f"❌ No validation file found in:\n   {root}\n\n"
+                    f"   Detected subfolders: {', '.join(sub_check)}\n"
+                    f"   Files searched: {', '.join(tried)}\n"
+                    f"   Search: any model*.py file containing 'nondist_validation' + 'imwrite'.\n\n"
+                    f"   💡 The patch modifies the engine source code to log validation images\n"
+                    f"      in TensorBoard. Point to the NeoSR or traiNNer-Redux root."
+                ),
                 text_color="#e74c3c"
             )
         elif status["patched"]:
             self._tbp_status_label.configure(
-                text=f"✅ Patch déjà appliqué\n"
-                     f"   Fichier : {status['target_file']}\n"
-                     f"   Backup .usr_bak : {'présent' if status['backup_exists'] else 'absent'}",
+                text=_t(
+                    f"✅ Patch déjà appliqué\n"
+                    f"   Fichier : {status['target_file']}\n"
+                    f"   Backup .usr_bak : {'présent' if status['backup_exists'] else 'absent'}",
+                    f"✅ Patch already applied\n"
+                    f"   File: {status['target_file']}\n"
+                    f"   Backup .usr_bak: {'present' if status['backup_exists'] else 'absent'}"
+                ),
                 text_color="#2ecc71"
             )
         else:
             self._tbp_status_label.configure(
-                text=f"⚪ Pas patché (prêt à l'emploi)\n"
-                     f"   Fichier cible : {status['target_file']}\n"
-                     f"   ➜ Cliquez sur '✅ Appliquer le Patch' pour activer les images TensorBoard.",
+                text=_t(
+                    f"⚪ Pas patché (prêt à l'emploi)\n"
+                    f"   Fichier cible : {status['target_file']}\n"
+                    f"   ➜ Cliquez sur '✅ Appliquer le Patch' pour activer les images TensorBoard.",
+                    f"⚪ Not patched (ready to use)\n"
+                    f"   Target file: {status['target_file']}\n"
+                    f"   ➜ Click '✅ Apply Patch' to enable TensorBoard images."
+                ),
                 text_color="#f39c12"
             )
 
@@ -1489,11 +1525,13 @@ except ImportError:
         from src.core.tb_image_patch import patch_engine
         root = self._tbp_path_entry.get().strip()
         if not os.path.isdir(root):
-            messagebox.showerror("Erreur", f"Dossier introuvable : {root}")
+            messagebox.showerror(_t("Erreur", "Error"), _t(f"Dossier introuvable : {root}", f"Folder not found: {root}"))
             return
         if not messagebox.askyesno("Patch",
-                                    f"Modifier les fichiers dans :\n{root}\n\n"
-                                    f"Un backup .usr_bak sera créé. Réversible."):
+                                    _t(f"Modifier les fichiers dans :\n{root}\n\n"
+                                       f"Un backup .usr_bak sera créé. Réversible.",
+                                       f"Modify files in:\n{root}\n\n"
+                                       f"A .usr_bak backup will be created. Reversible.")):
             return
         ok, msg, path = patch_engine(root)
         if ok:
@@ -1507,9 +1545,9 @@ except ImportError:
         root = self._tbp_path_entry.get().strip()
         target = find_validation_file(root)
         if not target:
-            messagebox.showerror("Erreur", "Fichier cible introuvable.")
+            messagebox.showerror(_t("Erreur", "Error"), _t("Fichier cible introuvable.", "Target file not found."))
             return
-        if not messagebox.askyesno("Retirer", f"Restaurer le fichier original ?\n{target}"):
+        if not messagebox.askyesno(_t("Retirer", "Remove"), _t(f"Restaurer le fichier original ?\n{target}", f"Restore the original file?\n{target}")):
             return
         ok, msg = unpatch_file(target)
         if ok:
@@ -1610,11 +1648,15 @@ except ImportError:
         sep = tk.Frame(content_tk, height=2, bg="#3498db")
         sep.pack(fill="x", pady=15, padx=60)
 
-        info_text = (
+        info_text = _t(
             "Application de configuration et d'entrainement de modeles\n"
             "de Super-Resolution (NeoSR & TraiNNer-Redux).\n\n"
             "Fonctionnalites : wizard guide, configuration avancee,\n"
-            "monitoring GPU temps reel, outils de conversion et comparaison."
+            "monitoring GPU temps reel, outils de conversion et comparaison.",
+            "Configuration and training application for\n"
+            "Super-Resolution models (NeoSR & traiNNer-Redux).\n\n"
+            "Features: guided wizard, advanced configuration,\n"
+            "real-time GPU monitoring, conversion and comparison tools."
         )
         tk.Label(content_tk, text=info_text, fg="#CCCCCC", bg="#1a1a2e",
                  justify="center", font=("Roboto", 11)).pack(pady=5)
@@ -1624,7 +1666,7 @@ except ImportError:
                                   highlightbackground="#333355", highlightthickness=1)
         credits_frame.pack(fill="x", pady=10, padx=40)
 
-        tk.Label(credits_frame, text="Auteurs & Credits", font=("Roboto", 14, "bold"),
+        tk.Label(credits_frame, text=_t("Auteurs & Credits", "Authors & Credits"), font=("Roboto", 14, "bold"),
                  fg="#e74c3c", bg="#111128").pack(pady=(10, 5))
 
         for name, role in [
@@ -1642,7 +1684,7 @@ except ImportError:
 
         links_frame = tk.Frame(content_tk, bg="#1a1a2e")
         links_frame.pack(pady=10)
-        tk.Label(links_frame, text="Moteurs SR :", fg="#888888", bg="#1a1a2e").pack(side="left")
+        tk.Label(links_frame, text=_t("Moteurs SR :", "SR Engines:"), fg="#888888", bg="#1a1a2e").pack(side="left")
         lbl_neo = tk.Label(links_frame, text="NeoSR", fg="#3498db", bg="#1a1a2e",
                  cursor="hand2", font=("Roboto", 12, "underline"))
         lbl_neo.pack(side="left", padx=10)

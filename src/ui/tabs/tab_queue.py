@@ -63,24 +63,24 @@ class QueueTab(ctk.CTkFrame):
         self.btn_add_folder = ctk.CTkButton(ctrl, text=_t("📁 Dossier", "📁 Folder"), fg_color="#2980b9",
                                              width=100, height=35, command=self._add_folder)
         self.btn_add_folder.pack(side="left", padx=3)
-        ToolTip(self.btn_add_folder, "Ajouter tous les fichiers config d'un dossier")
+        ToolTip(self.btn_add_folder, _t("Ajouter tous les fichiers config d'un dossier", "Add all config files from a folder"))
 
-        self.btn_remove = ctk.CTkButton(ctrl, text="🗑 Retirer", fg_color="#e74c3c",
+        self.btn_remove = ctk.CTkButton(ctrl, text=_t("🗑 Retirer", "🗑 Remove"), fg_color="#e74c3c",
                                          width=90, height=35, command=self._remove_selected)
         self.btn_remove.pack(side="left", padx=3)
-        ToolTip(self.btn_remove, "Retirer l'element selectionne de la queue")
+        ToolTip(self.btn_remove, _t("Retirer l'element selectionne de la queue", "Remove the selected item from the queue"))
 
         self.btn_move_up = ctk.CTkButton(ctrl, text="⬆", fg_color="#666", width=35, height=35,
                                           command=lambda: self._move(-1))
         self.btn_move_up.pack(side="left", padx=2)
-        ToolTip(self.btn_move_up, "Monter dans la queue")
+        ToolTip(self.btn_move_up, _t("Monter dans la queue", "Move up in the queue"))
 
         self.btn_move_down = ctk.CTkButton(ctrl, text="⬇", fg_color="#666", width=35, height=35,
                                             command=lambda: self._move(1))
         self.btn_move_down.pack(side="left", padx=2)
-        ToolTip(self.btn_move_down, "Descendre dans la queue")
+        ToolTip(self.btn_move_down, _t("Descendre dans la queue", "Move down in the queue"))
 
-        self.btn_clear = ctk.CTkButton(ctrl, text="♻ Vider", fg_color="#555", width=80, height=35,
+        self.btn_clear = ctk.CTkButton(ctrl, text=_t("♻ Vider", "♻ Clear"), fg_color="#555", width=80, height=35,
                                         command=self._clear_queue)
         self.btn_clear.pack(side="left", padx=3)
 
@@ -96,10 +96,10 @@ class QueueTab(ctk.CTkFrame):
         btn_frame = ctk.CTkFrame(self, fg_color="transparent")
         btn_frame.pack(fill="x", padx=15, pady=5)
 
-        self.btn_start = ctk.CTkButton(btn_frame, text="▶  LANCER LA QUEUE", fg_color="#27ae60",
+        self.btn_start = ctk.CTkButton(btn_frame, text=_t("▶  LANCER LA QUEUE", "▶  LAUNCH QUEUE"), fg_color="#27ae60",
                                         height=45, font=("Roboto", 14, "bold"), command=self._start_queue)
         self.btn_start.pack(side="left", fill="x", expand=True, padx=(0, 5))
-        ToolTip(self.btn_start, "Lancer tous les entrainements de la queue sequentiellement")
+        ToolTip(self.btn_start, _t("Lancer tous les entrainements de la queue sequentiellement", "Run all training sessions in the queue sequentially"))
 
         self.btn_stop = ctk.CTkButton(btn_frame, text="⏹  STOP QUEUE", fg_color="#D35B58",
                                        height=45, font=("Roboto", 14, "bold"), state="disabled",
@@ -109,7 +109,7 @@ class QueueTab(ctk.CTkFrame):
         # Log
         self.log = ctk.CTkTextbox(self, height=100, font=("Consolas", 10))
         self.log.pack(fill="x", padx=15, pady=(0, 10))
-        self.log.insert("1.0", "[Queue] En attente...\n")
+        self.log.insert("1.0", _t("[Queue] En attente...\n", "[Queue] Waiting...\n"))
         self.log.configure(state="disabled")
 
         # Selected index
@@ -118,7 +118,8 @@ class QueueTab(ctk.CTkFrame):
     def _show_empty(self):
         for w in self.queue_frame.winfo_children():
             w.destroy()
-        ctk.CTkLabel(self.queue_frame, text="Aucune configuration dans la queue.\n\nCliquez '+ Ajouter Config' pour commencer.",
+        ctk.CTkLabel(self.queue_frame, text=_t("Aucune configuration dans la queue.\n\nCliquez '+ Ajouter Config' pour commencer.",
+                                                "No configuration in the queue.\n\nClick '+ Add Config' to get started."),
                      text_color="#666", font=("Roboto", 12), justify="center").pack(pady=40)
 
     def _log(self, msg):
@@ -141,7 +142,7 @@ class QueueTab(ctk.CTkFrame):
         # Header
         hdr = ctk.CTkFrame(self.queue_frame, fg_color="#2B2B4B", corner_radius=4, height=25)
         hdr.pack(fill="x", pady=(0, 3))
-        for txt, w in [("#", 30), ("Nom", 200), ("Fichier", 350), ("Statut", 80)]:
+        for txt, w in [("#", 30), (_t("Nom", "Name"), 200), (_t("Fichier", "File"), 350), (_t("Statut", "Status"), 80)]:
             ctk.CTkLabel(hdr, text=txt, font=("Roboto", 9, "bold"), text_color="#AAA",
                          width=w, anchor="w").pack(side="left", padx=4)
 
@@ -172,7 +173,7 @@ class QueueTab(ctk.CTkFrame):
 
     def _add_config(self):
         paths = filedialog.askopenfilenames(
-            title="Ajouter des configurations",
+            title=_t("Ajouter des configurations", "Add configurations"),
             filetypes=[("Config files", "*.toml *.yml *.yaml"), ("All", "*.*")]
         )
         for p in paths:
@@ -194,7 +195,7 @@ class QueueTab(ctk.CTkFrame):
         self._refresh_list()
 
     def _add_folder(self):
-        folder = filedialog.askdirectory(title="Dossier de configurations")
+        folder = filedialog.askdirectory(title=_t("Dossier de configurations", "Configuration folder"))
         if not folder:
             return
         count = 0
@@ -231,7 +232,7 @@ class QueueTab(ctk.CTkFrame):
     def _start_queue(self):
         pending = [q for q in self._queue if q["status"] == "pending"]
         if not pending:
-            messagebox.showinfo("Queue", "Aucune configuration en attente.")
+            messagebox.showinfo("Queue", _t("Aucune configuration en attente.", "No pending configurations."))
             return
         self._running = True
         self.btn_start.configure(state="disabled")
