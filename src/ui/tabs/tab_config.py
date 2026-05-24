@@ -1365,7 +1365,7 @@ class ConfigTab(ctk.CTkFrame):
         row_tpl.pack(fill="x", padx=10, pady=(0, 10))
         ctk.CTkLabel(row_tpl, text=_t("Template :", "Template:"), width=120, anchor="w").pack(side="left")
         self.widgets["template_choice"] = ctk.CTkOptionMenu(
-            row_tpl, values=["(aucun)"] + list_templates(), width=250
+            row_tpl, values=[_t("(aucun)", "(none)")] + list_templates(), width=250
         )
         self.widgets["template_choice"].pack(side="left", padx=5)
         ToolTip(self.widgets["template_choice"],
@@ -1603,7 +1603,7 @@ class ConfigTab(ctk.CTkFrame):
         ]:
             row = ctk.CTkFrame(f_p1, fg_color="transparent"); row.pack(fill="x", padx=10, pady=2)
             lbl = ctk.CTkLabel(row, text=f"{label} :", width=140, anchor="w"); lbl.pack(side="left")
-            e = ctk.CTkEntry(row, width=100, placeholder_text="(depuis config)"); 
+            e = ctk.CTkEntry(row, width=100, placeholder_text=_t("(depuis config)", "(from config)")); 
             if default: e.insert(0, default)
             e.pack(side="left", padx=5)
             self.widgets[key] = e; ToolTip(lbl, tip)
@@ -1623,11 +1623,12 @@ class ConfigTab(ctk.CTkFrame):
 
         f_p1_opt = ctk.CTkFrame(f_p1, fg_color="transparent"); f_p1_opt.pack(fill="x", padx=10, pady=3)
         ctk.CTkLabel(f_p1_opt, text="Optimizer :", width=140, anchor="w").pack(side="left")
-        self.widgets["pipe_psnr_optim"] = ctk.CTkOptionMenu(f_p1_opt, values=["(depuis config)", "adan", "adamw", "adam"], width=140)
-        self.widgets["pipe_psnr_optim"].pack(side="left"); self.widgets["pipe_psnr_optim"].set("(depuis config)")
+        _dc = _t("(depuis config)", "(from config)")
+        self.widgets["pipe_psnr_optim"] = ctk.CTkOptionMenu(f_p1_opt, values=[_dc, "adan", "adamw", "adam"], width=140)
+        self.widgets["pipe_psnr_optim"].pack(side="left"); self.widgets["pipe_psnr_optim"].set(_dc)
         ctk.CTkLabel(f_p1_opt, text="Scheduler :", width=80).pack(side="left", padx=(15, 0))
-        self.widgets["pipe_psnr_sched"] = ctk.CTkOptionMenu(f_p1_opt, values=["(depuis config)", "CosineAnnealing", "MultiStepLR"], width=150)
-        self.widgets["pipe_psnr_sched"].pack(side="left"); self.widgets["pipe_psnr_sched"].set("(depuis config)")
+        self.widgets["pipe_psnr_sched"] = ctk.CTkOptionMenu(f_p1_opt, values=[_dc, "CosineAnnealing", "MultiStepLR"], width=150)
+        self.widgets["pipe_psnr_sched"].pack(side="left"); self.widgets["pipe_psnr_sched"].set(_dc)
         ctk.CTkLabel(f_p1, text="", height=3).pack()
 
         # Phase 2: GAN
@@ -1648,18 +1649,19 @@ class ConfigTab(ctk.CTkFrame):
         ]:
             row = ctk.CTkFrame(f_p2, fg_color="transparent"); row.pack(fill="x", padx=10, pady=2)
             lbl = ctk.CTkLabel(row, text=f"{label} :", width=140, anchor="w"); lbl.pack(side="left")
-            e = ctk.CTkEntry(row, width=100, placeholder_text="(depuis config)")
+            e = ctk.CTkEntry(row, width=100, placeholder_text=_t("(depuis config)", "(from config)"))
             if default: e.insert(0, default)
             e.pack(side="left", padx=5)
             self.widgets[key] = e; ToolTip(lbl, tip)
 
         f_p2_disc = ctk.CTkFrame(f_p2, fg_color="transparent"); f_p2_disc.pack(fill="x", padx=10, pady=3)
         ctk.CTkLabel(f_p2_disc, text=_t("Discriminateur :", "Discriminator:"), width=140, anchor="w").pack(side="left")
-        self.widgets["pipe_disc"] = ctk.CTkOptionMenu(f_p2_disc, values=["(depuis config)", "UNet", "DUNet", "PatchGAN", "MetaGAN", "EA2-FPN"], width=140)
-        self.widgets["pipe_disc"].pack(side="left"); self.widgets["pipe_disc"].set("(depuis config)")
+        _dc2 = _t("(depuis config)", "(from config)")
+        self.widgets["pipe_disc"] = ctk.CTkOptionMenu(f_p2_disc, values=[_dc2, "UNet", "DUNet", "PatchGAN", "MetaGAN", "EA2-FPN"], width=140)
+        self.widgets["pipe_disc"].pack(side="left"); self.widgets["pipe_disc"].set(_dc2)
         ctk.CTkLabel(f_p2_disc, text="GAN Type :", width=80).pack(side="left", padx=(15, 0))
-        self.widgets["pipe_gan_type"] = ctk.CTkOptionMenu(f_p2_disc, values=["(depuis config)", "bce", "mse", "huber"], width=120)
-        self.widgets["pipe_gan_type"].pack(side="left"); self.widgets["pipe_gan_type"].set("(depuis config)")
+        self.widgets["pipe_gan_type"] = ctk.CTkOptionMenu(f_p2_disc, values=[_dc2, "bce", "mse", "huber"], width=120)
+        self.widgets["pipe_gan_type"].pack(side="left"); self.widgets["pipe_gan_type"].set(_dc2)
 
         f_p2_extra = ctk.CTkFrame(f_p2, fg_color="transparent"); f_p2_extra.pack(fill="x", padx=10, pady=3)
         ctk.CTkLabel(f_p2_extra, text=_t("Losses extra :", "Extra losses:"), width=140, anchor="w").pack(side="left")
@@ -1874,7 +1876,7 @@ class ConfigTab(ctk.CTkFrame):
         """Load a configuration template into the UI."""
         from tkinter import messagebox
         choice = self.widgets["template_choice"].get()
-        if not choice or choice == "(aucun)":
+        if not choice or choice in ("(aucun)", "(none)"):
             messagebox.showinfo("Template", _t("Sélectionnez un template.", "Select a template."))
             return
 

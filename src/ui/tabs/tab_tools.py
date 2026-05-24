@@ -180,11 +180,12 @@ class ToolsTab(ctk.CTkFrame):
         """Requête nvidia-smi dans thread daemon → met à jour tous les _gpu_panels.
 
         Reprogrammé toutes les 2 s via ui_queue (thread-safe).
-        Arrêt automatique si nvidia-smi absent.
+        Retry toutes les 10 s si nvidia-smi absent (ne s'arrête jamais).
         """
         _cnow = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
         def _query():
+            delay = 2000
             try:
                 res = subprocess.run(
                     ["nvidia-smi", "--id=0",
@@ -238,18 +239,19 @@ class ToolsTab(ctk.CTkFrame):
                     self._ui_update(_na)
 
             except (FileNotFoundError, OSError):
+                # nvidia-smi absent — affiche placeholder, réessaie lentement
                 def _cpu():
                     for p in self._gpu_panels:
                         p["temp"].configure(text="—")
                         p["load"].configure(text="—")
                         p["vram"].configure(text="no GPU")
                 self._ui_update(_cpu)
-                self._gpu_polling = False
+                delay = 10000  # retry every 10s when no nvidia-smi
             except Exception:
-                pass  # timeout transitoire — réessaie
+                pass  # timeout transitoire — réessaie normalement
             finally:
                 if getattr(self, "_gpu_polling", False):
-                    self._ui_update(self.after, 2000, self._gpu_do_poll)
+                    self._ui_update(self.after, delay, self._gpu_do_poll)
 
         threading.Thread(target=_query, daemon=True).start()
 
@@ -1113,33 +1115,65 @@ class ToolsTab(ctk.CTkFrame):
                "   16 = severe\n"
                "    8 = extreme"))
 
-        # Custom 2 degradations (compact — defaults from otf_preview)
-        deg4 = ctk.CTkFrame(f, fg_color="transparent")
-        deg4.pack(fill="x", pady=5)
-        self.widgets["gen_aliasing"] = ctk.CTkCheckBox(deg4, text="Aliasing")
-        self.widgets["gen_aliasing"].pack(side="left", padx=5)
-        ToolTip(self.widgets["gen_aliasing"], _t("Nearest-neighbor downscale+upscale → artefacts escalier sur les bords diagonaux.", "Nearest-neighbor downscale+upscale → staircase artifacts on diagonal edges."))
-        self.widgets["gen_interlace_weave"] = ctk.CTkCheckBox(deg4, text="Interlace weave")
-        self.widgets["gen_interlace_weave"].pack(side="left", padx=(15, 5))
-        ToolTip(self.widgets["gen_interlace_weave"], _t("Entrelacement weave : dents de peigne sur les bords (artefact VHS/DVD).", "Weave interlacing: comb teeth on edges (VHS/DVD artifact)."))
-        self.widgets["gen_interlace_flicker"] = ctk.CTkCheckBox(deg4, text="Flicker")
-        self.widgets["gen_interlace_flicker"].pack(side="left", padx=(8, 5))
-        ToolTip(self.widgets["gen_interlace_flicker"], _t("Flicker de champ : lignes paires/impaires à luminosité alternée (CRT).", "Field flicker: alternating brightness on even/odd lines (CRT)."))
-        self.widgets["gen_interlace_blend"] = ctk.CTkCheckBox(deg4, text="Field blend")
-        self.widgets["gen_interlace_blend"].pack(side="left", padx=(8, 5))
-        ToolTip(self.widgets["gen_interlace_blend"], _t("Ghosting entre champs : flou de mouvement par mélange de fields interlacés.", "Field ghosting: motion blur by blending interlaced fields."))
+        # Custom degradations with intensity controls
+        def _deg_row(parent, chk_key, chk_text, chk_tip,
+                     params):
+            """Helper: checkbox + N labeled entry pairs on one row."""
+            row = ctk.CTkFrame(parent, fg_color="transparent")
+            row.pack(fill="x", pady=3)
+            chk = ctk.CTkCheckBox(row, text=chk_text, width=130)
+            chk.pack(side="left", padx=5)
+            if chk_tip:
+                ToolTip(chk, chk_tip)
+            self.widgets[chk_key] = chk
+            for lbl, key, default, tip in params:
+                ctk.CTkLabel(row, text=lbl, width=30, anchor="e").pack(side="left", padx=(8, 0))
+                e = ctk.CTkEntry(row, width=48)
+                e.insert(0, default)
+                e.pack(side="left", padx=(2, 0))
+                self.widgets[key] = e
+                if tip:
+                    ToolTip(e, tip)
+            return row
 
-        deg5 = ctk.CTkFrame(f, fg_color="transparent")
-        deg5.pack(fill="x", pady=5)
-        self.widgets["gen_film_grain"] = ctk.CTkCheckBox(deg5, text="Film Grain")
-        self.widgets["gen_film_grain"].pack(side="left", padx=5)
-        ToolTip(self.widgets["gen_film_grain"], _t("Grain cinéma luminance-dépendant (fort sur tons moyens, faible sur hautes lumières).", "Luminance-dependent film grain (strong on midtones, weak on highlights)."))
-        self.widgets["gen_oversharp"] = ctk.CTkCheckBox(deg5, text="Oversharpening")
-        self.widgets["gen_oversharp"].pack(side="left", padx=(15, 5))
-        ToolTip(self.widgets["gen_oversharp"], _t("Halos USM (sur-netteté), artefact typique des caméras consommateur / vidéo compressée.", "USM halos (oversharpening), typical artifact of consumer cameras / compressed video."))
-        self.widgets["gen_scanlines"] = ctk.CTkCheckBox(deg5, text="Scanlines CRT")
-        self.widgets["gen_scanlines"].pack(side="left", padx=(15, 5))
-        ToolTip(self.widgets["gen_scanlines"], _t("Lignes sombres CRT : assombrit une ligne sur 2-4 (retro games, émulateurs, captures TV).", "Dark CRT scanlines: darkens every 2-4 lines (retro games, emulators, TV captures)."))
+        _deg_row(f, "gen_aliasing", "Aliasing",
+                 _t("Nearest-neighbor downscale+upscale → artefacts escalier sur les bords diagonaux.", "Nearest-neighbor downscale+upscale → staircase artifacts on diagonal edges."),
+                 [(_t("force:", "strength:"), "gen_aliasing_str", "0.75",
+                   _t("Force 0.0-1.0 (0.65=léger, 0.85=fort)", "Strength 0.0-1.0 (0.65=light, 0.85=strong)"))])
+
+        _deg_row(f, "gen_interlace_weave", "Interlace weave",
+                 _t("Entrelacement weave : dents de peigne sur les bords (artefact VHS/DVD).", "Weave interlacing: comb teeth on edges (VHS/DVD artifact)."),
+                 [(_t("force:", "strength:"), "gen_weave_str", "0.8",
+                   _t("Force 0.0-1.0 (0.6=léger, 1.0=fort)", "Strength 0.0-1.0 (0.6=light, 1.0=strong)"))])
+
+        _deg_row(f, "gen_interlace_flicker", "Flicker",
+                 _t("Flicker de champ : lignes paires/impaires à luminosité alternée (CRT).", "Field flicker: alternating brightness on even/odd lines (CRT)."),
+                 [(_t("amp:", "amp:"), "gen_flicker_amp", "0.22",
+                   _t("Amplitude 0.0-0.5 (0.1=subtil, 0.35=visible)", "Amplitude 0.0-0.5 (0.1=subtle, 0.35=visible)"))])
+
+        _deg_row(f, "gen_interlace_blend", "Field blend",
+                 _t("Ghosting entre champs : flou de mouvement par mélange de fields interlacés.", "Field ghosting: motion blur by blending interlaced fields."),
+                 [(_t("mix:", "mix:"), "gen_blend_mix", "0.55",
+                   _t("Mélange 0.0-1.0 (0.3=léger, 0.8=fort)", "Mix 0.0-1.0 (0.3=light, 0.8=strong)"))])
+
+        _deg_row(f, "gen_film_grain", "Film Grain",
+                 _t("Grain cinéma luminance-dépendant (fort sur tons moyens, faible sur hautes lumières).", "Luminance-dependent film grain (strong on midtones, weak on highlights)."),
+                 [("σ:", "gen_grain_sigma", "0.08",
+                   _t("Écart-type 0.02-0.20 (0.04=subtil, 0.12=fort)", "Std dev 0.02-0.20 (0.04=subtle, 0.12=strong)")),
+                  (_t("sz:", "sz:"), "gen_grain_size", "1",
+                   _t("Taille grain 1-3 (1=fin, 2=moyen, 3=grossier)", "Grain size 1-3 (1=fine, 2=medium, 3=coarse)"))])
+
+        _deg_row(f, "gen_oversharp", "Oversharpening",
+                 _t("Halos USM (sur-netteté), artefact typique des caméras consommateur / vidéo compressée.", "USM halos (oversharpening), typical artifact of consumer cameras / compressed video."),
+                 [(_t("force:", "amount:"), "gen_oversharp_amt", "1.4",
+                   _t("Facteur USM 0.5-3.0 (0.8=léger, 2.0=fort)", "USM factor 0.5-3.0 (0.8=light, 2.0=strong)"))])
+
+        _deg_row(f, "gen_scanlines", "Scanlines CRT",
+                 _t("Lignes sombres CRT : assombrit une ligne sur 2-4 (retro games, émulateurs, captures TV).", "Dark CRT scanlines: darkens every 2-4 lines (retro games, emulators, TV captures)."),
+                 [(_t("pér:", "per:"), "gen_scanlines_period", "3",
+                   _t("Période 2-8 (2=dense, 4=espacé)", "Period 2-8 (2=dense, 4=sparse)")),
+                  (_t("norc:", "dark:"), "gen_scanlines_dark", "0.35",
+                   _t("Assombrissement 0.1-0.6 (0.25=subtil, 0.45=fort)", "Darkness 0.1-0.6 (0.25=subtle, 0.45=strong)"))])
 
         ctk.CTkButton(f, text=_t("Lancer Génération", "Run Generation"), fg_color="#E67E22", command=self.run_gen).pack(fill="x", pady=15)
         self.widgets["prog_gen"] = ctk.CTkProgressBar(f)
@@ -1177,12 +1211,21 @@ class ToolsTab(ctk.CTkFrame):
             "banding": bool(self.widgets["gen_banding"].get()),
             "banding_levels": int(self.widgets["gen_banding_levels"].get() or "32"),
             "aliasing": bool(self.widgets["gen_aliasing"].get()),
+            "aliasing_str": float(self.widgets["gen_aliasing_str"].get() or "0.75"),
             "interlace_weave": bool(self.widgets["gen_interlace_weave"].get()),
+            "weave_str": float(self.widgets["gen_weave_str"].get() or "0.8"),
             "interlace_flicker": bool(self.widgets["gen_interlace_flicker"].get()),
+            "flicker_amp": float(self.widgets["gen_flicker_amp"].get() or "0.22"),
             "interlace_blend": bool(self.widgets["gen_interlace_blend"].get()),
+            "blend_mix": float(self.widgets["gen_blend_mix"].get() or "0.55"),
             "film_grain": bool(self.widgets["gen_film_grain"].get()),
+            "grain_sigma": float(self.widgets["gen_grain_sigma"].get() or "0.08"),
+            "grain_size": int(float(self.widgets["gen_grain_size"].get() or "1")),
             "oversharp": bool(self.widgets["gen_oversharp"].get()),
+            "oversharp_amt": float(self.widgets["gen_oversharp_amt"].get() or "1.4"),
             "scanlines": bool(self.widgets["gen_scanlines"].get()),
+            "scanlines_period": int(float(self.widgets["gen_scanlines_period"].get() or "3")),
+            "scanlines_dark": float(self.widgets["gen_scanlines_dark"].get() or "0.35"),
         }
         threading.Thread(target=self._process_gen, args=(hq, lq, opts), daemon=True).start()
 
@@ -1241,7 +1284,7 @@ class ToolsTab(ctk.CTkFrame):
                         # Use FASTOCTREE to keep speed; convert back to RGB
                         img = img.quantize(colors=levels, method=Image.Quantize.FASTOCTREE).convert("RGB")
 
-                    # Custom 2 degradations — reuse otf_preview functions
+                    # Custom degradations — reuse otf_preview functions with user intensities
                     try:
                         from src.core.otf_preview import (
                             apply_aliasing_pil, apply_interlace_weave_pil,
@@ -1249,19 +1292,28 @@ class ToolsTab(ctk.CTkFrame):
                             apply_film_grain_pil, apply_oversharpening_pil, apply_scanlines_pil,
                         )
                         if opts.get("aliasing"):
-                            img = apply_aliasing_pil(img, (0.65, 0.85))
+                            s = opts.get("aliasing_str", 0.75)
+                            img = apply_aliasing_pil(img, (s, s))
                         if opts.get("interlace_weave"):
-                            img = apply_interlace_weave_pil(img, (0.6, 1.0))
+                            s = opts.get("weave_str", 0.8)
+                            img = apply_interlace_weave_pil(img, (s, s))
                         if opts.get("interlace_flicker"):
-                            img = apply_interlace_flicker_pil(img, (0.1, 0.35))
+                            s = opts.get("flicker_amp", 0.22)
+                            img = apply_interlace_flicker_pil(img, (s, s))
                         if opts.get("interlace_blend"):
-                            img = apply_interlace_blend_pil(img, (0.3, 0.8))
+                            s = opts.get("blend_mix", 0.55)
+                            img = apply_interlace_blend_pil(img, (s, s))
                         if opts.get("film_grain"):
-                            img = apply_film_grain_pil(img, (0.04, 0.12), (1, 2))
+                            sg = opts.get("grain_sigma", 0.08)
+                            sz = opts.get("grain_size", 1)
+                            img = apply_film_grain_pil(img, (sg, sg), (sz, sz))
                         if opts.get("oversharp"):
-                            img = apply_oversharpening_pil(img, (0.8, 2.0))
+                            a = opts.get("oversharp_amt", 1.4)
+                            img = apply_oversharpening_pil(img, (a, a))
                         if opts.get("scanlines"):
-                            img = apply_scanlines_pil(img, (2, 4), (0.25, 0.45))
+                            p = opts.get("scanlines_period", 3)
+                            d = opts.get("scanlines_dark", 0.35)
+                            img = apply_scanlines_pil(img, (p, p), (d, d))
                     except Exception:
                         pass
 
@@ -1293,7 +1345,7 @@ class ToolsTab(ctk.CTkFrame):
                      text_color="#3B8ED0", anchor="w").pack(fill="x")
         ctk.CTkLabel(_hdr, text=_t("Convertir un modèle vers différents formats d'inférence.", "Convert a model to different inference formats."),
                      font=("Arial", 12), text_color="gray", anchor="w").pack(fill="x")
-        self.add_path_row(f, _t("Modèle source (.pth) :", "Source model (.pth):"), "conv_pth", is_file=True)
+        self.add_path_row(f, _t("Modèle source (.pth/.safetensors) :", "Source model (.pth/.safetensors):"), "conv_pth", is_file=True)
         self.add_path_row(f, _t("Dossier sortie :", "Output folder:"), "conv_output")
 
         # Format options
@@ -1309,12 +1361,20 @@ class ToolsTab(ctk.CTkFrame):
         self.widgets["chk_fp16"].pack(side="left", padx=10)
         ToolTip(self.widgets["chk_fp16"], _t("Conversion en Float16.\n[+] Modèle 2x plus petit, inférence plus rapide.\n[-] Légère perte de précision (invisible en pratique).", "Convert to Float16.\n[+] 2x smaller model, faster inference.\n[-] Slight precision loss (invisible in practice)."))
 
+        self.widgets["chk_bf16"] = ctk.CTkCheckBox(fmt, text=_t("BF16 (bfloat16)", "BF16 (bfloat16)"))
+        self.widgets["chk_bf16"].pack(side="left", padx=10)
+        ToolTip(self.widgets["chk_bf16"], _t("Conversion en BFloat16 (Brain Float16).\n[+] Même plage dynamique que FP32, moins de risque NaN.\n[+] Idéal RTX 3000+ (Ampere) et A100.\n[-] Non supporté sur GPU < Ampere.", "Convert to BFloat16 (Brain Float16).\n[+] Same dynamic range as FP32, lower NaN risk.\n[+] Ideal for RTX 3000+ (Ampere) and A100.\n[-] Not supported on GPUs older than Ampere."))
+
         self.widgets["chk_safetensors"] = ctk.CTkCheckBox(fmt, text="SafeTensors")
         self.widgets["chk_safetensors"].pack(side="left", padx=10)
         ToolTip(self.widgets["chk_safetensors"], _t("Conversion vers SafeTensors (Hugging Face).\n[+] Sécurisé (pas d'exécution de code), chargement rapide.\n[+] Standard pour partager des modèles.", "Convert to SafeTensors (Hugging Face).\n[+] Secure (no code execution), fast loading.\n[+] Standard for sharing models."))
 
         fmt2 = ctk.CTkFrame(f, fg_color="transparent")
         fmt2.pack(fill="x", pady=5)
+
+        self.widgets["chk_pth"] = ctk.CTkCheckBox(fmt2, text=_t("PTH (poids seuls)", "PTH (weights only)"))
+        self.widgets["chk_pth"].pack(side="left", padx=10)
+        ToolTip(self.widgets["chk_pth"], _t("Sauvegarde les poids seuls en .pth (sans métadonnées d'entraînement).\n[+] Fichier plus léger, compatible PyTorch standard.\n[+] Utiliser pour créer un modèle propre depuis un .state ou checkpoint.", "Save weights-only .pth (no training metadata).\n[+] Lighter file, standard PyTorch compatible.\n[+] Use to create a clean model from a .state or checkpoint."))
 
         self.widgets["chk_ncnn"] = ctk.CTkCheckBox(fmt2, text="NCNN")
         self.widgets["chk_ncnn"].pack(side="left", padx=10)
@@ -1341,8 +1401,21 @@ class ToolsTab(ctk.CTkFrame):
         self.widgets["conv_scale"].pack(side="left", padx=5)
         self.widgets["conv_scale"].set("Auto")
 
+        params2 = ctk.CTkFrame(f, fg_color="transparent")
+        params2.pack(fill="x", pady=5)
+        ctk.CTkLabel(params2, text=_t("Opset ONNX :", "ONNX Opset:")).pack(side="left")
+        self.widgets["conv_opset"] = ctk.CTkOptionMenu(params2, values=["17", "14", "13", "11", "9"], width=60)
+        self.widgets["conv_opset"].pack(side="left", padx=5)
+        self.widgets["conv_opset"].set("17")
+        ToolTip(self.widgets["conv_opset"], _t("Version opset ONNX (17 = recommandé, max compatibilité TensorRT 8+).\nBaisser si erreur d'export vers outils anciens.", "ONNX opset version (17 = recommended, max compatibility with TensorRT 8+).\nLower if export fails with older tools."))
+
+        ctk.CTkLabel(params2, text="TF32 :", padx=(15, 0)).pack(side="left", padx=(15, 0))
+        self.widgets["conv_tf32"] = ctk.CTkCheckBox(params2, text=_t("Activer (matmul rapide RTX 3000+)", "Enable (fast matmul RTX 3000+)"))
+        self.widgets["conv_tf32"].pack(side="left", padx=5)
+        ToolTip(self.widgets["conv_tf32"], _t("Active torch.backends.cuda.matmul.allow_tf32 pendant la conversion.\n[+] Accélère le traitement sur RTX 3000+ (Ampere) de 5-10%.\n[ℹ] Option CUDA, ne change pas le format du modèle.", "Enables torch.backends.cuda.matmul.allow_tf32 during conversion.\n[+] Speeds up processing on RTX 3000+ (Ampere) by 5-10%.\n[ℹ] CUDA option only — does not change model format."))
+
         ctk.CTkButton(f, text=_t("Convertir", "Convert"), fg_color="#3498db", command=self.run_conv).pack(fill="x", pady=15)
-        self.widgets["log_conv"] = ctk.CTkTextbox(f, height=100)
+        self.widgets["log_conv"] = ctk.CTkTextbox(f, height=120)
         self.widgets["log_conv"].pack(fill="both", expand=True, pady=5)
         return f
 
@@ -1358,11 +1431,15 @@ class ToolsTab(ctk.CTkFrame):
 
         do_onnx = bool(self.widgets["chk_onnx"].get())
         do_fp16 = bool(self.widgets["chk_fp16"].get())
+        do_bf16 = bool(self.widgets["chk_bf16"].get())
         do_safe = bool(self.widgets["chk_safetensors"].get())
+        do_pth  = bool(self.widgets["chk_pth"].get())
         do_ncnn = bool(self.widgets["chk_ncnn"].get())
-        do_trt = bool(self.widgets["chk_tensorrt"].get())
+        do_trt  = bool(self.widgets["chk_tensorrt"].get())
+        do_tf32 = bool(self.widgets["conv_tf32"].get())
+        opset   = int(self.widgets["conv_opset"].get())
 
-        if not any([do_onnx, do_fp16, do_safe, do_ncnn, do_trt]):
+        if not any([do_onnx, do_fp16, do_bf16, do_safe, do_pth, do_ncnn, do_trt]):
             messagebox.showinfo(_t("Info", "Info"), _t("Sélectionnez au moins un format.", "Select at least one format."))
             return
 
@@ -1372,16 +1449,44 @@ class ToolsTab(ctk.CTkFrame):
         def worker():
             try:
                 import torch
-                log(f"{_t('Chargement', 'Loading')} : {os.path.basename(pth)}")
-                state = torch.load(pth, map_location="cpu", weights_only=False)
+                if do_tf32:
+                    try:
+                        torch.backends.cuda.matmul.allow_tf32 = True
+                        torch.backends.cudnn.allow_tf32 = True
+                        log(_t("→ TF32 activé (matmul rapide)", "→ TF32 enabled (fast matmul)"))
+                    except Exception:
+                        pass
 
-                # Extract weights
-                for key in ("params_ema", "params_g", "params", "model", "state_dict"):
-                    if key in state:
-                        state = state[key]
-                        break
+                log(f"{_t('Chargement', 'Loading')} : {os.path.basename(pth)}")
+
+                # Smart loader — support both .pth and .safetensors
+                pth_lower = pth.lower()
+                if pth_lower.endswith(".safetensors"):
+                    try:
+                        from safetensors.torch import load_file as _stload
+                        state = _stload(pth, device="cpu")
+                    except ImportError:
+                        log(f"  ❌ {_t('safetensors non installé (pip install safetensors)', 'safetensors not installed (pip install safetensors)')}")
+                        return
+                else:
+                    state = torch.load(pth, map_location="cpu", weights_only=False)
+                    # Extract weights from checkpoint dict
+                    for key in ("params_ema", "params_g", "params", "model", "state_dict"):
+                        if isinstance(state, dict) and key in state:
+                            state = state[key]
+                            break
+
+                if not isinstance(state, dict):
+                    log(f"  ❌ {_t('Format non reconnu — state_dict introuvable.', 'Unrecognized format — state_dict not found.')}")
+                    return
 
                 base = os.path.splitext(os.path.basename(pth))[0]
+
+                if do_pth:
+                    log(f"→ {_t('Sauvegarde PTH (poids seuls)...', 'Saving PTH (weights only)...')}")
+                    pth_path = os.path.join(out_dir, f"{base}_clean.pth")
+                    torch.save(state, pth_path)
+                    log(f"  ✅ {pth_path}")
 
                 if do_fp16:
                     log(f"→ {_t('Conversion FP16...', 'FP16 conversion...')}")
@@ -1390,40 +1495,53 @@ class ToolsTab(ctk.CTkFrame):
                     torch.save(fp16_state, fp16_path)
                     log(f"  ✅ {fp16_path}")
 
+                if do_bf16:
+                    log(f"→ {_t('Conversion BF16...', 'BF16 conversion...')}")
+                    try:
+                        bf16_state = {k: v.to(torch.bfloat16) if v.is_floating_point() else v
+                                      for k, v in state.items()}
+                        bf16_path = os.path.join(out_dir, f"{base}_bf16.pth")
+                        torch.save(bf16_state, bf16_path)
+                        log(f"  ✅ {bf16_path}")
+                    except Exception as e:
+                        log(f"  ❌ BF16: {e}")
+
                 if do_safe:
                     log(f"→ {_t('Conversion SafeTensors...', 'SafeTensors conversion...')}")
                     try:
                         from safetensors.torch import save_file
                         safe_path = os.path.join(out_dir, f"{base}.safetensors")
-                        save_file(state, safe_path)
+                        # safetensors requires contiguous float tensors
+                        safe_state = {k: v.contiguous().float() if v.is_floating_point() else v
+                                      for k, v in state.items()}
+                        save_file(safe_state, safe_path)
                         log(f"  ✅ {safe_path}")
                     except ImportError:
                         log(f"  ❌ {_t('safetensors non installé (pip install safetensors)', 'safetensors not installed (pip install safetensors)')}")
 
                 if do_onnx or do_ncnn or do_trt:
-                    # Use neosr/redux converter if available
                     py_path = self.settings.get("python_path", "python")
-                    cmd = [py_path, "-m", "neosr.utils.convert", "--input", pth]
-                    if do_onnx or do_ncnn or do_trt:
-                        cmd.append("--onnx")
-                    log(f"→ Export ONNX via neosr.utils.convert...")
+                    cmd = [py_path, "-m", "neosr.utils.convert", "--input", pth,
+                           "--onnx", "--opset", str(opset)]
+                    log(f"→ {_t('Export ONNX via neosr.utils.convert (opset', 'ONNX export via neosr.utils.convert (opset')} {opset})...")
                     try:
                         creationflags = 0x08000000 if sys.platform == "win32" else 0
-                        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120, creationflags=creationflags)
+                        result = subprocess.run(cmd, capture_output=True, text=True,
+                                                timeout=120, creationflags=creationflags)
                         if result.returncode == 0:
                             log(f"  ✅ {_t('ONNX exporté', 'ONNX exported')}")
                         else:
-                            log(f"  ⚠️ {result.stderr.strip()[:200]}")
+                            log(f"  ⚠️ {result.stderr.strip()[:300]}")
                     except Exception as e:
                         log(f"  ❌ {e}")
 
                     if do_ncnn:
-                        log(_t("→ Pour NCNN : convertissez le fichier .onnx avec 'onnx2ncnn' (outil séparé)", "→ For NCNN: convert the .onnx file with 'onnx2ncnn' (separate tool)"))
+                        log(_t("→ Pour NCNN : convertissez le .onnx avec 'onnx2ncnn' (outil séparé)", "→ For NCNN: convert .onnx with 'onnx2ncnn' (separate tool)"))
                         log("  → https://github.com/Tencent/ncnn/wiki/how-to-build")
 
                     if do_trt:
                         log(_t("→ Pour TensorRT : utilisez 'trtexec --onnx=model.onnx --saveEngine=model.trt'", "→ For TensorRT: use 'trtexec --onnx=model.onnx --saveEngine=model.trt'"))
-                        log(f"  → {_t('Nécessite NVIDIA TensorRT SDK', 'Requires NVIDIA TensorRT SDK')}")
+                        log(f"  → {_t('Nécessite NVIDIA TensorRT SDK installé', 'Requires NVIDIA TensorRT SDK installed')}")
 
                 log(f"✅ {_t('Conversion terminée.', 'Conversion complete.')}")
             except Exception as e:
@@ -2596,8 +2714,8 @@ except Exception as e: print(f"ERROR:{{e}}")
         self.widgets["exp_ia_provider"].set("OpenRouter (Gratuit)")
         first_models = self._exp_ia_models["OpenRouter (Gratuit)"]
         self.widgets["exp_ia_model"] = ctk.CTkOptionMenu(
-            ia_row, values=first_models, width=230, font=("Roboto", 10))
-        self.widgets["exp_ia_model"].pack(side="left", padx=4, fill="x", expand=True)
+            ia_row, values=first_models, width=180, font=("Roboto", 10))
+        self.widgets["exp_ia_model"].pack(side="left", padx=4)
         self.widgets["exp_ia_model"].set(first_models[0])
 
         fiche_btns = ctk.CTkFrame(right, fg_color="transparent")
