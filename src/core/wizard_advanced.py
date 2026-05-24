@@ -11,26 +11,44 @@ from typing import Optional, List, Dict, Any, Callable
 from enum import Enum
 
 
+def _t(fr: str, en: str) -> str:
+    """Return the French or English string based on current translator language."""
+    try:
+        from src.core.translations import get_translator
+        tr = get_translator()
+        if tr and getattr(tr, 'language', 'fr') == 'en':
+            return en
+    except Exception:
+        pass
+    return fr
+
+
 # ─── GPU Detection ───────────────────────────────────────────────
 
 # Known GPU capabilities (compute capability → features)
 GPU_FEATURES = {
     # Pascal (GTX 10xx) — sm_61
     "6.1": {"amp_fp16": False, "amp_bf16": False, "compile": False, "channels_last": False,
-             "note": "Pascal (GTX 10xx) — AMP non supporté, training en FP32 uniquement"},
+             "note": _t("Pascal (GTX 10xx) — AMP non supporté, training en FP32 uniquement",
+                        "Pascal (GTX 10xx) — AMP not supported, training in FP32 only")},
     # Turing (RTX 20xx) — sm_75
     "7.5": {"amp_fp16": True, "amp_bf16": False, "compile": True, "channels_last": True,
-             "note": "Turing (RTX 20xx) — AMP FP16 supporté"},
+             "note": _t("Turing (RTX 20xx) — AMP FP16 supporté",
+                        "Turing (RTX 20xx) — AMP FP16 supported")},
     # Ampere (RTX 30xx) — sm_80/86
     "8.0": {"amp_fp16": True, "amp_bf16": True, "compile": True, "channels_last": True,
-             "note": "Ampere (RTX 30xx) — AMP FP16 + BF16 supportés"},
+             "note": _t("Ampere (RTX 30xx) — AMP FP16 + BF16 supportés",
+                        "Ampere (RTX 30xx) — AMP FP16 + BF16 supported")},
     "8.6": {"amp_fp16": True, "amp_bf16": True, "compile": True, "channels_last": True,
-             "note": "Ampere (RTX 30xx) — AMP FP16 + BF16 supportés"},
+             "note": _t("Ampere (RTX 30xx) — AMP FP16 + BF16 supportés",
+                        "Ampere (RTX 30xx) — AMP FP16 + BF16 supported")},
     "8.9": {"amp_fp16": True, "amp_bf16": True, "compile": True, "channels_last": True,
-             "note": "Ada Lovelace (RTX 40xx) — Toutes les optimisations supportées"},
+             "note": _t("Ada Lovelace (RTX 40xx) — Toutes les optimisations supportées",
+                        "Ada Lovelace (RTX 40xx) — All optimisations supported")},
     # Fallback
     "default": {"amp_fp16": False, "amp_bf16": False, "compile": False, "channels_last": False,
-                "note": "GPU inconnu — AMP désactivé par précaution"},
+                "note": _t("GPU inconnu — AMP désactivé par précaution",
+                           "Unknown GPU — AMP disabled as a precaution")},
 }
 
 
@@ -83,7 +101,7 @@ class GPUInfo:
             f"GPU : {self.name}",
             f"VRAM : {self.total_vram_gb:.1f} GB",
             f"Compute Capability : sm_{self.cc_str.replace('.', '')}",
-            f"AMP FP16 : {'✅' if self.supports_amp else '❌ Non supporté'}",
+            f"AMP FP16 : {'✅' if self.supports_amp else _t('❌ Non supporté', '❌ Not supported')}",
             f"AMP BF16 : {'✅' if self.supports_bf16 else '❌'}",
             f"torch.compile : {'✅' if self.supports_compile else '❌'}",
             "",
@@ -825,220 +843,283 @@ class WizardEngine:
         questions = [
             # 0. GPU Info (informational)
             Question(
-                id="gpu_info", text="Détection de votre matériel",
+                id="gpu_info", text=_t("Détection de votre matériel", "Hardware detection"),
                 type=QuestionType.INFO,
                 help_text=(gpu.get_gpu_summary() if gpu else
-                           "⚠️ Aucun GPU NVIDIA détecté.\nLe training SR nécessite un GPU NVIDIA avec CUDA.\n"
-                           "Vérifiez votre installation PyTorch + CUDA."),
+                           _t("⚠️ Aucun GPU NVIDIA détecté.\nLe training SR nécessite un GPU NVIDIA avec CUDA.\n"
+                              "Vérifiez votre installation PyTorch + CUDA.",
+                              "⚠️ No NVIDIA GPU detected.\nSR training requires an NVIDIA GPU with CUDA.\n"
+                              "Check your PyTorch + CUDA installation.")),
                 default="ok",
             ),
             # 1. Engine
             Question(
                 id="engine",
-                text="Quel moteur d'entraînement voulez-vous utiliser ?",
+                text=_t("Quel moteur d'entraînement voulez-vous utiliser ?",
+                        "Which training engine do you want to use?"),
                 type=QuestionType.CHOICE,
                 options=["NeoSR", "TraiNNer-Redux"],
                 default="NeoSR",
-                help_text=(
+                help_text=_t(
                     "NeoSR : format TOML, dégradations Real-ESRGAN, optimiseurs avancés (Adan, Adam).\n"
                     "  → Fichiers : .toml\n\n"
                     "TraiNNer-Redux : format YAML, architectures modernes (TemporalSPAN), losses avancées.\n"
                     "  → Fichiers : .yml\n\n"
-                    "Les deux moteurs produisent des modèles compatibles (PyTorch .pth/.safetensors)."
+                    "Les deux moteurs produisent des modèles compatibles (PyTorch .pth/.safetensors).",
+                    "NeoSR: TOML format, Real-ESRGAN degradations, advanced optimisers (Adan, Adam).\n"
+                    "  → Files: .toml\n\n"
+                    "TraiNNer-Redux: YAML format, modern architectures (TemporalSPAN), advanced losses.\n"
+                    "  → Files: .yml\n\n"
+                    "Both engines produce compatible models (PyTorch .pth/.safetensors)."
                 ),
             ),
             # 2. Content type
             Question(
                 id="content_type",
-                text="Quel type de contenu voulez-vous upscaler ?",
+                text=_t("Quel type de contenu voulez-vous upscaler ?",
+                        "What type of content do you want to upscale?"),
                 type=QuestionType.CHOICE,
                 options=["anime", "photo", "mixte"],
                 default="mixte",
-                help_text=(
+                help_text=_t(
                     "Anime : lignes nettes, aplats de couleur, peu de textures naturelles.\n"
                     "Photo : textures riches, dégradés subtils, détails fins.\n"
-                    "Mixte : les deux types, bon compromis polyvalent."
+                    "Mixte : les deux types, bon compromis polyvalent.",
+                    "Anime: sharp lines, flat colours, few natural textures.\n"
+                    "Photo: rich textures, subtle gradients, fine details.\n"
+                    "Mixed: both types, good all-round compromise."
                 ),
             ),
             # 3. Scale
             Question(
                 id="scale",
-                text="Quel facteur d'upscale ?",
+                text=_t("Quel facteur d'upscale ?", "What upscale factor?"),
                 type=QuestionType.CHOICE,
                 options=[],  # Filled dynamically based on engine
                 default="4",
-                help_text=(
+                help_text=_t(
                     "1x : même résolution (restauration/denoise uniquement).\n"
                     "2x : double la résolution (ex: 480p → 960p).\n"
                     "3x : triple (plus rare, certaines architectures seulement).\n"
                     "4x : quadruple (ex: 480p → 1920p). Le plus courant.\n"
-                    "8x : octuple (Redux uniquement, très lourd en VRAM)."
+                    "8x : octuple (Redux uniquement, très lourd en VRAM).",
+                    "1x: same resolution (restore/denoise only).\n"
+                    "2x: doubles resolution (e.g. 480p → 960p).\n"
+                    "3x: triple (rarer, some architectures only).\n"
+                    "4x: quadruple (e.g. 480p → 1920p). Most common.\n"
+                    "8x: octuple (Redux only, very VRAM-heavy)."
                 ),
             ),
             # 4. Objective
             Question(
                 id="objective",
-                text="Quel est votre objectif principal ?",
+                text=_t("Quel est votre objectif principal ?", "What is your main objective?"),
                 type=QuestionType.CHOICE,
                 options=["qualite", "vitesse", "equilibre"],
                 default="equilibre",
-                help_text=(
+                help_text=_t(
                     "Qualité : meilleur résultat visuel, modèle plus lourd, training plus long.\n"
                     "Vitesse : modèle léger pour inférence rapide (temps réel, vidéo).\n"
-                    "Équilibre : bon compromis qualité/vitesse pour la majorité des cas."
+                    "Équilibre : bon compromis qualité/vitesse pour la majorité des cas.",
+                    "Quality: best visual result, heavier model, longer training.\n"
+                    "Speed: lightweight model for fast inference (real-time, video).\n"
+                    "Balance: good quality/speed trade-off for most use cases."
                 ),
             ),
             # 5. Architecture
             Question(
                 id="arch",
-                text="Quelle architecture réseau utiliser ?",
+                text=_t("Quelle architecture réseau utiliser ?", "Which network architecture to use?"),
                 type=QuestionType.CHOICE,
                 options=[],  # Filled dynamically based on engine
                 default="span",
-                help_text=(
+                help_text=_t(
                     "L'architecture définit la structure du réseau de neurones.\n"
                     "SPAN/Compact : léger, rapide (6-8 GB VRAM)\n"
                     "OmniSR/RealPLKSR : moyen, bon rapport qualité/vitesse (8-11 GB)\n"
                     "HAT/DAT : lourd, haute qualité (12-24 GB)\n"
-                    "ESRGAN : classique, flexible, compatible GAN"
+                    "ESRGAN : classique, flexible, compatible GAN",
+                    "The architecture defines the neural network structure.\n"
+                    "SPAN/Compact: lightweight, fast (6-8 GB VRAM)\n"
+                    "OmniSR/RealPLKSR: medium, good quality/speed ratio (8-11 GB)\n"
+                    "HAT/DAT: heavy, high quality (12-24 GB)\n"
+                    "ESRGAN: classic, flexible, GAN-compatible"
                 ),
             ),
             # 6. Dataset mode
             Question(
                 id="dataset_mode",
-                text="Mode de dataset ?",
+                text=_t("Mode de dataset ?", "Dataset mode?"),
                 type=QuestionType.CHOICE,
                 options=["otf", "paired"],
                 default="otf",
-                help_text=(
+                help_text=_t(
                     "OTF (On-The-Fly) : Vous ne fournissez que les images HQ.\n"
                     "  Le moteur génère les dégradations (bruit, flou, compression) pendant le training.\n"
                     "  ✅ Plus simple, plus varié, recommandé pour débuter.\n\n"
                     "Paired : Vous fournissez des paires HQ + LQ pré-générées.\n"
-                    "  ✅ Contrôle total sur les dégradations, reproductible."
+                    "  ✅ Contrôle total sur les dégradations, reproductible.",
+                    "OTF (On-The-Fly): You only provide HQ images.\n"
+                    "  The engine generates degradations (noise, blur, compression) during training.\n"
+                    "  ✅ Simpler, more varied, recommended for beginners.\n\n"
+                    "Paired: You provide pre-generated HQ + LQ pairs.\n"
+                    "  ✅ Full control over degradations, reproducible."
                 ),
             ),
             # 7. Dataset GT
             Question(
                 id="dataset_gt",
-                text="Dossier des images haute qualité (GT/HQ) :",
+                text=_t("Dossier des images haute qualité (GT/HQ) :",
+                        "High-quality images folder (GT/HQ):"),
                 type=QuestionType.PATH,
-                help_text="Le dossier contenant vos images sources en haute résolution pour le training.",
+                help_text=_t("Le dossier contenant vos images sources en haute résolution pour le training.",
+                             "The folder containing your high-resolution source images for training."),
             ),
             # 8. Dataset LQ (only for paired mode)
             Question(
                 id="dataset_lq",
-                text="Dossier des images basse qualité (LQ) :",
+                text=_t("Dossier des images basse qualité (LQ) :",
+                        "Low-quality images folder (LQ):"),
                 type=QuestionType.PATH,
-                help_text="Le dossier des images dégradées correspondantes.",
+                help_text=_t("Le dossier des images dégradées correspondantes.",
+                             "The folder containing the corresponding degraded images."),
                 skip_condition=lambda a: a.get("dataset_mode", "otf") != "paired",
             ),
             # 9. Batch size
             Question(
                 id="batch_size",
-                text="Batch size (images simultanées par itération) :",
+                text=_t("Batch size (images simultanées par itération) :",
+                        "Batch size (simultaneous images per iteration):"),
                 type=QuestionType.NUMBER,
                 default=str(gpu.get_recommended_batch_size() if gpu else 4),
                 options=["1", "2", "4", "8"],
-                help_text=(
+                help_text=_t(
                     "Nombre d'images traitées en parallèle à chaque itération.\n"
                     "Plus gros = convergence plus stable mais plus de VRAM.\n"
-                    "Si VRAM insuffisante, réduisez ou utilisez l'accumulation de gradients."
+                    "Si VRAM insuffisante, réduisez ou utilisez l'accumulation de gradients.",
+                    "Number of images processed in parallel per iteration.\n"
+                    "Larger = more stable convergence but more VRAM.\n"
+                    "If VRAM is insufficient, reduce or use gradient accumulation."
                 ),
                 validation=lambda v: 1 <= _safe_int(v) <= 32,
             ),
             # 10. Patch size
             Question(
                 id="patch_size",
-                text="Patch/LQ size (taille des crops d'entraînement) :",
+                text=_t("Patch/LQ size (taille des crops d'entraînement) :",
+                        "Patch/LQ size (training crop size):"),
                 type=QuestionType.NUMBER,
                 default=str(gpu.get_recommended_patch_size() if gpu else 64),
                 options=["48", "64", "96", "128"],
-                help_text=(
+                help_text=_t(
                     "Taille des sous-images extraites pour le training.\n"
                     "Plus grand = le réseau voit plus de contexte = meilleure qualité.\n"
                     "Mais consomme beaucoup plus de VRAM (quadratique).\n"
-                    "NeoSR : c'est 'patch_size'. Redux : c'est 'lq_size'."
+                    "NeoSR : c'est 'patch_size'. Redux : c'est 'lq_size'.",
+                    "Size of the sub-images extracted for training.\n"
+                    "Larger = network sees more context = better quality.\n"
+                    "But uses much more VRAM (quadratic scaling).\n"
+                    "NeoSR: this is 'patch_size'. Redux: this is 'lq_size'."
                 ),
                 validation=lambda v: _safe_int(v) in (32, 48, 64, 96, 128, 192, 256),
             ),
             # 11. Iterations
             Question(
                 id="iterations",
-                text="Nombre d'itérations de training :",
+                text=_t("Nombre d'itérations de training :", "Number of training iterations:"),
                 type=QuestionType.NUMBER,
                 default="100000",
                 options=["50000", "100000", "200000", "500000"],
-                help_text=(
+                help_text=_t(
                     "Plus d'itérations = meilleur résultat mais plus long.\n"
                     "50K : test rapide / fine-tuning court.\n"
                     "100K-200K : training standard.\n"
-                    "500K+ : entraînement complet from scratch (plusieurs jours)."
+                    "500K+ : entraînement complet from scratch (plusieurs jours).",
+                    "More iterations = better result but longer training.\n"
+                    "50K: quick test / short fine-tuning.\n"
+                    "100K-200K: standard training.\n"
+                    "500K+: full training from scratch (several days)."
                 ),
                 validation=lambda v: 1000 <= _safe_int(v) <= 2000000,
             ),
             # 12. GAN
             Question(
                 id="use_gan",
-                text="Utiliser un GAN (discriminateur) ?",
+                text=_t("Utiliser un GAN (discriminateur) ?", "Use a GAN (discriminator)?"),
                 type=QuestionType.BOOL,
                 default=False,
-                help_text=(
+                help_text=_t(
                     "Le GAN (Generative Adversarial Network) ajoute un réseau « juge » qui pousse\n"
                     "le générateur à produire des images plus réalistes et nettes.\n\n"
                     "✅ Avantages : textures plus nettes, détails plus fins\n"
                     "❌ Inconvénients : +30% VRAM, training plus instable, risque d'artefacts\n\n"
-                    "Recommandé en 2ème phase (fine-tune) après un training PSNR initial."
+                    "Recommandé en 2ème phase (fine-tune) après un training PSNR initial.",
+                    "The GAN (Generative Adversarial Network) adds a 'judge' network that pushes\n"
+                    "the generator to produce sharper, more realistic images.\n\n"
+                    "✅ Advantages: sharper textures, finer details\n"
+                    "❌ Disadvantages: +30% VRAM, less stable training, risk of artefacts\n\n"
+                    "Recommended in a 2nd phase (fine-tune) after an initial PSNR training."
                 ),
             ),
             # 13. Discriminator type (skip if no GAN)
             Question(
                 id="discriminator_type",
-                text="Type de discriminateur :",
+                text=_t("Type de discriminateur :", "Discriminator type:"),
                 type=QuestionType.CHOICE,
                 options=[],  # Filled dynamically
                 default="unet",
-                help_text="Le type de réseau discriminateur pour le GAN.",
+                help_text=_t("Le type de réseau discriminateur pour le GAN.",
+                             "The discriminator network type for the GAN."),
                 skip_condition=lambda a: not a.get("use_gan", False),
             ),
             # 14. AMP
             Question(
                 id="use_amp",
-                text="Utiliser Mixed Precision (AMP) ?",
+                text=_t("Utiliser Mixed Precision (AMP) ?", "Use Mixed Precision (AMP)?"),
                 type=QuestionType.BOOL,
                 default=True if (gpu and gpu.supports_amp) else False,
-                help_text=(
+                help_text=_t(
                     "AMP (Automatic Mixed Precision) utilise FP16 au lieu de FP32.\n"
                     "Réduit la VRAM ~30% et accélère le training ~20-40%.\n\n"
                     "⚠️ Nécessite un GPU avec Tensor Cores (RTX 20xx+, sm_75+).\n"
-                    "Les GPU Pascal (GTX 10xx) ne supportent PAS AMP."
+                    "Les GPU Pascal (GTX 10xx) ne supportent PAS AMP.",
+                    "AMP (Automatic Mixed Precision) uses FP16 instead of FP32.\n"
+                    "Reduces VRAM ~30% and speeds up training ~20-40%.\n\n"
+                    "⚠️ Requires a GPU with Tensor Cores (RTX 20xx+, sm_75+).\n"
+                    "Pascal GPUs (GTX 10xx) do NOT support AMP."
                 ),
             ),
             # 15. Learning rate
             Question(
                 id="learning_rate",
-                text="Learning rate :",
+                text=_t("Learning rate :", "Learning rate:"),
                 type=QuestionType.NUMBER,
                 default="0.0002",
                 options=["0.0001", "0.0002", "0.0005", "0.001"],
-                help_text=(
+                help_text=_t(
                     "Vitesse d'apprentissage du réseau.\n"
                     "1e-4 (0.0001) : standard, stable pour la plupart des cas.\n"
                     "2e-4 (0.0002) : bon défaut pour Adam/AdamW.\n"
                     "5e-4 (0.0005) : agressif, convergence rapide, risque d'instabilité.\n"
                     "1e-3 (0.001) : recommandé pour SOAP_SF (NeoSR) uniquement.\n"
-                    "1e-5 : conservateur, pour fine-tuning d'un modèle existant."
+                    "1e-5 : conservateur, pour fine-tuning d'un modèle existant.",
+                    "Network learning speed.\n"
+                    "1e-4 (0.0001): standard, stable for most cases.\n"
+                    "2e-4 (0.0002): good default for Adam/AdamW.\n"
+                    "5e-4 (0.0005): aggressive, fast convergence, risk of instability.\n"
+                    "1e-3 (0.001): recommended for SOAP_SF (NeoSR) only.\n"
+                    "1e-5: conservative, for fine-tuning an existing model."
                 ),
                 validation=lambda v: 1e-7 <= _safe_float(v) <= 0.01,
             ),
             # 15b. Optimizer
             Question(
                 id="optimizer",
-                text="Optimiseur :",
+                text=_t("Optimiseur :", "Optimiser:"),
                 type=QuestionType.CHOICE,
                 options=[],  # Filled dynamically based on engine
                 default="AdamW",
-                help_text=(
+                help_text=_t(
                     "L'optimiseur contrôle comment les poids du réseau sont mis à jour.\n\n"
                     "NeoSR :\n"
                     "  Adam/AdamW : standards, fiables, bons pour débuter.\n"
@@ -1049,32 +1130,50 @@ class WizardEngine:
                     "TraiNNer-Redux :\n"
                     "  Adam/AdamW : standards PyTorch, fiables.\n"
                     "  NAdam : Adam avec momentum de Nesterov.\n"
-                    "  RAdam : Adam rectifié, plus stable au démarrage."
+                    "  RAdam : Adam rectifié, plus stable au démarrage.",
+                    "The optimiser controls how network weights are updated.\n\n"
+                    "NeoSR:\n"
+                    "  Adam/AdamW: standard, reliable, good for beginners.\n"
+                    "  Adan: fast convergence, good for SR. 3 betas instead of 2.\n"
+                    "  AdamW_Win: accelerated AdamW variant.\n"
+                    "  AdamW_SF / Adan_SF / SOAP_SF: Schedule-Free — no scheduler needed.\n"
+                    "    ⚠️ Requires 'schedule_free = true' in the config.\n\n"
+                    "TraiNNer-Redux:\n"
+                    "  Adam/AdamW: standard PyTorch, reliable.\n"
+                    "  NAdam: Adam with Nesterov momentum.\n"
+                    "  RAdam: Rectified Adam, more stable at start-up."
                 ),
             ),
             # 15c. Scheduler
             Question(
                 id="scheduler",
-                text="Scheduler (planification du learning rate) :",
+                text=_t("Scheduler (planification du learning rate) :",
+                        "Scheduler (learning rate schedule):"),
                 type=QuestionType.CHOICE,
                 options=[],  # Filled dynamically based on engine
                 default="MultiStepLR",
-                help_text=(
+                help_text=_t(
                     "Le scheduler réduit le learning rate pendant le training pour affiner la convergence.\n\n"
                     "MultiStepLR : baisse le LR par paliers (milestones). Simple et efficace.\n"
                     "CosineAnnealing : descente en cosinus, plus douce. Bon pour les longs trainings.\n\n"
                     "⚠️ Si vous utilisez un optimiseur Schedule-Free (SF),\n"
-                    "le scheduler est ignoré (il est intégré dans l'optimiseur)."
+                    "le scheduler est ignoré (il est intégré dans l'optimiseur).",
+                    "The scheduler reduces the learning rate during training to refine convergence.\n\n"
+                    "MultiStepLR: drops LR at set milestones. Simple and effective.\n"
+                    "CosineAnnealing: smooth cosine decay. Good for long trainings.\n\n"
+                    "⚠️ If you use a Schedule-Free (SF) optimiser,\n"
+                    "the scheduler is ignored (it is built into the optimiser)."
                 ),
                 skip_condition=lambda a: str(a.get("optimizer", "")).endswith("_SF"),
             ),
             # 16. Experiment name
             Question(
                 id="experiment_name",
-                text="Nom de l'expérience :",
+                text=_t("Nom de l'expérience :", "Experiment name:"),
                 type=QuestionType.TEXT,
                 default="my_sr_model",
-                help_text="Ce nom sera utilisé pour les dossiers de checkpoints, logs et résultats.",
+                help_text=_t("Ce nom sera utilisé pour les dossiers de checkpoints, logs et résultats.",
+                             "This name will be used for checkpoint, log, and results folders."),
                 validation=lambda v: len(str(v).strip()) > 0,
             ),
         ]
