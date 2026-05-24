@@ -446,7 +446,7 @@ log("[OK] TERMINE !")
 
         has_tc = rec.get("has_tensor_cores", False)
         gpu_col = "#2ecc71" if has_tc else "#f39c12"
-        tc_tag = "✅ Tensor Cores" if has_tc else "⚠️ Sans Tensor Cores"
+        tc_tag = "✅ Tensor Cores" if has_tc else f"⚠️ {_t('Sans Tensor Cores', 'Without Tensor Cores')}"
 
         # Row 1 : GPU name + generation
         r1 = ctk.CTkFrame(self._gpu_advisory_body, fg_color="transparent")
@@ -515,7 +515,7 @@ log("[OK] TERMINE !")
                 if inst_tuple < min_tuple:
                     # Version trop ancienne → upgrade nécessaire
                     ctk.CTkButton(
-                        r_eng, text=f"⬆ Mettre a jour PyTorch {installed} → {rec_ver} ({eng_name})",
+                        r_eng, text=f"⬆ {_t('Mettre a jour', 'Update')} PyTorch {installed} → {rec_ver} ({eng_name})",
                         fg_color="#c0392b", height=28, font=("Arial", 11),
                         command=lambda p=venv_py, ep=eng_path, pk=pkgs, w=whl, en=eng_name:
                             self._install_pytorch_for_engine(p, ep, pk, w, en)
@@ -544,7 +544,8 @@ log("[OK] TERMINE !")
             r4_empty = ctk.CTkFrame(self._gpu_advisory_body, fg_color="transparent")
             r4_empty.pack(fill="x", pady=(4, 0))
             ctk.CTkLabel(r4_empty,
-                         text="(Aucun moteur installe — installe d'abord NeoSR ou TraiNNer-Redux)",
+                         text=_t("(Aucun moteur installe — installe d'abord NeoSR ou TraiNNer-Redux)",
+                                  "(No engine installed — install NeoSR or TraiNNer-Redux first)"),
                          text_color="#888", font=("Arial", 10)).pack(anchor="w")
 
     def _install_pytorch_for_engine(self, py_venv: str, cwd: str, pkgs: list, whl_url: str, engine_name: str):

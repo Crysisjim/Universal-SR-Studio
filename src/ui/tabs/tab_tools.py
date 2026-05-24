@@ -39,6 +39,50 @@ def _t(fr: str, en: str) -> str:
     return fr
 
 
+def _find_torch_python() -> str:
+    """Return path to a Python executable that has torch available.
+
+    Tries in order:
+    1. Current process (works when running main.py in a torch env)
+    2. TraiNNer-Redux venv
+    3. NeoSR venv
+
+    Returns '' if no usable Python with torch is found.
+    """
+    # 1. Direct import
+    try:
+        import torch  # noqa: F401
+        return sys.executable
+    except ImportError:
+        pass
+
+    # 2. Engine venvs
+    home = os.path.expanduser("~")
+    candidates = [
+        os.path.join(home, "IA_Engine", "traiNNer-redux", ".venv", "Scripts", "python.exe"),
+        os.path.join(home, "IA_Engine", "neosr", ".venv", "Scripts", "python.exe"),
+        os.path.join(home, "IA_Engine", "traiNNer-redux", "venv", "Scripts", "python.exe"),
+        os.path.join(home, "IA_Engine", "neosr", "venv", "Scripts", "python.exe"),
+        os.path.join(home, "IA_Engine", "traiNNer-redux", ".venv", "bin", "python"),
+        os.path.join(home, "IA_Engine", "neosr", ".venv", "bin", "python"),
+    ]
+    flags = 0x08000000 if sys.platform == "win32" else 0  # CREATE_NO_WINDOW
+    for py in candidates:
+        if not os.path.exists(py):
+            continue
+        try:
+            r = subprocess.run(
+                [py, "-c", "import torch; print('ok')"],
+                capture_output=True, text=True, timeout=8,
+                creationflags=flags
+            )
+            if r.returncode == 0 and "ok" in r.stdout:
+                return py
+        except Exception:
+            continue
+    return ""
+
+
 class ToolsTab(ctk.CTkFrame):
     def __init__(self, master, **kwargs):
         super().__init__(master, **kwargs)
@@ -1446,8 +1490,134 @@ class ToolsTab(ctk.CTkFrame):
         def log(msg):
             self._ui_update(self.widgets["log_conv"].insert, "end", msg + "\n")
 
+        # ── Portable / no-torch fallback: find engine Python ───────────────
+        _torch_py = _find_torch_python()
+        if not _torch_py:
+            messagebox.showerror(
+                _t("PyTorch introuvable", "PyTorch not found"),
+                _t(
+                    "PyTorch n'est pas disponible.\n\n"
+                    "Installez-le dans NeoSR ou TraiNNer-Redux\n"
+                    "(Réglages → Système & Dépendances).",
+                    "PyTorch is not available.\n\n"
+                    "Install it in NeoSR or TraiNNer-Redux\n"
+                    "(Settings → System & Dependencies)."
+                )
+            )
+            return
+        _use_subprocess = _torch_py != sys.executable
+
         def worker():
             try:
+                if _use_subprocess:
+                    import json as _json, tempfile as _tmp
+                    # Generate a self-contained conversion script and run it
+                    # with the engine Python that has torch available.
+                    script = f"""
+import sys, os, json
+import torch
+
+pth      = {repr(pth)}
+out_dir  = {repr(out_dir)}
+do_pth   = {do_pth}
+do_fp16  = {do_fp16}
+do_bf16  = {do_bf16}
+do_safe  = {do_safe}
+do_onnx  = {do_onnx}
+do_ncnn  = {do_ncnn}
+do_trt   = {do_trt}
+do_tf32  = {do_tf32}
+opset    = {opset}
+
+def log(m): print(m, flush=True)
+
+if do_tf32:
+    try:
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
+        log("→ TF32 enabled (fast matmul)")
+    except Exception: pass
+
+log(f"Loading: {{os.path.basename(pth)}}")
+pth_lower = pth.lower()
+if pth_lower.endswith(".safetensors"):
+    try:
+        from safetensors.torch import load_file as _stload
+        state = _stload(pth, device="cpu")
+    except ImportError:
+        log("❌ safetensors not installed (pip install safetensors)"); sys.exit(1)
+else:
+    state = torch.load(pth, map_location="cpu", weights_only=False)
+    for key in ("params_ema","params_g","params","model","state_dict"):
+        if isinstance(state, dict) and key in state:
+            state = state[key]; break
+
+if not isinstance(state, dict):
+    log("❌ Unrecognized format — state_dict not found."); sys.exit(1)
+
+base = os.path.splitext(os.path.basename(pth))[0]
+
+if do_pth:
+    log("→ Saving PTH (weights only)...")
+    torch.save(state, os.path.join(out_dir, f"{{base}}_clean.pth"))
+    log(f"  ✅ {{os.path.join(out_dir, base+'_clean.pth')}}")
+
+if do_fp16:
+    log("→ FP16 conversion...")
+    fp16 = {{k: v.half() if v.is_floating_point() else v for k, v in state.items()}}
+    torch.save(fp16, os.path.join(out_dir, f"{{base}}_fp16.pth"))
+    log(f"  ✅ {{os.path.join(out_dir, base+'_fp16.pth')}}")
+
+if do_bf16:
+    log("→ BF16 conversion...")
+    try:
+        bf16 = {{k: v.to(torch.bfloat16) if v.is_floating_point() else v for k, v in state.items()}}
+        torch.save(bf16, os.path.join(out_dir, f"{{base}}_bf16.pth"))
+        log(f"  ✅ {{os.path.join(out_dir, base+'_bf16.pth')}}")
+    except Exception as e: log(f"  ❌ BF16: {{e}}")
+
+if do_safe:
+    log("→ SafeTensors conversion...")
+    try:
+        from safetensors.torch import save_file
+        safe = {{k: v.contiguous().float() if v.is_floating_point() else v for k, v in state.items()}}
+        save_file(safe, os.path.join(out_dir, f"{{base}}.safetensors"))
+        log(f"  ✅ {{os.path.join(out_dir, base+'.safetensors')}}")
+    except ImportError: log("  ❌ safetensors not installed (pip install safetensors)")
+
+if do_onnx or do_ncnn or do_trt:
+    log(f"→ ONNX export via neosr.utils.convert (opset {{opset}})...")
+    try:
+        import subprocess as _sp
+        r = _sp.run([sys.executable, "-m", "neosr.utils.convert", "--input", pth,
+                     "--onnx", "--opset", str(opset)],
+                    capture_output=True, text=True, timeout=120)
+        log("  ✅ ONNX exported" if r.returncode == 0 else f"  ⚠️ {{r.stderr.strip()[:300]}}")
+    except Exception as e: log(f"  ❌ {{e}}")
+    if do_ncnn: log("→ For NCNN: convert .onnx with 'onnx2ncnn' (separate tool)")
+    if do_trt:  log("→ For TensorRT: use 'trtexec --onnx=model.onnx --saveEngine=model.trt'")
+
+log("✅ Conversion complete.")
+"""
+                    with _tmp.NamedTemporaryFile(mode='w', suffix='.py', delete=False,
+                                                 encoding='utf-8') as _f:
+                        _f.write(script)
+                        _tmp_path = _f.name
+                    try:
+                        flags = 0x08000000 if sys.platform == "win32" else 0
+                        proc = subprocess.Popen(
+                            [_torch_py, _tmp_path],
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            text=True, creationflags=flags
+                        )
+                        for line in proc.stdout:
+                            log(line.rstrip())
+                        proc.wait()
+                    finally:
+                        try: os.remove(_tmp_path)
+                        except Exception: pass
+                    return
+
                 import torch
                 if do_tf32:
                     try:

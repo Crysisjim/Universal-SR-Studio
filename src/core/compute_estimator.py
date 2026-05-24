@@ -471,23 +471,24 @@ def get_pytorch_recommendation(gpu_name: str = None) -> dict:
         gen = "Ada Lovelace / Hopper"
         has_tc = True
         tv = "2.7.0"; vv = "0.22.0"; ctag = "cu126"; min_tv = "2.5.0"
-        features = ["BF16 Tensor Cores (natif)", "FP16 AMP", "TF32 (fast_matmul)", "FP8 (Ada)"]
-        limits = ["torch.compile requiert WSL2 sur Windows"]
-        note = "GPU moderne — PyTorch 2.7 + CUDA 12.6 recommande"
-        upgrade_reason = "Mettre a jour pour BF16 / TF32 / FP8 optimaux"
+        features = [_t("BF16 Tensor Cores (natif)", "BF16 Tensor Cores (native)"), "FP16 AMP", "TF32 (fast_matmul)", "FP8 (Ada)"]
+        limits = [_t("torch.compile requiert WSL2 sur Windows", "torch.compile requires WSL2 on Windows")]
+        note = _t("GPU moderne — PyTorch 2.7 + CUDA 12.6 recommande", "Modern GPU — PyTorch 2.7 + CUDA 12.6 recommended")
+        upgrade_reason = _t("Mettre a jour pour BF16 / TF32 / FP8 optimaux", "Update for optimal BF16 / TF32 / FP8")
 
     # --- Ampere (RTX 30xx, A100, A40…) ---
     elif any(p in gn for p in ["RTX 30", "A100", "A10G", "A40", "A30"]):
         gen = "Ampere"
         has_tc = True
         tv = "2.7.0"; vv = "0.22.0"; ctag = "cu126"; min_tv = "2.5.0"
-        features = ["BF16 Tensor Cores (natif)", "FP16 AMP", "TF32 (fast_matmul)"]
+        features = [_t("BF16 Tensor Cores (natif)", "BF16 Tensor Cores (native)"), "FP16 AMP", "TF32 (fast_matmul)"]
         limits = [
-            "torch.compile requiert WSL2 sur Windows",
-            "fast_matmul (TF32) : verifier que traiNNer-redux utilise API PyTorch ≥2.7",
+            _t("torch.compile requiert WSL2 sur Windows", "torch.compile requires WSL2 on Windows"),
+            _t("fast_matmul (TF32) : verifier que traiNNer-redux utilise API PyTorch ≥2.7",
+               "fast_matmul (TF32): verify traiNNer-redux uses PyTorch ≥2.7 API"),
         ]
-        note = "GPU Ampere — PyTorch 2.7 + CUDA 12.6 recommande"
-        upgrade_reason = "Mettre a jour pour BF16 / TF32 optimaux"
+        note = _t("GPU Ampere — PyTorch 2.7 + CUDA 12.6 recommande", "Ampere GPU — PyTorch 2.7 + CUDA 12.6 recommended")
+        upgrade_reason = _t("Mettre a jour pour BF16 / TF32 optimaux", "Update for optimal BF16 / TF32")
 
     # --- Turing (RTX 20xx) ---
     elif any(p in gn for p in ["RTX 20"]):
@@ -496,12 +497,12 @@ def get_pytorch_recommendation(gpu_name: str = None) -> dict:
         tv = "2.6.0"; vv = "0.21.0"; ctag = "cu124"; min_tv = "2.3.0"
         features = ["FP16 AMP", "Tensor Cores (FP16/INT8)"]
         limits = [
-            "BF16 : support partiel sur Turing (pas natif)",
-            "TF32 non supporte sur Turing",
-            "torch.compile requiert WSL2 sur Windows",
+            _t("BF16 : support partiel sur Turing (pas natif)", "BF16: partial support on Turing (not native)"),
+            _t("TF32 non supporte sur Turing", "TF32 not supported on Turing"),
+            _t("torch.compile requiert WSL2 sur Windows", "torch.compile requires WSL2 on Windows"),
         ]
-        note = "GPU Turing — PyTorch 2.6 + CUDA 12.4 recommande"
-        upgrade_reason = "Mettre a jour pour FP16 AMP stable"
+        note = _t("GPU Turing — PyTorch 2.6 + CUDA 12.4 recommande", "Turing GPU — PyTorch 2.6 + CUDA 12.4 recommended")
+        upgrade_reason = _t("Mettre a jour pour FP16 AMP stable", "Update for stable FP16 AMP")
 
     # --- Pascal / Maxwell / Kepler (GTX 10xx, GTX 9xx, GTX 7xx, GT…) ---
     else:
@@ -510,15 +511,15 @@ def get_pytorch_recommendation(gpu_name: str = None) -> dict:
         # Recommend latest stable — works fine on Pascal, just without Tensor Core features.
         # Do NOT recommend downgrading — any PyTorch ≥2.3 is fine.
         tv = "2.7.0"; vv = "0.22.0"; ctag = "cu126"; min_tv = "2.3.0"
-        features = ["FP32 standard", "FP16 AMP (partiel)"]
+        features = ["FP32 standard", _t("FP16 AMP (partiel)", "FP16 AMP (partial)")]
         limits = [
-            "Pas de Tensor Cores → BF16 et TF32 non disponibles",
-            "Ne pas activer : use_amp BF16, fast_matmul, tf32",
-            "torch.compile non disponible",
-            "AMP FP16 moins stable que sur Ampere+",
+            _t("Pas de Tensor Cores → BF16 et TF32 non disponibles", "No Tensor Cores → BF16 and TF32 unavailable"),
+            _t("Ne pas activer : use_amp BF16, fast_matmul, tf32", "Do not enable: use_amp BF16, fast_matmul, tf32"),
+            _t("torch.compile non disponible", "torch.compile unavailable"),
+            _t("AMP FP16 moins stable que sur Ampere+", "AMP FP16 less stable than on Ampere+"),
         ]
-        note = "GPU sans Tensor Cores — toute version PyTorch ≥2.3 convient"
-        upgrade_reason = "Mettre a jour vers la derniere version stable"
+        note = _t("GPU sans Tensor Cores — toute version PyTorch ≥2.3 convient", "GPU without Tensor Cores — any PyTorch ≥2.3 works")
+        upgrade_reason = _t("Mettre a jour vers la derniere version stable", "Update to the latest stable version")
 
     whl_url = f"https://download.pytorch.org/whl/{ctag}"
     return {
