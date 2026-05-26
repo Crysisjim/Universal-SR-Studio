@@ -34,6 +34,19 @@ from datetime import datetime
 REDUX_PATH   = Path.home() / "IA_Engine" / "traiNNer-redux"
 TRAIN_SCRIPT = REDUX_PATH / "train.py"
 
+# ── Chemin racine du Studio (pour importer quick_upscale dans le subprocess) ──
+_STUDIO_ROOT = Path(__file__).resolve().parent.parent.parent  # Universal SR Studio DEV/
+
+# ── Modèle perso de référence pour les tests ECO + upscale ────────────────────
+_PERSONAL_MODEL = (
+    Path.home() / "IA_Engine" / "Final model" /
+    "Crysisjim SPANPlus Deband_HARD 1.0" /
+    "Crysisjim SPANPlus Deband_HARD 1.0.safetensors"
+)
+_DEFAULT_TEST_IMG = (
+    Path.home() / "IA_Engine" / "datasets" / "val" / "LQ" / "Overlord (1).png"
+)
+
 
 def _find_venv_python(base: Path) -> Path:
     """Cherche python.exe dans les emplacements courants du venv (Windows + Linux)."""
@@ -100,6 +113,9 @@ def _l(loss_type: str, weight: float = 1.0, extra: str = "") -> str:
     return f"    - type: {loss_type}\n      loss_weight: {weight}\n{extra}"
 
 _LOSSES: dict[str, str] = {
+    # ── Sprint 19/20 — SparK Perceptual Loss (InceptionNext features) ──────────
+    "spark_fd":         _l("SparkLoss", extra="      criterion: fd\n"),
+    "spark_charbonnier":_l("SparkLoss", extra="      criterion: charbonnier\n"),
     # pixel
     "charbonnier": _l("charbonnierloss"),
     "l1":          _l("l1loss"),
@@ -147,7 +163,21 @@ _LOSSES: dict[str, str] = {
 # ── Feature test registry ──────────────────────────────────────────────────────
 def _f(name, desc, category, loss_key=None, optim_block=None, sched_fn=None,
        use_amp=True, amp_bf16=True, channels_last=True,
-       fast_matmul=False, use_compile=False):
+       fast_matmul=False, use_compile=False,
+       extra_train_fields="", extra_path_fields="",
+       dataset_mode="paired", lq_size_override=None,
+       eco_pretrain_auto=False, eco_pretrain_path="",
+       keep_exp_dir=False, upscale_model_path=""):
+    """
+    extra_train_fields  : lignes YAML supplémentaires sous train: (ex: '  eco: true\n  eco_alpha: 0.05\n')
+    extra_path_fields   : lignes YAML supplémentaires sous path: (ex: '  eco_pretrain_g: /path\n')
+    dataset_mode        : 'paired' (défaut) | 'bicubic' (pairedimagedataset, LQ=GT)
+    lq_size_override    : remplace base_lq_size si défini (utile pour losses qui nécessitent lq≥128)
+    eco_pretrain_auto   : si True, cherche auto le checkpoint RFeat_dataset_bicubic pour eco_pretrain_g
+    eco_pretrain_path   : chemin direct vers un .safetensors/.pth à utiliser comme eco_pretrain_g
+    keep_exp_dir        : si True, ne supprime PAS exp_dir après le run (utile quand un test downstream en a besoin)
+    upscale_model_path  : si non vide, lance un upscale final avec ce modèle sur l'image de test
+    """
     return dict(
         name=name, desc=desc, category=category,
         loss_key=loss_key or "charbonnier",
@@ -156,6 +186,14 @@ def _f(name, desc, category, loss_key=None, optim_block=None, sched_fn=None,
         use_amp=use_amp, amp_bf16=amp_bf16,
         channels_last=channels_last,
         fast_matmul=fast_matmul, use_compile=use_compile,
+        extra_train_fields=extra_train_fields,
+        extra_path_fields=extra_path_fields,
+        dataset_mode=dataset_mode,
+        lq_size_override=lq_size_override,
+        eco_pretrain_auto=eco_pretrain_auto,
+        eco_pretrain_path=eco_pretrain_path,
+        keep_exp_dir=keep_exp_dir,
+        upscale_model_path=upscale_model_path,
     )
 
 
@@ -226,6 +264,47 @@ FEATURE_LIST = [
        "precision", fast_matmul=True),
     _f("prec_compile",    "BF16 AMP + torch.compile (default mode)",
        "precision", use_compile=True),
+
+    # ── Sprint 19/20 — Nouvelles features ────────────────────────────────────
+
+    # SparK Perceptual Loss (InceptionNext features, Redux uniquement)
+    # spark_fd: InceptionNext downsample aggressif → besoin lq≥128 (sinon kernel 4>spatial 3)
+    _f("loss_spark_fd",   "SparkLoss Fourier Domain (InceptionNext backbone)",
+       "losses_advanced", "spark_fd", lq_size_override=128),
+    _f("loss_spark_charb","SparkLoss Charbonnier (InceptionNext backbone)",
+       "losses_advanced", "spark_charbonnier"),
+
+    # Bicubic dataset — run AVANT eco_training pour générer un checkpoint compact réutilisable
+    _f("dataset_bicubic", "Bicubic dataset mode (pairedimagedataset, LQ=GT)",
+       "training_mode",
+       dataset_mode="bicubic",
+       keep_exp_dir=True),   # checkpoint gardé pour eco_pretrain_auto
+
+    # ECO Training Mode — blending weights with pretrained reference
+    # eco_pretrain_auto=True : cherche auto le checkpoint RFeat_dataset_bicubic généré ci-dessus
+    # Si absent : ECO log warning, training continue sans blend (comportement de fallback)
+    _f("eco_training",    "ECO Training Mode (α=0.05, weight blending — pretrain=RFeat_dataset_bicubic)",
+       "training_mode",
+       extra_train_fields="  eco: true\n  eco_alpha: 0.05\n",
+       eco_pretrain_auto=True),
+
+    # ── Tests perso : SPANPlus Deband_HARD comme modèle de référence ─────────
+    # bicubic_personal : même que dataset_bicubic mais avec upscale final via modèle perso
+    _f("bicubic_personal",
+       "Bicubic dataset (pairedimagedataset) + upscale final SPANPlus Deband_HARD",
+       "training_mode",
+       dataset_mode="bicubic",
+       keep_exp_dir=True,
+       upscale_model_path=str(_PERSONAL_MODEL)),
+
+    # eco_personal : ECO blending avec modèle perso comme pretrain + upscale final
+    # Note : arch compact (SPAN) vs SPANPlus — si mismatch shape → status=error attendu
+    _f("eco_personal",
+       "ECO (α=0.05) — pretrain=SPANPlus Deband_HARD + upscale final",
+       "training_mode",
+       extra_train_fields="  eco: true\n  eco_alpha: 0.05\n",
+       eco_pretrain_path=str(_PERSONAL_MODEL),
+       upscale_model_path=str(_PERSONAL_MODEL)),
 ]
 
 _FEAT_BY_NAME = {f["name"]: f for f in FEATURE_LIST}
@@ -245,7 +324,7 @@ manual_seed: 42
 datasets:
   train:
     name: RFeatTrain
-    type: pairedimagedataset
+    type: {dataset_type}
     dataroot_gt: ['{train_gt}']
     dataroot_lq: ['{train_gt}']
     lq_size: {lq_size}
@@ -267,12 +346,12 @@ path:
   param_key_g: ~
   strict_load_g: true
   resume_state: ~
-
+{extra_path_fields}
 train:
   ema_decay: 0.999
   ema_power: 0.75
   grad_clip: false
-  optim_g:
+{extra_train_fields}  optim_g:
 {optim_block}
   scheduler:
 {sched_block}
@@ -371,16 +450,66 @@ def _display_training_line(raw: str, arch: str) -> None:
     print(out, flush=True)
 
 
+def _find_eco_pretrain(base_arch: str = "compact") -> str:
+    """
+    Cherche le dernier checkpoint safetensors/pth généré par RFeat_dataset_bicubic.
+    Utilisé par eco_pretrain_auto pour tester le vrai blending ECO avec un pretrain réel.
+    Retourne le chemin absolu (str) ou "" si non trouvé.
+    """
+    exp_dir = REDUX_PATH / "experiments" / "RFeat_dataset_bicubic" / "models"
+    if not exp_dir.exists():
+        return ""
+    # Cherche dans models/ et models/resume_models/
+    # Préférer net_g_ema (plus smooth), puis net_g; safetensors avant pth; plus récent en premier
+    candidates = sorted(
+        list(exp_dir.glob("net_g_*.safetensors"))
+        + list(exp_dir.glob("net_g_*.pth"))
+        + list((exp_dir / "resume_models").glob("net_g_*.safetensors") if (exp_dir / "resume_models").exists() else [])
+        + list((exp_dir / "resume_models").glob("net_g_*.pth") if (exp_dir / "resume_models").exists() else []),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    if not candidates:
+        return ""
+    # Préférer EMA si dispo parmi les candidats
+    ema = [c for c in candidates if "ema" in c.stem]
+    return str(ema[0]) if ema else str(candidates[0])
+
+
 def _make_yaml(cfg: dict, n_iter: int, train_gt: str, val_gt: str, val_lq: str,
                base_arch: str = "compact", base_channels_last: bool = True,
                base_lq_size: int = 96, base_batch: int = 8) -> str:
     sched_block = cfg["sched_fn"](n_iter) if cfg["sched_fn"] else _SCHED_MULTISTEP
     # Precision tests override channels_last explicitly; others use base_channels_last
     cl = cfg["channels_last"]
-    # For precision category, respect the test's own channels_last value.
-    # For all other categories, use the base arch's channels_last.
     if cfg["category"] != "precision":
         cl = base_channels_last
+
+    # Bicubic OTF mode: use pairedimagedataset (realesrgandataset not in Redux schema)
+    # high_order_degradation removed — not a valid field in traiNNer-redux msgspec schema
+    # Per-feature lq_size_override (e.g. spark_fd needs lq≥128 due to InceptionNext downsampling)
+    effective_lq = cfg.get("lq_size_override") or base_lq_size
+
+    # ECO pretrain — chemin direct ou auto-detect
+    extra_path = cfg.get("extra_path_fields", "")
+    if cfg.get("eco_pretrain_path"):
+        # Chemin direct fourni (ex: modèle perso)
+        eco_ckpt = cfg["eco_pretrain_path"]
+        if Path(eco_ckpt).exists():
+            print(f"\033[96m[eco_pretrain_path]\033[0m Pretrain direct : {eco_ckpt}", flush=True)
+            extra_path = extra_path + f"  eco_pretrain_g: '{eco_ckpt}'\n"
+        else:
+            print(f"\033[93m[eco_pretrain_path]\033[0m Fichier introuvable : {eco_ckpt}"
+                  " → ECO blending désactivé", flush=True)
+    elif cfg.get("eco_pretrain_auto"):
+        eco_ckpt = _find_eco_pretrain(base_arch)
+        if eco_ckpt:
+            print(f"\033[96m[eco_pretrain_auto]\033[0m Checkpoint trouvé : {eco_ckpt}", flush=True)
+            extra_path = extra_path + f"  eco_pretrain_g: '{eco_ckpt}'\n"
+        else:
+            print(f"\033[93m[eco_pretrain_auto]\033[0m Aucun checkpoint RFeat_dataset_bicubic trouvé"
+                  " → ECO blending désactivé (fallback)", flush=True)
+
     return _YAML_TEMPLATE.format(
         name=cfg["name"],
         use_amp=str(cfg["use_amp"]).lower(),
@@ -388,14 +517,17 @@ def _make_yaml(cfg: dict, n_iter: int, train_gt: str, val_gt: str, val_lq: str,
         channels_last=str(cl).lower(),
         fast_matmul=str(cfg["fast_matmul"]).lower(),
         use_compile=str(cfg["use_compile"]).lower(),
+        dataset_type="pairedimagedataset",
         train_gt=train_gt,
         val_gt=val_gt,
         val_lq=val_lq,
         optim_block=cfg["optim_block"],
         sched_block=sched_block,
         losses_block=_LOSSES[cfg["loss_key"]],
+        extra_train_fields=cfg.get("extra_train_fields", ""),
+        extra_path_fields=extra_path,
         base_arch=base_arch,
-        lq_size=base_lq_size,
+        lq_size=effective_lq,
         batch_size=base_batch,
         n_iter=n_iter,
         print_freq=max(50, n_iter // 10),
@@ -414,6 +546,58 @@ def _smi_thread(stop_event: threading.Event, readings: list) -> None:
         except Exception:
             pass
         stop_event.wait(5.0)
+
+
+def _run_upscale_with_model(model_path: str, output_dir: Path) -> tuple[bool, str]:
+    """
+    Lance un upscale de l'image de test (_DEFAULT_TEST_IMG) avec le modèle fourni.
+    Utilise quick_upscale via subprocess pour éviter les conflits d'import.
+    Retourne (ok, chemin_sortie_ou_message_erreur).
+    """
+    test_img = _DEFAULT_TEST_IMG
+    if not test_img.exists():
+        return False, f"Image de test introuvable : {test_img}"
+    if not Path(model_path).exists():
+        return False, f"Modèle introuvable : {model_path}"
+
+    out_name = f"upscale_{Path(model_path).stem}.png"
+    out_path = output_dir / out_name
+    # Échappe les backslashes pour le script Python inline
+    studio_root = str(_STUDIO_ROOT).replace("\\", "\\\\")
+    model_esc   = str(model_path).replace("\\", "\\\\")
+    img_esc     = str(test_img).replace("\\", "\\\\")
+    out_esc     = str(out_path).replace("\\", "\\\\")
+
+    script = (
+        f"import sys; sys.path.insert(0, r'{_STUDIO_ROOT}')\n"
+        f"from src.core.quick_upscale import upscale_image\n"
+        f"ok, msg = upscale_image(r'{model_path}', r'{test_img}', r'{out_path}', "
+        f"scale=0, tile_size=256, tile_pad=32, use_amp=True)\n"
+        f"print('UPSCALE_OK' if ok else f'UPSCALE_ERR: {{msg}}')\n"
+    )
+    _up_env = os.environ.copy()
+    _up_env["PYTHONIOENCODING"] = "utf-8"
+    _up_env["PYTHONUTF8"] = "1"
+    try:
+        res = subprocess.run(
+            [str(REDUX_PYTHON), "-c", script],
+            capture_output=True, text=True, timeout=180,
+            encoding="utf-8", errors="replace",
+            env=_up_env,
+            cwd=str(REDUX_PATH),
+        )
+        combined = res.stdout + res.stderr
+        if "UPSCALE_OK" in combined:
+            print(f"\033[92m[upscale_final]\033[0m OK → {out_path.name}", flush=True)
+            return True, str(out_path)
+        else:
+            err = combined.strip()[-300:]
+            print(f"\033[91m[upscale_final]\033[0m Échec : {err[:200]}", flush=True)
+            return False, err
+    except subprocess.TimeoutExpired:
+        return False, "Upscale timeout (>180s)"
+    except Exception as ex:
+        return False, str(ex)
 
 
 def run_feature_test(cfg: dict, n_iter: int, timeout: int,
@@ -436,6 +620,11 @@ def run_feature_test(cfg: dict, n_iter: int, timeout: int,
     yaml_path = output_dir / f"_tmp_RFeat_{name}.yml"
     yaml_path.write_text(yaml_str, encoding="utf-8")
     exp_dir = REDUX_PATH / "experiments" / f"RFeat_{name}"
+
+    # Nettoie le dossier expérience résiduel d'un run précédent (--reset ne le fait pas)
+    if exp_dir.exists():
+        shutil.rmtree(exp_dir, ignore_errors=True)
+        print(f"[reset] {exp_dir.name} supprimé (run précédent)", flush=True)
 
     smi_readings: list = []
     stop_ev = threading.Event()
@@ -494,7 +683,17 @@ def run_feature_test(cfg: dict, n_iter: int, timeout: int,
 
         if result["status"] != "timeout":
             if rc == 0:
-                result["status"] = "ok"
+                if last_iter == 0:
+                    result["status"] = "error"
+                    tail = "".join(output_lines[-30:])
+                    result["error"] = (
+                        f"Training crashed silently (0 iters in {result['elapsed_sec']}s). "
+                        "Likely cause: CUDA incompatibility (GPU sm_61/Pascal not supported by PyTorch 2.7+). "
+                        "Fix: reinstall torch<=2.6.0+cu124.\n"
+                        f"Output:\n{tail}"
+                    )
+                else:
+                    result["status"] = "ok"
             else:
                 result["status"] = "error"
                 tail = "".join(output_lines[-30:])
@@ -517,9 +716,22 @@ def run_feature_test(cfg: dict, n_iter: int, timeout: int,
     if psnr_val is not None:
         result["psnr_final"] = round(psnr_val, 4)
 
-    if exp_dir.exists():
+    if exp_dir.exists() and not cfg.get("keep_exp_dir", False):
         shutil.rmtree(exp_dir, ignore_errors=True)
+    elif exp_dir.exists() and cfg.get("keep_exp_dir", False):
+        print(f"[keep_exp_dir] {exp_dir.name} conservé (utilisé par eco_pretrain_auto)", flush=True)
     yaml_path.unlink(missing_ok=True)
+
+    # ── Upscale final avec modèle perso (optionnel) ───────────────────────────
+    upscale_mdl = cfg.get("upscale_model_path", "")
+    if upscale_mdl and result["status"] == "ok":
+        print(f"\033[96m[upscale_final]\033[0m Lancement upscale avec {Path(upscale_mdl).name}...",
+              flush=True)
+        up_ok, up_info = _run_upscale_with_model(upscale_mdl, output_dir)
+        result["upscale_ok"] = up_ok
+        result["upscale_path"] = up_info if up_ok else ""
+        result["upscale_error"] = "" if up_ok else up_info
+
     return result
 
 
@@ -640,7 +852,7 @@ def main() -> None:
     if not REDUX_PATH.exists():
         print(f"[ERREUR] Dossier traiNNer-redux introuvable : {REDUX_PATH}", flush=True)
         sys.exit(1)
-    if REDUX_PYTHON == Path(sys.executable) or not REDUX_PYTHON.exists():
+    if not REDUX_PYTHON.exists():
         print(f"[ERREUR] Venv Python introuvable sous {REDUX_PATH}", flush=True)
         sys.exit(1)
 

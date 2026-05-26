@@ -19,7 +19,7 @@ ARCH_FAMILIES = {
 TOOLTIPS = {
     # ================= GÉNÉRAL =================
     "name": "Nom de l'expérience.\nCrée un dossier dans 'experiments/'.\nConseil : Utilisez un préfixe comme '4x_MonModele'.",
-    "engine": "Moteur d'entraînement.\n- NeoSR : Recommandé (Optimisé, moderne).\n- TraiNNer-Redux : Pour compatibilité ancienne.",
+    "engine": "Moteur d'entraînement.\n- TraiNNer-Redux : Recommandé (Développement actif, le plus avancé).\n- NeoSR : Alternatif (stable, bonne compatibilité).",
     "scale": "Facteur d'agrandissement.\nDoit correspondre exactement à la différence de taille entre vos dossiers LQ et HQ.",
     "use_gan": "Active le mode GAN (Adversarial).\n[+] Avantage : Textures réalistes, détails fins.\n[-] Risque : Hallucinations, artefacts, instabilité.",
     "manual_seed": "Graine aléatoire (Seed).\nFixe le hasard pour avoir des résultats reproductibles.\n- 10 : Standard.\n- Random : Change à chaque fois.",
@@ -33,7 +33,9 @@ TOOLTIPS = {
     "tile": "Taille de découpe (Tiling) pour la validation.\nImportant pour éviter les erreurs 'Out of Memory' sur les grandes images.\n- 0 : Image entière.\n- 200 : Recommandé.",
     "resume_state": "Fichier .state pour reprendre un entraînement.\nUtile après un crash ou pour continuer un modèle.",
     "pretrain_model": "Fichier .pth pour le Transfer Learning.\nCommencer avec un modèle déjà entraîné accélère grandement les résultats.",
-    "dataset_mode": "Mode de Dataset.\n- OTF : Génère les défauts (bruit, flou) à la volée. Recommandé pour généraliser.\n- Paired : Dossiers HQ et LQ statiques déjà préparés.",
+    "dataset_mode": "Mode de Dataset.\n\n• OTF : Génère les dégradations (bruit, flou, JPEG...) à la volée depuis\n  vos images HQ uniquement. Recommandé pour la généralisation.\n  → Fournir : dossier Train HQ (GT) seulement.\n\n• Bicubic : Désactive les dégradations OTF. Sous-échantillonnage\n  bicubic simple. Vous devez préparer vos paires HQ/LQ vous-même.\n  → Fournir : dossier Train HQ (GT) ET Train LQ obligatoires.\n  → Idéal pour : datasets anime propres, benchmarks classiques (DIV2K×4).\n\n• Paired : Dossiers HQ et LQ pré-calculés avec dégradations réelles.\n  → Fournir : dossier Train HQ (GT) ET Train LQ obligatoires.",
+    "eco_mode": "ECO Training Mode (Efficient Contrastive Optimization, AAAI 2024).\n\nPrincipe : En début d'entraînement, le moteur utilise votre modèle\nde référence pour générer des LR 'propres', puis les blende\nprogressivement avec vos vraies LR dégradées.\n  α=0 (départ) → LR de référence (sortie pretrain)\n  α=1 (fin)     → LR originales (vraies dégradations)\n\nEFFET : Réduction des artefacts liés au gap distribution train↔inférence.\nPARTICULIÈREMENT efficace pour fine-tuner un modèle existant vers\nde vraies dégradations complexes.\n\n[!] TraiNNer-Redux uniquement.\n[!] Nécessite un modèle pretrain dans le champ 'Pretrain Model'.",
+    "eco_pretrain_path": "Modèle de RÉFÉRENCE pour ECO (.pth ou .safetensors).\n\n→ Utilisez le MÊME fichier que votre 'Pretrain Model'.\n   C'est VOTRE modèle déjà entraîné, pas un fichier du repo ECO.\n   Le repo ECO ne fournit pas de poids — c'est une technique de training.\n\nExemple : vous fine-tunez 4xAnime.pth → mettez 4xAnime.pth ICI aussi.\nLe moteur utilise ses sorties comme LR de référence en début d'entraînement.",
 
     # --- AUGMENTATIONS ---
     "aug_mixup": "MixUp : Mélange deux images par transparence.\nAide le réseau à comprendre les transitions douces.",
@@ -117,6 +119,7 @@ TOOLTIPS = {
     "weight_loss_wavelet": "Poids de la Wavelet Loss.",
     "wavelet_init": "Délai d'activation de la Wavelet Loss (itérations).\nEx: 80000 = s'active seulement après 80K iters.\nRecommandé : entraîner au moins 40K avant d'activer.",
     "loss_fdl": "Frequency Distribution Loss (FDL).\nLoss perceptuelle basée sur la distribution fréquentielle.\nBacks : DINOv2, VGG19, ResNet101, EfficientNet.\n\n[+] Excellent pour restaurer le grain et les textures complexes.\n[+] Complémentaire à la Perceptual Loss.\n[-] Lourd en calcul (num_proj=24 vs 256 original).\n[!] NeoSR uniquement.",
+    "loss_spark": "SparK Perceptual Loss.\nLoss perceptuelle basée sur les features InceptionNext (MetaNeXt, pré-entraîné).\n\nDeux critères :\n- fd : Fourier Domain sliced Wasserstein (magnitude + phase) — recommandé.\n- charbonnier : Charbonnier sur les feature maps brutes.\n\nLes poids sont téléchargés automatiquement (~200 MB) depuis GitHub si path est vide.\n\n[+] Texture très riche, efficace sur le grain et les détails.\n[+] Complémentaire à L1 ou Charbonnier.\n[!] TraiNNer-Redux uniquement.",
     "loss_ldl": "LDL Loss (Local Discriminative Learning).\nPénalise les artefacts dans les zones à haute fréquence (détails).\ncriterion : l1, l2, huber. ksize : taille du kernel (7 par défaut).\n\n[+] Préserve les détails fins sans flouter.\n[+] Bon complément à L1.\n[!] Disponible NeoSR et Redux.",
     "loss_consistency": "Consistency Loss.\nForce la cohérence des couleurs et de la luminosité entre sortie et cible.\nUtilise les espaces Oklab et CIE L* + Cosine Similarity.\n\nOptions : blur (lissage), cosim (similarité cosinus), saturation/brightness.\nmatch_lq_colors : matcher les couleurs du LQ au lieu du GT.\n\n[!] NeoSR uniquement.",
     "loss_edge": "Edge Loss (Gradient-Weighted, GW Loss).\nForce le réseau à soigner les contours et les hautes fréquences.\ncriterion : l1, l2, huber, chc. corner : activer la détection de coins.\n\n[+] Lignes plus nettes, transitions plus propres.\n[!] NeoSR uniquement.",
@@ -325,13 +328,38 @@ TOOLTIPS = {
     "num_grow_ch": "Canaux de croissance.",
     "feature_channels": "Nombre de canaux internes du réseau (largeur du modèle).\n\nPlus la valeur est élevée, plus le réseau est large : meilleure capacité de représentation, mais plus lourd en VRAM et plus lent à entraîner.\n\nValeurs courantes par architecture :\n• SPAN / SPANPlus standard : 48–52\n• SPANPlus léger (_s) : 32–48\n• CFSR / FlexNet : 64–96\n• MoESR / MoSRv2 : 48–64\n\n[↑] Augmenter → meilleure qualité, +VRAM\n[↓] Réduire → modèle plus rapide, plus léger",
     "num_modules": "Nombre de modules.",
+
+    # ================= SMoSR =================
+    "smosr_dim": "Nombre de canaux features (largeur du réseau).\n[+] Plus élevé → meilleure qualité, +VRAM.\n[-] Plus bas → modèle plus léger et rapide.\nDéfaut : 48 (équilibre légèreté/qualité, comparable à SPAN-S).",
+    "smosr_n_mb": "Nombre de Self-Modulation Blocks (SMB) intermédiaires.\nChaque bloc applique une auto-modulation de type SiLU sur les features.\n[+] Plus élevé → meilleure capacité de représentation, légère hausse VRAM.\n[-] Plus bas → modèle plus rapide.\nDéfaut : 3 (recommandé par l'auteur).",
+    "smosr_rep": "Reparamétisation des convolutions (Rep).\nEn mode Rep=True : pendant l'entraînement, plusieurs branches sont utilisées et fusionnées en une seule conv standard à l'export.\n[+] Améliore légèrement la qualité sans coût à l'inférence.\n[!] Utiliser le même mode (True/False) tout au long de l'entraînement — ne pas mélanger les checkpoints.",
+    "smosr_upsampler_mid_dim": "Dimension intermédiaire du module d'upsample.\nUtilisé uniquement pour certains upsamplers (pixelshuffle, pa_up, dysample).\nPlus élevé = meilleure reconstruction, légèrement plus lourd.\nDéfaut : 32.",
+
+    # ================= SpanC =================
+    "spanc_scale_list": "Liste des facteurs d'agrandissement supportés simultanément.\nEx: '(2, 3, 4)' entraîne un seul modèle gérant les 3 scales.\n[!] Inclure tous les scales voulus à la création — non modifiable après sur un checkpoint existant.\nDéfaut : (2, 4).",
+    "spanc_eval_base_scale": "Scale de base utilisé pour l'inférence.\nDoit être inclus dans scale_list.\nLa sortie est toujours calculée relativement à ce scale.\nDéfaut : 2.",
+    "spanc_implicit_dim": "Dimension du réseau implicite IGConv (Implicit Grid Convolution).\nContrôle la capacité du module d'upscale adaptatif multi-scale.\n[+] Plus élevé → meilleure interpolation des kernels.\n[-] Plus élevé → +VRAM, +temps.\nDéfaut : 256.",
+    "spanc_latent_layers": "Nombre de couches du réseau latent dans IGConv.\nPlus élevé = meilleure interpolation des noyaux multi-scale.\nDéfaut : 4.",
+
+    # ================= CATANet =================
+    "catanet_dim": "Dimension des features (largeur du réseau).\nPlus élevé → meilleure qualité, +VRAM.\nDéfaut : 40.",
+    "catanet_block_num": "Nombre de blocs TAB (Token Aggregation Block) + LRSA empilés.\nContrôle la profondeur du réseau.\n[+] Plus élevé → plus de capacité.\n[-] Plus élevé → +VRAM, +temps.\nDéfaut : 8.",
+    "catanet_qk_dim": "Dimension des projections Query/Key dans l'attention.\nInflue sur la richesse des features d'attention.\nDéfaut : 36.",
+    "catanet_mlp_dim": "Dimension du MLP dans les blocs d'attention.\nDéfaut : 96.",
+    "catanet_heads": "Nombre de têtes d'attention multi-head.\nPlus de têtes = attention plus diversifiée.\nDéfaut : 4.",
+
+    # ================= GFISRv2 =================
+    "gfisrv2_dim": "Dimension des features internes du réseau.\nPlus élevé = meilleure qualité, plus lourd en VRAM.\nDéfaut : 48.",
+    "gfisrv2_n_blocks": "Nombre de GatedCNNBlocks dans le corps du réseau.\nChaque bloc est un GatedCNN avec convolutions décalées (shift).\n[+] Plus de blocs → meilleure reconstruction.\n[-] Plus lent, +VRAM.\nDéfaut : 24.",
+    "gfisrv2_expansion_ratio": "Ratio d'expansion des canaux dans les blocs Gated.\nEx: 2.667 (8/3) → largeur intermédiaire = dim × 2.667.\nPlus élevé = plus large, meilleure capacité, +VRAM.\nDéfaut : 2.667 (8/3).",
+    "gfisrv2_mid_dim": "Dimension intermédiaire du module d'upsample.\nUtilisé pour les modes pixelshuffle et dysample.\nDéfaut : 32.",
 }
 
 # --- TOOLTIPS (ENGLISH) ---
 TOOLTIPS_EN = {
     # ================= GENERAL =================
     "name": "Experiment name.\nCreates a folder in 'experiments/'.\nTip: Use a prefix like '4x_MyModel'.",
-    "engine": "Training engine.\n- NeoSR: Recommended (Optimized, modern).\n- TraiNNer-Redux: For legacy compatibility.",
+    "engine": "Training engine.\n- TraiNNer-Redux: Recommended (Active development, most advanced).\n- NeoSR: Alternative (stable, good compatibility).",
     "scale": "Upscaling factor.\nMust exactly match the size difference between your LQ and HQ folders.",
     "use_gan": "Enable GAN mode (Adversarial).\n[+] Advantage: Realistic textures, fine details.\n[-] Risk: Hallucinations, artifacts, instability.",
     "manual_seed": "Random seed.\nFixes randomness for reproducible results.\n- 10: Standard.\n- Random: Changes every run.",
@@ -345,7 +373,9 @@ TOOLTIPS_EN = {
     "tile": "Tile size for validation.\nImportant to avoid Out of Memory errors on large images.\n- 0: Full image.\n- 200: Recommended.",
     "resume_state": ".state file to resume a training run.\nUseful after a crash or to continue a model.",
     "pretrain_model": ".pth file for Transfer Learning.\nStarting from a pre-trained model greatly accelerates results.",
-    "dataset_mode": "Dataset mode.\n- OTF: Generates degradations (noise, blur) on-the-fly. Recommended for generalization.\n- Paired: Pre-prepared static HQ and LQ folders.",
+    "dataset_mode": "Dataset mode.\n\n• OTF: Generates degradations (noise, blur, JPEG...) on-the-fly\n  from your HQ images only. Recommended for generalization.\n  → Provide: Train HQ (GT) folder only.\n\n• Bicubic: Disables OTF degradations. Simple bicubic downsampling.\n  You must prepare your HQ/LQ pairs yourself.\n  → Provide: Train HQ (GT) AND Train LQ folders (both required).\n  → Best for: clean anime datasets, classic benchmarks (DIV2K×4).\n\n• Paired: Pre-computed HQ and LQ folders with real degradations.\n  → Provide: Train HQ (GT) AND Train LQ folders (both required).",
+    "eco_mode": "ECO Training Mode (Efficient Contrastive Optimization, AAAI 2024).\n\nHow it works: at the start of training, the engine uses your reference\nmodel to generate 'clean' LR images, then progressively blends them\nwith your actual degraded LR images.\n  α=0 (start) → reference LR (pretrain model output)\n  α=1 (end)   → original LR (real degradations)\n\nEFFECT: Reduces artifacts from distribution gap between training and inference.\nESPECIALLY effective when fine-tuning an existing model toward\ncomplex real-world degradations.\n\n[!] TraiNNer-Redux only.\n[!] Requires a pretrain model in the 'Pretrain Model' field.",
+    "eco_pretrain_path": "REFERENCE model for ECO (.pth or .safetensors).\n\n→ Use the SAME file as your 'Pretrain Model'.\n   This is YOUR already-trained model, not a file from the ECO repo.\n   The ECO repo provides no weights — it is a training technique only.\n\nExample: you are fine-tuning 4xAnime.pth → put 4xAnime.pth HERE too.\nThe engine uses its outputs as clean LR reference at the start of training.",
 
     # --- AUGMENTATIONS ---
     "aug_mixup": "MixUp: Blends two images by transparency.\nHelps the network understand smooth transitions.",
@@ -427,6 +457,7 @@ TOOLTIPS_EN = {
     "weight_loss_wavelet": "Wavelet Loss weight.",
     "wavelet_init": "Wavelet Loss activation delay (iterations).\nEx: 80000 = activates only after 80K iters.\nRecommended: train at least 40K before enabling.",
     "loss_fdl": "Frequency Distribution Loss (FDL).\nPerceptual loss based on frequency distribution.\nBackbones: DINOv2, VGG19, ResNet101, EfficientNet.\n\n[+] Excellent for restoring grain and complex textures.\n[+] Complementary to Perceptual Loss.\n[-] Heavy computation (num_proj=24 vs 256 original).\n[!] NeoSR only.",
+    "loss_spark": "SparK Perceptual Loss.\nPerceptual loss based on InceptionNext (MetaNeXt, pretrained) features.\n\nTwo criteria:\n- fd: Fourier Domain sliced Wasserstein (magnitude + phase) — recommended.\n- charbonnier: Charbonnier on raw feature maps.\n\nWeights are automatically downloaded (~200 MB) from GitHub if path is empty.\n\n[+] Rich texture, effective on grain and fine details.\n[+] Complementary to L1 or Charbonnier.\n[!] TraiNNer-Redux only.",
     "loss_ldl": "LDL Loss (Local Discriminative Learning).\nPenalizes artifacts in high-frequency regions (details).\ncriterion: l1, l2, huber. ksize: kernel size (7 by default).\n\n[+] Preserves fine details without blurring.\n[+] Good complement to L1.\n[!] Available NeoSR and Redux.",
     "loss_consistency": "Consistency Loss.\nForces color and brightness coherence between output and target.\nUses Oklab and CIE L* color spaces + Cosine Similarity.\n\nOptions: blur (smoothing), cosim (cosine similarity), saturation/brightness.\nmatch_lq_colors: match LQ colors instead of GT.\n\n[!] NeoSR only.",
     "loss_edge": "Edge Loss (Gradient-Weighted, GW Loss).\nForces the network to refine contours and high frequencies.\ncriterion: l1, l2, huber, chc. corner: enable corner detection.\n\n[+] Sharper lines, cleaner transitions.\n[!] NeoSR only.",
@@ -632,6 +663,31 @@ TOOLTIPS_EN = {
     "num_grow_ch": "Growth channels.",
     "feature_channels": "Number of internal channels in the network (model width).\n\nHigher value = wider network: better representation capacity, but heavier VRAM and slower to train.\n\nCommon values by architecture:\n• SPAN / SPANPlus standard: 48–52\n• SPANPlus light (_s): 32–48\n• CFSR / FlexNet: 64–96\n• MoESR / MoSRv2: 48–64\n\n[↑] Increase → better quality, +VRAM\n[↓] Reduce → faster, lighter model",
     "num_modules": "Number of modules.",
+
+    # ================= SMoSR =================
+    "smosr_dim": "Number of feature channels (network width).\n[+] Higher → better quality, +VRAM.\n[-] Lower → lighter and faster model.\nDefault: 48 (balance between lightness/quality, comparable to SPAN-S).",
+    "smosr_n_mb": "Number of intermediate Self-Modulation Blocks (SMB).\nEach block applies SiLU-based self-modulation on features.\n[+] Higher → better representation capacity, slight VRAM increase.\n[-] Lower → faster model.\nDefault: 3 (recommended by the author).",
+    "smosr_rep": "Convolution reparameterization (Rep).\nWith Rep=True: multiple branches are used during training and fused into a single standard conv at export.\n[+] Slightly improves quality with no inference cost.\n[!] Use the same mode (True/False) throughout training — do not mix checkpoints.",
+    "smosr_upsampler_mid_dim": "Intermediate dimension of the upsampling module.\nOnly used for certain upsamplers (pixelshuffle, pa_up, dysample).\nHigher = better reconstruction, slightly heavier.\nDefault: 32.",
+
+    # ================= SpanC =================
+    "spanc_scale_list": "List of simultaneously supported upscaling factors.\nEx: '(2, 3, 4)' trains a single model handling all 3 scales.\n[!] Include all desired scales at model creation — cannot be changed on an existing checkpoint.\nDefault: (2, 4).",
+    "spanc_eval_base_scale": "Base scale used during inference.\nMust be included in scale_list.\nOutput is always computed relative to this scale.\nDefault: 2.",
+    "spanc_implicit_dim": "Dimension of the IGConv (Implicit Grid Convolution) network.\nControls the capacity of the adaptive multi-scale upscale module.\n[+] Higher → better kernel interpolation.\n[-] Higher → +VRAM, +time.\nDefault: 256.",
+    "spanc_latent_layers": "Number of latent network layers in IGConv.\nHigher = better multi-scale kernel interpolation.\nDefault: 4.",
+
+    # ================= CATANet =================
+    "catanet_dim": "Feature dimension (network width).\nHigher → better quality, +VRAM.\nDefault: 40.",
+    "catanet_block_num": "Number of stacked TAB (Token Aggregation Block) + LRSA blocks.\nControls network depth.\n[+] Higher → more capacity.\n[-] Higher → +VRAM, +time.\nDefault: 8.",
+    "catanet_qk_dim": "Dimension of Query/Key projections in attention.\nAffects the richness of attention features.\nDefault: 36.",
+    "catanet_mlp_dim": "MLP dimension in attention blocks.\nDefault: 96.",
+    "catanet_heads": "Number of multi-head attention heads.\nMore heads = more diverse attention.\nDefault: 4.",
+
+    # ================= GFISRv2 =================
+    "gfisrv2_dim": "Internal feature dimension of the network.\nHigher = better quality, heavier VRAM.\nDefault: 48.",
+    "gfisrv2_n_blocks": "Number of GatedCNNBlocks in the network body.\nEach block is a GatedCNN with shifted convolutions.\n[+] More blocks → better reconstruction.\n[-] Slower, +VRAM.\nDefault: 24.",
+    "gfisrv2_expansion_ratio": "Channel expansion ratio in Gated blocks.\nEx: 2.667 (8/3) → intermediate width = dim × 2.667.\nHigher = wider, better capacity, +VRAM.\nDefault: 2.667 (8/3).",
+    "gfisrv2_mid_dim": "Intermediate dimension of the upsampling module.\nUsed for pixelshuffle and dysample modes.\nDefault: 32.",
 }
 
 
@@ -663,6 +719,13 @@ ARCH_FIELDS = {
         {"label": "D8", "key": "d8", "default": "false", "tip_key": "d8"},
         {"label": "Bias", "key": "bias", "default": "true", "tip_key": "bias"},
         {"label": "Drop", "key": "drop", "default": 0.0, "tip_key": "drop_rate"},
+    ],
+    "catanet": [
+        {"label": "Dim", "key": "dim", "default": 40, "tip_key": "catanet_dim"},
+        {"label": "Block Num", "key": "block_num", "default": 8, "tip_key": "catanet_block_num"},
+        {"label": "QK Dim", "key": "qk_dim", "default": 36, "tip_key": "catanet_qk_dim"},
+        {"label": "MLP Dim", "key": "mlp_dim", "default": 96, "tip_key": "catanet_mlp_dim"},
+        {"label": "Heads", "key": "heads", "default": 4, "tip_key": "catanet_heads"},
     ],
     "atd": [
         {"label": "Img Size", "key": "img_size", "default": 96, "tip_key": "img_size"},
@@ -1225,7 +1288,7 @@ NEOSR_ARCH_FAMILIES = {
     "🚀 Léger / Rapide": ["span", "spanplus", "compact", "ultracompact", "safmn", "lmlt", "plksr", "realplksr", "cugan"],
     "🤖 Transformers (Lourd)": ["hat", "swinir_small", "swinir_medium", "dat_s", "srformer_medium", "drct", "atd"],
     "🎨 GAN / Restauration": ["esrgan", "rcan", "artcnn_r16f96"],
-    "📦 Autres": ["cfsr", "craft", "dct", "dctlsa", "ditn", "esc", "eimn", "flexnet", "grformer", "hasn", "hit_srf", "hma", "krgn", "man", "moesr", "mosrv2", "msdan", "plainusr", "rgt", "asid"],
+    "📦 Autres": ["cfsr", "craft", "dct", "dctlsa", "ditn", "esc", "eimn", "flexnet", "grformer", "hasn", "hit_srf", "hma", "krgn", "man", "moesr", "mosrv2", "msdan", "plainusr", "rgt", "asid", "catanet"],
 }
 
 REDUX_ARCH_FAMILIES = {
@@ -1233,7 +1296,7 @@ REDUX_ARCH_FAMILIES = {
     "✨ Recommandé": ["span_s", "artcnn_r16f96", "lkfmixer_t", "swinir_s", "seemore_t", "compact", "realplksr", "omnisr"],
     "🚀 Léger / Rapide": [
         "compact", "ultracompact", "superultracompact",
-        "span", "span_s", "spanplus", "spanplus_s", "spanplus_st", "spanplus_sts",
+        "span", "span_s", "spanf", "spanplus", "spanplus_s", "spanplus_st", "spanplus_sts",
         "rtmosr", "rtmosr_l", "rtmosr_ul", "mosr_t", "mosrv2",
         "artcnn_r16f96", "artcnn_r8f64", "artcnn_r8f48", "artcnn_r3f24",
         "esrgan_lite", "safmn", "sebica", "sebica_mini", "lmlt_tiny", "man_tiny",
@@ -1262,6 +1325,9 @@ REDUX_ARCH_FAMILIES = {
         "emt", "escrealm", "escrealm_xl", "metaflexnet",
         "flexnet", "srformer_light",
     ],
+    "🆕 Nouveaux / Communauté": [
+        "smosr", "spanpp", "gfisrv2",
+    ],
 }
 
 # English-label versions of the family dicts (same arch lists, translated keys)
@@ -1270,7 +1336,7 @@ NEOSR_ARCH_FAMILIES_EN = {
     "🚀 Light / Fast": ["span", "spanplus", "compact", "ultracompact", "safmn", "lmlt", "plksr", "realplksr", "cugan"],
     "🤖 Transformers (Heavy)": ["hat", "swinir_small", "swinir_medium", "dat_s", "srformer_medium", "drct", "atd"],
     "🎨 GAN / Restoration": ["esrgan", "rcan", "artcnn_r16f96"],
-    "📦 Other": ["cfsr", "craft", "dct", "dctlsa", "ditn", "esc", "eimn", "flexnet", "grformer", "hasn", "hit_srf", "hma", "krgn", "man", "moesr", "mosrv2", "msdan", "plainusr", "rgt", "asid"],
+    "📦 Other": ["cfsr", "craft", "dct", "dctlsa", "ditn", "esc", "eimn", "flexnet", "grformer", "hasn", "hit_srf", "hma", "krgn", "man", "moesr", "mosrv2", "msdan", "plainusr", "rgt", "asid", "catanet"],
 }
 
 REDUX_ARCH_FAMILIES_EN = {
@@ -1280,6 +1346,7 @@ REDUX_ARCH_FAMILIES_EN = {
     "🎨 GAN / Restoration": ["esrgan", "esrgan_lite", "rcan", "rcan_l", "rcan_unshuffle", "artcnn_r16f96", "artcnn_r8f64", "artcnn_r8f48", "artcnn_r3f24", "scunet_aaf6aa"],
     "🎞️ Video / Temporal": ["temporalspan", "temporalspanv2", "tscunet"],
     "🧪 Experimental / Heavy": REDUX_ARCH_FAMILIES["🧪 Expérimental / Lourd"],
+    "🆕 New / Community": REDUX_ARCH_FAMILIES["🆕 Nouveaux / Communauté"],
 }
 
 
@@ -1308,6 +1375,7 @@ VRAM_FACTORS = {
     "omnisr": 1.2, "dat": 1.6, "hat": 1.5, "span": 0.8,
     # neosr-specific aliases (correct registry names)
     "dat_s": 1.6, "dat_2": 1.8, "srformer_medium": 1.3, "swinir_small": 1.2,
+    "catanet": 1.4,
 }
 
 DISC_VRAM_FACTORS = {
@@ -1381,6 +1449,11 @@ ARCH_PROFILES = {
     "safmn_l":       [7, 6, 8, 7, 7, 7, 7],
     "sebica":        [7, 6, 7, 7, 7, 7, 6],
     "span_s":        [6, 5, 7, 9, 9, 8, 5],
+    "smosr":         [6, 5, 7, 9, 9, 8, 5],   # compétitif SPAN-S, VRAM ~407M — léger
+    "spanf":         [6, 5, 7, 10, 10, 8, 5],  # SPAN simplifié, SPAB1 blocks, très léger
+    "spanpp":         [6, 6, 8, 8, 8, 8, 5],    # SpanC multi-scale IGConv, SPAB reparamétrisable
+    "catanet":       [7, 7, 8, 4, 4, 7, 8],    # CATANet transformer TAB+LRSA, NeoSR
+    "gfisrv2":       [6, 7, 8, 7, 7, 7, 6],    # GFISRv2 GatedCNN + FFT-inspired, multi-upsampler
     "swin2sr_l":     [8, 7, 8, 4, 4, 7, 8],
     "swinir_l":      [8, 7, 8, 4, 4, 7, 8],
     # --- Profils ajoutés d'après bench Redux 2026-05-19 + type d'architecture ---
@@ -1478,6 +1551,7 @@ REDUX_LOSS_INFO = {
     "kldivloss": {"loss_weight": 1.0},
     "consistent_loss": {"loss_weight": 1.0, "criterion": "l1"},
     "palette_matching_loss": {"loss_weight": 1.0},
+    "sparkloss": {"loss_weight": 1.0, "criterion": "fd", "path": "null", "phase_weight": 1.0},
 }
 
 # --- LISTE COMPLETE ARCHITECTURES REDUX ---
@@ -1608,15 +1682,48 @@ REDUX_ARCH_FIELDS = {
     "realplksr": [{"label": "Dim", "key": "dim", "default": 64}, {"label": "N Blocks", "key": "n_blocks", "default": 28}, {"label": "Kernel", "key": "kernel_size", "default": 17}, {"label": "Layer Norm", "key": "layer_norm", "default": "true"}],
     "realplksr_large": [{"label": "Dim", "key": "dim", "default": 96}, {"label": "N Blocks", "key": "n_blocks", "default": 28}, {"label": "Kernel", "key": "kernel_size", "default": 17}],
     
+    # SMoSR — Self Modulate Super-Resolution (umzi2, MIT)
+    "smosr": [
+        {"label": "Dim", "key": "dim", "default": 48, "tip_key": "smosr_dim"},
+        {"label": "N Mid Blocks", "key": "n_mb", "default": 3, "tip_key": "smosr_n_mb"},
+        {"label": "Rep (reparameterization)", "key": "rep", "default": "false",
+         "type": "combobox", "choices": ["false", "true"], "tip_key": "smosr_rep"},
+        {"label": "Upsampler", "key": "upsampler", "default": "pixelshuffledirect",
+         "type": "combobox", "choices": ["pixelshuffledirect", "pixelshuffle", "nearest+conv", "dysample", "pa_up", "conv"],
+         "tip_key": "upsampler"},
+        {"label": "Upsamp Mid Dim", "key": "upsampler_mid_dim", "default": 32, "tip_key": "smosr_upsampler_mid_dim"},
+    ],
+
+    # GFISRv2 (Gated FFT-Inspired SR v2)
+    "gfisrv2": [
+        {"label": "Dim", "key": "dim", "default": 48, "tip_key": "gfisrv2_dim"},
+        {"label": "N Blocks", "key": "n_blocks", "default": 24, "tip_key": "gfisrv2_n_blocks"},
+        {"label": "Upsampler", "key": "upsampler", "default": "pixelshuffledirect",
+         "type": "combobox",
+         "choices": ["pixelshuffledirect", "pixelshuffle", "nearest+conv", "dysample", "transpose+conv", "pa_up"],
+         "tip_key": "upsampler"},
+        {"label": "Mid Dim", "key": "mid_dim", "default": 32, "tip_key": "gfisrv2_mid_dim"},
+    ],
+
     # SAFMN & SCUNet
     "safmn": [{"label": "Dim", "key": "dim", "default": 36}, {"label": "N Blocks", "key": "n_blocks", "default": 8}],
     "safmn_l": [{"label": "Dim", "key": "dim", "default": 128}, {"label": "N Blocks", "key": "n_blocks", "default": 16}],
     "scunet_aaf6aa": [{"label": "Dim", "key": "dim", "default": 64}, {"label": "Residual", "key": "residual", "default": "true"}],
     
-    # SPAN
+    # SPAN / SpanF / SpanC
     "span": [{"label": "Feat Channels", "key": "feature_channels", "default": 52}, {"label": "Norm", "key": "norm", "default": "false"}],
     "span_s": [{"label": "Feat Channels", "key": "feature_channels", "default": 48}, {"label": "Norm", "key": "norm", "default": "false"}],
     "span_f32": [{"label": "Feat Channels", "key": "feature_channels", "default": 32}],
+    "spanf": [
+        {"label": "Feat Channels", "key": "feature_channels", "default": 32, "tip_key": "feature_channels"},
+    ],
+    "spanpp": [
+        {"label": "Feat Channels", "key": "feature_channels", "default": 48, "tip_key": "feature_channels"},
+        {"label": "Scale List", "key": "scale_list", "default": "(2, 4)", "tip_key": "spanc_scale_list"},
+        {"label": "Eval Scale", "key": "eval_base_scale", "default": 2, "tip_key": "spanc_eval_base_scale"},
+        {"label": "Implicit Dim", "key": "implicit_dim", "default": 256, "tip_key": "spanc_implicit_dim"},
+        {"label": "Latent Layers", "key": "latent_layers", "default": 4, "tip_key": "spanc_latent_layers"},
+    ],
     
     # SRFormer
     "srformer": [{"label": "Embed Dim", "key": "embed_dim", "default": 180}, {"label": "Depths", "key": "depths", "default": "[6, 6, 6, 6, 6, 6]"}],
@@ -1690,6 +1797,9 @@ REDUX_VRAM_FACTORS = {
     "seemore_t": 1.40, "lkfmixer_t": 1.19, "lkfmixer_b": 2.5, "lkfmixer_l": 4.0,
     "lmlt_tiny": 1.06, "lmlt_base": 2.0, "lmlt_large": 3.5,
     "gaterv3_s": 1.35, "gaterv3": 2.5,
+    "smosr": 0.65,
+    "spanf": 0.55, "spanpp": 0.72,
+    "gfisrv2": 0.70,
     "sebica": 0.75, "sebica_mini": 0.60,
     "ditn_real": 1.98, "ditn": 3.0,
     "eimn_a": 0.94, "eimn_l": 2.0,

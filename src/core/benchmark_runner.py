@@ -180,7 +180,8 @@ def main() -> None:
         print(f"        Vérifiez que Universal SR Studio DEV est complet.", flush=True)
         sys.exit(1)
 
-    if python == sys.executable:
+    if python == sys.executable and not Path(python).samefile(sys.executable):
+        # Uniquement si le venv n'existe vraiment pas (pas le cas quand on tourne déjà dedans)
         print(f"[WARN]  Venv {engine} introuvable — utilisation du Python courant.", flush=True)
         print(f"        Résultats peuvent différer de l'environnement de training réel.", flush=True)
 

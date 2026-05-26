@@ -39,6 +39,13 @@ def _t(fr: str, en: str) -> str:
     return fr
 
 
+def _natural_sort_key(s: str):
+    """Tri naturel : 'frame_10.png' > 'frame_2.png' (compare les segments numériques en entier)."""
+    import re
+    parts = re.split(r'(\d+)', s)
+    return [int(p) if p.isdigit() else p.lower() for p in parts]
+
+
 def _find_torch_python() -> str:
     """Return path to a Python executable that has torch available.
 
@@ -109,8 +116,8 @@ class ToolsTab(ctk.CTkFrame):
         ctk.CTkLabel(self.frame_nav, text=_t("BOÎTE À OUTILS", "TOOLBOX"), font=("Roboto", 20, "bold")).grid(row=0, column=0, padx=20, pady=20)
 
         # ── Section 1: Visualisation ──
-        self.create_nav_btn(_t("📊 Comparateur", "📊 Comparator"), 1, "comp")
-        self.create_nav_btn("🔎 Quick Upscale", 2, "upscale")
+        self.create_nav_btn("🔎 Quick Upscale", 1, "upscale")
+        self.create_nav_btn(_t("📊 Comparateur", "📊 Comparator"), 2, "comp")
         # ── Section 2: Datasets ──
         self.create_nav_btn(_t("⚡ Générateur LQ", "⚡ LQ Generator"), 3, "gen")
         self.create_nav_btn(_t("🔄 Convertisseur", "🔄 Converter"), 4, "conv")
@@ -146,7 +153,7 @@ class ToolsTab(ctk.CTkFrame):
             "export": self.create_page_export(),
             "bench": self.create_page_benchmark(),
         }
-        self.show_frame("comp")
+        self.show_frame("upscale")
 
     # ─── Helpers ─────────────────────────────────────────────
 
@@ -546,6 +553,236 @@ class ToolsTab(ctk.CTkFrame):
             folder = inp if os.path.isdir(inp) else os.path.dirname(inp)
             self._ups_output_var.set(folder)
 
+    def _ups_on_colorfix_toggle(self):
+        """Active/désactive les contrôles Color Fix selon la checkbox."""
+        enabled = bool(self.widgets.get("ups_colorfix") and self.widgets["ups_colorfix"].get())
+        state = "normal" if enabled else "disabled"
+        for key in ("ups_colorfix_method", "ups_colorfix_settings_btn", "ups_colorfix_strength"):
+            w = self.widgets.get(key)
+            if w:
+                try:
+                    w.configure(state=state)
+                except Exception:
+                    pass
+
+    def _ups_on_serialize_toggle(self):
+        """Active/désactive la box de numéro de départ selon la checkbox sérialisation."""
+        enabled = hasattr(self, "_ups_serialize") and bool(self._ups_serialize.get())
+        state = "normal" if enabled else "disabled"
+        if hasattr(self, "_ups_serialize_start"):
+            try:
+                self._ups_serialize_start.configure(state=state)
+            except Exception:
+                pass
+
+    def _ups_on_colorfix_method_change(self, method: str):
+        """Sauvegarde méthode et rafraîchit le popup si ouvert."""
+        self.settings.set("ups_colorfix_method", method)
+        popup = getattr(self, "_cf_popup", None)
+        if popup and popup.winfo_exists():
+            popup.destroy()
+            self._ups_open_colorfix_settings()
+
+    def _ups_open_colorfix_settings(self):
+        """Ouvre la fenêtre de réglages Color Fix (mode wavelet ou average)."""
+        popup = getattr(self, "_cf_popup", None)
+        if popup and popup.winfo_exists():
+            popup.lift()
+            return
+
+        method = self.widgets["ups_colorfix_method"].get()
+        s = self._cf_settings
+
+        popup = ctk.CTkToplevel(self)
+        popup.title(_t("Réglages Color Fix", "Color Fix Settings"))
+        popup.resizable(False, False)
+        popup.grab_set()
+        self._cf_popup = popup
+
+        ctk.CTkLabel(popup, text=f"Color Fix — {method}",
+                     font=("Roboto", 14, "bold"), text_color="#3B8ED0").pack(
+                     padx=20, pady=(15, 5))
+
+        body = ctk.CTkFrame(popup, fg_color="transparent")
+        body.pack(fill="x", padx=20, pady=8)
+
+        if method == "wavelet":
+            # ── WAVELET ──
+            ctk.CTkLabel(body, text=_t(
+                "Niveaux wavelet (1-10) :", "Wavelet levels (1-10):"),
+                anchor="w").pack(fill="x", pady=(0, 2))
+            ctk.CTkLabel(body, text=_t(
+                "Rayon effectif = 2^N px. N=4 → 16 px (recommandé : 3-5).\n"
+                "Plus élevé = correction globale. Plus bas = locale.",
+                "Effective radius = 2^N px. N=4 → 16 px (recommended: 3-5).\n"
+                "Higher = global correction. Lower = local."),
+                font=("Arial", 10), text_color="gray", anchor="w").pack(fill="x", pady=(0, 6))
+            wrow = ctk.CTkFrame(body, fg_color="transparent")
+            wrow.pack(fill="x", pady=(0, 10))
+            wav_lbl = ctk.CTkLabel(wrow, text=str(s["wavelets"]), width=24, anchor="w")
+            wav_sld = ctk.CTkSlider(wrow, from_=1, to=10, number_of_steps=9, width=220)
+            wav_sld.set(s["wavelets"])
+            wav_sld.pack(side="left")
+            wav_lbl.pack(side="left", padx=6)
+            wav_sld.configure(command=lambda v: wav_lbl.configure(text=str(int(v))))
+            rad_sld = None
+            fast_var = None
+        else:
+            # ── AVERAGE ──
+            ctk.CTkLabel(body, text=_t(
+                "Radius (5-100) :", "Radius (5-100):"),
+                anchor="w").pack(fill="x", pady=(0, 2))
+            ctk.CTkLabel(body, text=_t(
+                "Rayon BoxBlur (fast=off) ou facteur de réduction (fast=on).\n"
+                "32 = local, 96 = global. Recommandé : 20-50.",
+                "BoxBlur radius (fast=off) or downscale factor (fast=on).\n"
+                "32 = local, 96 = global. Recommended: 20-50."),
+                font=("Arial", 10), text_color="gray", anchor="w").pack(fill="x", pady=(0, 6))
+            rrow = ctk.CTkFrame(body, fg_color="transparent")
+            rrow.pack(fill="x", pady=(0, 6))
+            rad_lbl = ctk.CTkLabel(rrow, text=str(s["radius"]), width=28, anchor="w")
+            rad_sld = ctk.CTkSlider(rrow, from_=5, to=100, number_of_steps=19, width=220)
+            rad_sld.set(s["radius"])
+            rad_sld.pack(side="left")
+            rad_lbl.pack(side="left", padx=6)
+            rad_sld.configure(command=lambda v: rad_lbl.configure(text=str(int(v))))
+            fast_var = ctk.BooleanVar(value=s["fast"])
+            fast_chk = ctk.CTkCheckBox(body, text=_t(
+                "Mode rapide (fast) — downscale+upscale, ~10× plus vite",
+                "Fast mode — downscale+upscale, ~10× faster"),
+                variable=fast_var)
+            fast_chk.pack(anchor="w", pady=(0, 10))
+            if s["fast"]:
+                fast_chk.select()
+            ToolTip(fast_chk, _t(
+                "fast=True : divise/réupscale (chaiNNer-style). Très rapide, légèrement pixelisé pour radius>60.\n"
+                "fast=False : BoxBlur PIL précis (~20 ms/1080p).",
+                "fast=True: downscale+upscale (chaiNNer-style). Very fast, slightly blocky for radius>60.\n"
+                "fast=False: precise PIL BoxBlur (~20 ms/1080p)."))
+            wav_sld = None
+
+        # ── Planes ──
+        ctk.CTkLabel(body, text=_t("Canaux à corriger :", "Channels to correct:"),
+                     anchor="w").pack(fill="x", pady=(4, 2))
+        plane_row = ctk.CTkFrame(body, fg_color="transparent")
+        plane_row.pack(fill="x", pady=(0, 10))
+        r_var = ctk.BooleanVar(value=0 in s["planes"])
+        g_var = ctk.BooleanVar(value=1 in s["planes"])
+        b_var = ctk.BooleanVar(value=2 in s["planes"])
+        r_chk = ctk.CTkCheckBox(plane_row, text="R", variable=r_var, width=50)
+        g_chk = ctk.CTkCheckBox(plane_row, text="G", variable=g_var, width=50)
+        b_chk = ctk.CTkCheckBox(plane_row, text="B", variable=b_var, width=50)
+        r_chk.pack(side="left", padx=(0, 10))
+        g_chk.pack(side="left", padx=(0, 10))
+        b_chk.pack(side="left")
+        if 0 in s["planes"]: r_chk.select()
+        if 1 in s["planes"]: g_chk.select()
+        if 2 in s["planes"]: b_chk.select()
+        ToolTip(r_chk, _t("Corriger le canal Rouge", "Correct Red channel"))
+        ToolTip(g_chk, _t("Corriger le canal Vert", "Correct Green channel"))
+        ToolTip(b_chk, _t("Corriger le canal Bleu", "Correct Blue channel"))
+
+        # ── Accélération (device) ──
+        ctk.CTkLabel(body, text=_t("Accélération :", "Acceleration:"),
+                     anchor="w").pack(fill="x", pady=(6, 2))
+        _dev_options = [
+            _t("Auto (CUDA si dispo)", "Auto (CUDA if available)"),
+            "CPU",
+            "CUDA",
+            _t("TRT (torch.compile, RTX recommandé)", "TRT (torch.compile, RTX recommended)"),
+        ]
+        _dev_map_ui  = {
+            "auto": _dev_options[0],
+            "cpu":  "CPU",
+            "cuda": "CUDA",
+            "trt":  _dev_options[3],
+        }
+        _dev_map_key = {v: k for k, v in _dev_map_ui.items()}
+        dev_row = ctk.CTkFrame(body, fg_color="transparent")
+        dev_row.pack(fill="x", pady=(0, 6))
+        dev_var = ctk.StringVar(value=_dev_map_ui.get(s.get("device", "auto"), _dev_options[0]))
+        dev_combo = ctk.CTkOptionMenu(dev_row, variable=dev_var, values=_dev_options, width=280)
+        dev_combo.pack(side="left")
+        ToolTip(dev_combo, _t(
+            "Auto : CUDA si PyTorch+GPU dispo, sinon CPU.\n"
+            "CPU  : toujours PIL BoxBlur (~20 ms/1080p).\n"
+            "CUDA : GPU PyTorch F.conv2d (~10-30× vs CPU).\n"
+            "TRT  : torch.compile max-autotune. ~3 s warmup au 1er appel (Triton),\n"
+            "       puis mis en cache. Gain réel ~10-20% vs CUDA sur RTX 3070 Ti / 5080.",
+            "Auto: CUDA if PyTorch+GPU available, else CPU.\n"
+            "CPU: always PIL BoxBlur (~20 ms/1080p).\n"
+            "CUDA: GPU PyTorch F.conv2d (~10-30× vs CPU).\n"
+            "TRT: torch.compile max-autotune. ~3 s warmup on 1st call (Triton),\n"
+            "     then cached. ~10-20% gain over CUDA on RTX 3070 Ti / 5080."))
+
+        # ── Image de référence ────────────────────────────────────────────────
+        import tkinter.filedialog as _fd
+        ctk.CTkLabel(body, text=_t("Image de référence (optionnel) :",
+                                   "Reference image (optional):"),
+                     anchor="w").pack(fill="x", pady=(10, 2))
+        ctk.CTkLabel(body, text=_t(
+            "Source alternative pour extraire les couleurs (au lieu du LQ).\n"
+            "Recommandé : PNG/TIFF 16-bit pour éviter le banding.",
+            "Alternative source for color extraction (instead of LQ).\n"
+            "Recommended: 16-bit PNG/TIFF to avoid banding."),
+            font=("Arial", 10), text_color="gray", anchor="w").pack(fill="x", pady=(0, 4))
+        ref_row = ctk.CTkFrame(body, fg_color="transparent")
+        ref_row.pack(fill="x", pady=(0, 6))
+        ref_path_var = ctk.StringVar(value=s.get("ref", ""))
+        ref_entry = ctk.CTkEntry(ref_row, textvariable=ref_path_var, placeholder_text=_t(
+            "Aucune (utilise LQ par défaut)", "None (uses LQ by default)"), width=200)
+        ref_entry.pack(side="left", fill="x", expand=True, padx=(0, 6))
+
+        def _browse_ref():
+            p = _fd.askopenfilename(
+                title=_t("Sélectionner image de référence", "Select reference image"),
+                filetypes=[
+                    (_t("Images", "Images"), "*.png *.tif *.tiff *.jpg *.jpeg *.bmp *.webp"),
+                    ("PNG 16-bit", "*.png"),
+                    ("TIFF", "*.tif *.tiff"),
+                    (_t("Tous", "All"), "*.*"),
+                ])
+            if p:
+                ref_path_var.set(p)
+
+        ctk.CTkButton(ref_row, text="📂", width=36, command=_browse_ref).pack(side="left")
+
+        def _clear_ref():
+            ref_path_var.set("")
+        ctk.CTkButton(ref_row, text="✕", width=30, fg_color="gray30",
+                      command=_clear_ref).pack(side="left", padx=(4, 0))
+
+        # ── Boutons ──
+        btn_row = ctk.CTkFrame(popup, fg_color="transparent")
+        btn_row.pack(fill="x", padx=20, pady=(0, 15))
+
+        def _apply():
+            planes = [c for c, v in ((0, r_var), (1, g_var), (2, b_var)) if v.get()]
+            if not planes:
+                planes = [0, 1, 2]
+            if method == "wavelet" and wav_sld is not None:
+                self._cf_settings["wavelets"] = int(wav_sld.get())
+                self.settings.set("ups_colorfix_wavelets", str(self._cf_settings["wavelets"]))
+            elif method == "average" and rad_sld is not None:
+                self._cf_settings["radius"] = int(rad_sld.get())
+                self._cf_settings["fast"]   = bool(fast_var.get()) if fast_var else False
+                self.settings.set("ups_colorfix_radius", str(self._cf_settings["radius"]))
+                self.settings.set("ups_colorfix_fast",   self._cf_settings["fast"])
+            self._cf_settings["planes"] = planes
+            self.settings.set("ups_colorfix_planes", planes)
+            dev_key = _dev_map_key.get(dev_var.get(), "auto")
+            self._cf_settings["device"] = dev_key
+            self.settings.set("ups_colorfix_device", dev_key)
+            ref_p = ref_path_var.get().strip()
+            self._cf_settings["ref"] = ref_p
+            self.settings.set("ups_colorfix_ref", ref_p)
+            popup.destroy()
+
+        ctk.CTkButton(btn_row, text=_t("Appliquer", "Apply"), fg_color="#2ecc71",
+                      command=_apply).pack(side="left", fill="x", expand=True, padx=(0, 5))
+        ctk.CTkButton(btn_row, text=_t("Annuler", "Cancel"), fg_color="#e74c3c",
+                      command=popup.destroy).pack(side="left", fill="x", expand=True)
+
     def _ups_on_format_change(self, fmt: str):
         """Enable/disable bit-depth and quality widgets based on selected format."""
         supports_16bit = fmt in ("PNG", "TIFF")
@@ -604,7 +841,7 @@ class ToolsTab(ctk.CTkFrame):
 
         # ── En-tête + GPU (droite, retrait 1 cm bord droit) ────────────────────
         _top = ctk.CTkFrame(f, fg_color="transparent")
-        _top.pack(fill="x", pady=(0, 15))
+        _top.pack(fill="x", pady=(0, 4))
         # GPU à droite — 38 px ≈ 1 cm de marge droite
         self._create_gpu_panel(_top).pack(side="right", padx=(0, 0), pady=4)
         _hdr = ctk.CTkFrame(_top, fg_color="transparent")
@@ -616,7 +853,7 @@ class ToolsTab(ctk.CTkFrame):
 
         # --- Model ---
         mrow = ctk.CTkFrame(f, fg_color="transparent")
-        mrow.pack(fill="x", pady=5)
+        mrow.pack(fill="x", pady=1)
         ctk.CTkLabel(mrow, text=_t("Modele (.pth/.safetensors/.onnx) :", "Model (.pth/.safetensors/.onnx):"), width=220, anchor="w").pack(side="left")
         self._ups_model_var = StringVar(value=self.settings.get("ups_last_model", ""))
         self._ups_model_entry = ctk.CTkEntry(mrow, textvariable=self._ups_model_var)
@@ -626,7 +863,7 @@ class ToolsTab(ctk.CTkFrame):
 
         # --- Input ---
         irow = ctk.CTkFrame(f, fg_color="transparent")
-        irow.pack(fill="x", pady=5)
+        irow.pack(fill="x", pady=1)
         ctk.CTkLabel(irow, text=_t("Source (image ou dossier) :", "Source (image or folder):"), width=200, anchor="w").pack(side="left")
         self._ups_input_var = StringVar(value=self.settings.get("ups_last_input", ""))
         self._ups_input_entry = ctk.CTkEntry(irow, textvariable=self._ups_input_var)
@@ -637,7 +874,7 @@ class ToolsTab(ctk.CTkFrame):
 
         # --- Output ---
         orow = ctk.CTkFrame(f, fg_color="transparent")
-        orow.pack(fill="x", pady=5)
+        orow.pack(fill="x", pady=1)
         ctk.CTkLabel(orow, text=_t("Dossier sortie :", "Output folder:"), width=200, anchor="w").pack(side="left")
         self._ups_output_var = StringVar(value=self.settings.get("ups_last_output", ""))
         self._ups_output_entry = ctk.CTkEntry(orow, textvariable=self._ups_output_var)
@@ -647,12 +884,14 @@ class ToolsTab(ctk.CTkFrame):
         self._ups_out_btn.pack(side="left")
 
         # --- Output options ---
-        optrow = ctk.CTkFrame(f, fg_color="transparent")
-        optrow.pack(fill="x", pady=(0, 5))
+        optrow = ctk.CTkFrame(f, fg_color="transparent", height=34)
+        optrow.pack_propagate(False)
+        optrow.pack(fill="x", pady=(2, 0))
+        _sp = ctk.CTkFrame(optrow, fg_color="transparent", width=1, height=1); _sp.pack_propagate(False); _sp.pack(side="left", fill="x", expand=True)
         self._ups_same_folder = ctk.CTkCheckBox(
             optrow, text=_t("Meme dossier que la source", "Same folder as source"),
             command=self._ups_on_same_folder_toggle)
-        self._ups_same_folder.pack(side="left", padx=(200, 15))
+        self._ups_same_folder.pack(side="left", padx=(0, 15))
         if self.settings.get("ups_same_folder", False):
             self._ups_same_folder.select()
         self._ups_subfolder = ctk.CTkCheckBox(
@@ -662,9 +901,58 @@ class ToolsTab(ctk.CTkFrame):
             self._ups_subfolder.select()
         self._ups_modelname = ctk.CTkCheckBox(
             optrow, text=_t("Nom du modele dans le fichier", "Model name in filename"))
-        self._ups_modelname.pack(side="left")
+        self._ups_modelname.pack(side="left", padx=(0, 12))
         if self.settings.get("ups_modelname", False):
             self._ups_modelname.select()
+
+        # --- Serialisation (même ligne, à droite de "Nom du modèle") ----------
+        ctk.CTkFrame(optrow, width=1, fg_color="gray40").pack(
+            side="left", fill="y", padx=(0, 10), pady=2)
+        self._ups_serialize = ctk.CTkCheckBox(
+            optrow,
+            text=_t("Sérialisation", "Serialization"),
+            command=self._ups_on_serialize_toggle)
+        self._ups_serialize.pack(side="left", padx=(0, 6))
+        ToolTip(self._ups_serialize, _t(
+            "Nommage séquentiel des fichiers de sortie (00000.png, 00001.png…).\n"
+            "Utile pour les épisodes à réassembler en vidéo.\n"
+            "Le suffix modèle/_UP est omis — fichiers prêts pour FFmpeg.",
+            "Sequential output file naming (00000.png, 00001.png…).\n"
+            "Useful for episodes to be reassembled as video.\n"
+            "Model suffix/_UP omitted — files ready for FFmpeg."))
+        if self.settings.get("ups_serialize", False):
+            self._ups_serialize.select()
+        ctk.CTkLabel(optrow, text=_t("Début :", "Start:")).pack(side="left", padx=(0, 3))
+        self._ups_serialize_start = ctk.CTkEntry(optrow, width=55, placeholder_text="0")
+        self._ups_serialize_start.pack(side="left")
+        _sv = str(self.settings.get("ups_serialize_start", "0"))
+        self._ups_serialize_start.insert(0, _sv)
+        self._ups_on_serialize_toggle()  # état initial
+
+        # --- Format sortie (même ligne, à droite de sérialisation) --------------
+        ctk.CTkFrame(optrow, width=1, fg_color="gray40").pack(
+            side="left", fill="y", padx=(15, 10), pady=2)
+        ctk.CTkLabel(optrow, text=_t("Format sortie :", "Output format:")).pack(side="left", padx=(0, 4))
+        self.widgets["ups_format"] = ctk.CTkOptionMenu(
+            optrow, values=["PNG", "JPEG", "WEBP", "TIFF", "BMP"],
+            width=90, command=self._ups_on_format_change)
+        self.widgets["ups_format"].pack(side="left", padx=(0, 8))
+        self.widgets["ups_format"].set(self.settings.get("ups_format", "PNG"))
+        self.widgets["ups_bitdepth"] = ctk.CTkOptionMenu(
+            optrow, values=[_t("8 bits", "8 bits"), _t("16 bits", "16 bits")], width=90)
+        self.widgets["ups_bitdepth"].pack(side="left", padx=(0, 8))
+        self.widgets["ups_bitdepth"].set(self.settings.get("ups_bitdepth", _t("8 bits", "8 bits")))
+        ToolTip(self.widgets["ups_bitdepth"], _t(
+            "16 bits uniquement pour PNG et TIFF.", "16-bit only for PNG and TIFF."))
+        ctk.CTkLabel(optrow, text=_t("Qualité (JPEG/WEBP) :", "Quality (JPEG/WEBP):")).pack(side="left", padx=(0, 4))
+        self.widgets["ups_quality"] = ctk.CTkOptionMenu(
+            optrow, values=["70", "75", "80", "85", "90", "95", "100"], width=70)
+        self.widgets["ups_quality"].pack(side="left")
+        self.widgets["ups_quality"].set(self.settings.get("ups_quality", "95"))
+        ToolTip(self.widgets["ups_quality"], _t(
+            "Qualité de compression pour JPEG et WEBP.", "Compression quality for JPEG and WEBP."))
+        _sp = ctk.CTkFrame(optrow, fg_color="transparent", width=1, height=1); _sp.pack_propagate(False); _sp.pack(side="left", fill="x", expand=True)
+        self._ups_on_format_change(self.settings.get("ups_format", "PNG"))
 
         # Sync input -> output when "same folder" is on
         self._ups_input_var.trace_add("write", self._ups_sync_output)
@@ -688,8 +976,10 @@ class ToolsTab(ctk.CTkFrame):
         self._ups_output_var.trace_add("write", _save_output)
 
         # --- Scale / Tile / AMP ---
-        opts = ctk.CTkFrame(f, fg_color="transparent")
-        opts.pack(fill="x", pady=10)
+        opts = ctk.CTkFrame(f, fg_color="transparent", height=34)
+        opts.pack_propagate(False)
+        opts.pack(fill="x", pady=(2, 0))
+        _sp2 = ctk.CTkFrame(opts, fg_color="transparent", width=1, height=1); _sp2.pack_propagate(False); _sp2.pack(side="left", fill="x", expand=True)
         ctk.CTkLabel(opts, text="Scale:").pack(side="left")
         self.widgets["ups_scale"] = ctk.CTkOptionMenu(
             opts, values=["Auto", "1", "2", "3", "4", "8"], width=70)
@@ -712,33 +1002,81 @@ class ToolsTab(ctk.CTkFrame):
         if self.settings.get("ups_amp", True):
             self.widgets["ups_amp"].select()
 
-        # --- Output format / bit depth / quality ---
-        fmtrow = ctk.CTkFrame(f, fg_color="transparent")
-        fmtrow.pack(fill="x", pady=(0, 8))
-        ctk.CTkLabel(fmtrow, text=_t("Format sortie :", "Output format:")).pack(side="left")
-        self.widgets["ups_format"] = ctk.CTkOptionMenu(
-            fmtrow, values=["PNG", "JPEG", "WEBP", "TIFF", "BMP"],
-            width=90, command=self._ups_on_format_change)
-        self.widgets["ups_format"].pack(side="left", padx=(5, 20))
-        self.widgets["ups_format"].set(self.settings.get("ups_format", "PNG"))
-        ctk.CTkLabel(fmtrow, text=_t("Bits/canal :", "Bits/channel:")).pack(side="left")
-        self.widgets["ups_bitdepth"] = ctk.CTkOptionMenu(
-            fmtrow, values=[_t("8 bits", "8 bits"), _t("16 bits", "16 bits")], width=90)
-        self.widgets["ups_bitdepth"].pack(side="left", padx=(5, 20))
-        self.widgets["ups_bitdepth"].set(self.settings.get("ups_bitdepth", _t("8 bits", "8 bits")))
-        ToolTip(self.widgets["ups_bitdepth"], _t("16 bits uniquement pour PNG et TIFF.", "16-bit only for PNG and TIFF."))
-        ctk.CTkLabel(fmtrow, text=_t("Qualité (JPEG/WEBP) :", "Quality (JPEG/WEBP):")).pack(side="left")
-        self.widgets["ups_quality"] = ctk.CTkOptionMenu(
-            fmtrow, values=["70", "75", "80", "85", "90", "95", "100"], width=70)
-        self.widgets["ups_quality"].pack(side="left", padx=5)
-        self.widgets["ups_quality"].set(self.settings.get("ups_quality", "95"))
-        ToolTip(self.widgets["ups_quality"], _t("Qualité de compression pour JPEG et WEBP.", "Compression quality for JPEG and WEBP."))
-        # Initial state
-        self._ups_on_format_change(self.widgets["ups_format"].get())
+        # ── Color Fix (même ligne, à droite de AMP) ──────────────────────────
+        ctk.CTkFrame(opts, width=1, fg_color="gray40").pack(
+            side="left", fill="y", padx=(12, 10), pady=4)
+
+        self.widgets["ups_colorfix"] = ctk.CTkCheckBox(
+            opts, text="Color Fix", width=90,
+            command=self._ups_on_colorfix_toggle)
+        self.widgets["ups_colorfix"].pack(side="left")
+        if self.settings.get("ups_colorfix", False):
+            self.widgets["ups_colorfix"].select()
+        ToolTip(self.widgets["ups_colorfix"], _t(
+            "Corrige le color drift post-upscale en transférant les basses fréquences couleur du LQ vers le SR.\n"
+            "Inspiré de vs_colorfix (pifroggi). Aucune dépendance supplémentaire.",
+            "Fix color drift after upscale by transferring low-frequency color from LQ to SR.\n"
+            "Inspired by vs_colorfix (pifroggi). No extra dependencies."))
+
+        ctk.CTkLabel(opts, text=_t("Méthode :", "Method:")).pack(side="left", padx=(8, 4))
+        self.widgets["ups_colorfix_method"] = ctk.CTkOptionMenu(
+            opts, values=["wavelet", "average"], width=95,
+            command=self._ups_on_colorfix_method_change)
+        self.widgets["ups_colorfix_method"].pack(side="left")
+        self.widgets["ups_colorfix_method"].set(self.settings.get("ups_colorfix_method", "wavelet"))
+        ToolTip(self.widgets["ups_colorfix_method"], _t(
+            "wavelet ★ RECOMMANDÉ : ATWT multi-niveaux, préserve détails SR, corrige teinte/saturation.\n"
+            "average : correction globale R/G/B, ~10× plus rapide.",
+            "wavelet ★ RECOMMENDED: multi-level ATWT, preserves SR detail, corrects hue/saturation.\n"
+            "average: global R/G/B correction, ~10× faster."))
+
+        self.widgets["ups_colorfix_settings_btn"] = ctk.CTkButton(
+            opts, text=_t("⚙ Réglages", "⚙ Settings"), width=95,
+            command=self._ups_open_colorfix_settings)
+        self.widgets["ups_colorfix_settings_btn"].pack(side="left", padx=(6, 0))
+        ToolTip(self.widgets["ups_colorfix_settings_btn"], _t(
+            "Réglages avancés : wavelets/radius, mode fast, canaux R/G/B.",
+            "Advanced settings: wavelets/radius, fast mode, R/G/B channels."))
+
+        ctk.CTkLabel(opts, text=_t("Force :", "Strength:")).pack(side="left", padx=(10, 4))
+        self.widgets["ups_colorfix_strength"] = ctk.CTkSlider(
+            opts, from_=0.0, to=1.0, width=80, number_of_steps=20)
+        self.widgets["ups_colorfix_strength"].pack(side="left")
+        try:
+            self.widgets["ups_colorfix_strength"].set(
+                float(self.settings.get("ups_colorfix_strength", "1.0")))
+        except Exception:
+            self.widgets["ups_colorfix_strength"].set(1.0)
+        self._ups_cf_str_lbl = ctk.CTkLabel(opts, text="1.0", width=28, anchor="w")
+        self._ups_cf_str_lbl.pack(side="left", padx=(2, 0))
+        self.widgets["ups_colorfix_strength"].configure(
+            command=lambda v: self._ups_cf_str_lbl.configure(text=f"{v:.1f}"))
+        ToolTip(self.widgets["ups_colorfix_strength"], _t(
+            "Intensité (0 = désactivé, 1 = correction complète).",
+            "Intensity (0 = off, 1 = full correction)."))
+
+        _sp2 = ctk.CTkFrame(opts, fg_color="transparent", width=1, height=1); _sp2.pack_propagate(False); _sp2.pack(side="left", fill="x", expand=True)
+
+        # Initialise le dict de réglages internes (persisté entre sessions)
+        try:
+            _cf_planes = self.settings.get("ups_colorfix_planes", [0, 1, 2])
+            if not isinstance(_cf_planes, list):
+                _cf_planes = [0, 1, 2]
+        except Exception:
+            _cf_planes = [0, 1, 2]
+        self._cf_settings = {
+            "wavelets": int(self.settings.get("ups_colorfix_wavelets", 4)),
+            "radius":   int(self.settings.get("ups_colorfix_radius",   32)),
+            "fast":     bool(self.settings.get("ups_colorfix_fast",    False)),
+            "planes":   _cf_planes,
+            "device":   str(self.settings.get("ups_colorfix_device",   "auto")),
+            "ref":      str(self.settings.get("ups_colorfix_ref",      "")),
+        }
+        self._ups_on_colorfix_toggle()
 
         # --- Run / Stop / progress / log ---
         run_row = ctk.CTkFrame(f, fg_color="transparent")
-        run_row.pack(fill="x", pady=15)
+        run_row.pack(fill="x", pady=(12, 3))
         ctk.CTkButton(run_row, text=_t("⚡ Lancer Upscale", "⚡ Run Upscale"), fg_color="#2ecc71",
                       command=self.run_upscale).pack(side="left", fill="x", expand=True, padx=(0, 5))
         self.widgets["ups_stop_btn"] = ctk.CTkButton(
@@ -814,12 +1152,17 @@ class ToolsTab(ctk.CTkFrame):
             return
 
         add_model_name = bool(self._ups_modelname.get())
+        use_serialize  = bool(self._ups_serialize.get())
+        _ser_raw = self._ups_serialize_start.get().strip()
+        serialize_start = int(_ser_raw) if _ser_raw.isdigit() else 0
         self.settings.set("ups_last_model", model)
         self.settings.set("ups_last_input", inp)
         if not same_folder:
             self.settings.set("ups_last_output", base_out)
         self.settings.set("ups_subfolder", use_subfolder)
         self.settings.set("ups_modelname", add_model_name)
+        self.settings.set("ups_serialize", use_serialize)
+        self.settings.set("ups_serialize_start", str(serialize_start))
 
         scale_str = self.widgets["ups_scale"].get()
         scale = 0 if scale_str == "Auto" else int(scale_str)
@@ -853,6 +1196,21 @@ class ToolsTab(ctk.CTkFrame):
                 tile_pad = 32
         use_amp = bool(self.widgets["ups_amp"].get())
 
+        # Color Fix
+        _cf_enabled        = bool(self.widgets["ups_colorfix"].get())
+        color_fix          = self.widgets["ups_colorfix_method"].get() if _cf_enabled else "none"
+        color_fix_strength = float(self.widgets["ups_colorfix_strength"].get())
+        _cfs               = getattr(self, "_cf_settings", {})
+        color_fix_wavelets = int(_cfs.get("wavelets", 4))
+        color_fix_radius   = int(_cfs.get("radius",   32))
+        color_fix_fast     = bool(_cfs.get("fast",    False))
+        color_fix_planes   = _cfs.get("planes", [0, 1, 2])
+        color_fix_device   = str(_cfs.get("device",  "auto"))
+        color_fix_ref      = str(_cfs.get("ref",     ""))
+        self.settings.set("ups_colorfix",         _cf_enabled)
+        self.settings.set("ups_colorfix_method",  color_fix)
+        self.settings.set("ups_colorfix_strength", str(color_fix_strength))
+
         # Format / bit depth / quality
         out_format = self.widgets["ups_format"].get()          # "PNG", "JPEG", etc.
         bit_depth = 16 if self.widgets["ups_bitdepth"].get() == "16 bits" else 8
@@ -882,7 +1240,10 @@ class ToolsTab(ctk.CTkFrame):
         self.widgets["ups_stop_btn"].configure(state="normal", text="⏹ Stop")
 
         def callback(msg):
-            self._ui_update(self.widgets["log_ups"].insert, "end", msg + "\n")
+            def _ins():
+                self.widgets["log_ups"].insert("end", msg + "\n")
+                self.widgets["log_ups"].see("end")
+            self._ui_update(_ins)
 
         # Build output suffix: optional model name + safety "_UP" when no subfolder
         model_tag = f"_{os.path.splitext(os.path.basename(model))[0]}" if add_model_name else ""
@@ -907,7 +1268,15 @@ class ToolsTab(ctk.CTkFrame):
                                             progress_callback=set_progress,
                                             out_format=out_format, bit_depth=bit_depth,
                                             quality=quality,
-                                            stop_event=self._ups_stop_flag)
+                                            stop_event=self._ups_stop_flag,
+                                            color_fix=color_fix,
+                                            color_fix_wavelets=color_fix_wavelets,
+                                            color_fix_radius=color_fix_radius,
+                                            color_fix_fast=color_fix_fast,
+                                            color_fix_strength=color_fix_strength,
+                                            color_fix_planes=color_fix_planes,
+                                            color_fix_device=color_fix_device,
+                                            color_fix_ref=color_fix_ref)
                     if ok:
                         set_progress(1.0)
                         callback(f"-> {out_path}")
@@ -924,9 +1293,14 @@ class ToolsTab(ctk.CTkFrame):
 
                 elif os.path.isdir(inp):
                     exts = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".tif"}
-                    files = sorted([fn for fn in os.listdir(inp)
-                                    if os.path.splitext(fn)[1].lower() in exts])
+                    files = sorted(
+                        [fn for fn in os.listdir(inp)
+                         if os.path.splitext(fn)[1].lower() in exts],
+                        key=_natural_sort_key,
+                    )
                     total = len(files)
+                    # Pré-calcul du zero-padding pour la sérialisation
+                    _pad_width = max(5, len(str(serialize_start + total - 1))) if use_serialize and total > 0 else 5
                     if total == 0:
                         callback(_t("Aucune image trouvee dans le dossier.", "No images found in folder."))
                         self._play_sound("warning", "sound_warning_enabled")
@@ -972,7 +1346,11 @@ class ToolsTab(ctk.CTkFrame):
                             break
                         in_path = os.path.join(inp, fname)
                         base_name = os.path.splitext(fname)[0]
-                        out_path = os.path.join(actual_out, f"{base_name}{out_suffix}{out_ext}")
+                        if use_serialize:
+                            out_path = os.path.join(actual_out,
+                                                     f"{serialize_start + i:0{_pad_width}d}{out_ext}")
+                        else:
+                            out_path = os.path.join(actual_out, f"{base_name}{out_suffix}{out_ext}")
                         callback(f"[{i + 1}/{total}] {fname}")
                         # Per-image progress: map 0-1 within the slice for this image
                         img_start = i / total
@@ -986,7 +1364,15 @@ class ToolsTab(ctk.CTkFrame):
                                                 progress_callback=_sub_progress,
                                                 out_format=out_format, bit_depth=bit_depth,
                                                 quality=quality,
-                                                stop_event=self._ups_stop_flag)
+                                                stop_event=self._ups_stop_flag,
+                                                color_fix=color_fix,
+                                                color_fix_wavelets=color_fix_wavelets,
+                                                color_fix_radius=color_fix_radius,
+                                                color_fix_fast=color_fix_fast,
+                                                color_fix_strength=color_fix_strength,
+                                                color_fix_planes=color_fix_planes,
+                                                color_fix_device=color_fix_device,
+                                                color_fix_ref=color_fix_ref)
                         _img_dur = _time.monotonic() - _t0
                         if ok:
                             success += 1
@@ -3764,6 +4150,34 @@ except Exception as e: print(f"ERROR:{{e}}")
             fg_color="transparent", border_width=1,
             command=self._bench_list_tests).pack(side="left", padx=8, ipady=4)
 
+        # ── Poids pré-entraînés requis (SparK, ECO) ──────────────────────────
+        f_weights = ctk.CTkFrame(f, fg_color="transparent")
+        f_weights.pack(fill="x", pady=(2, 4))
+        ctk.CTkLabel(f_weights,
+                     text=_t("🔽 Poids requis (SparK / ECO) :", "🔽 Required weights (SparK / ECO):"),
+                     font=("Arial", 11, "bold"), text_color="#aaaaaa", anchor="w").pack(side="left", padx=(2, 8))
+        ctk.CTkButton(
+            f_weights,
+            text="⬇  SparK epoch290.pth",
+            fg_color="#5c3d91", hover_color="#3d2460", width=200,
+            font=("Arial", 11),
+            command=self._bench_download_spark
+        ).pack(side="left", padx=4)
+        ToolTip(
+            f_weights.winfo_children()[-1],
+            _t("Télécharge le modèle InceptionNext pré-entraîné requis par SparK Perceptual Loss.\n"
+               "Fichier : epoch290.pth (~200 MB)\n"
+               "Source  : github.com/umzi2/SparK_Perceptual/releases\n"
+               "Dossier : ~/IA_Engine/weights/spark/",
+               "Downloads the pre-trained InceptionNext model required by SparK Perceptual Loss.\n"
+               "File    : epoch290.pth (~200 MB)\n"
+               "Source  : github.com/umzi2/SparK_Perceptual/releases\n"
+               "Folder  : ~/IA_Engine/weights/spark/")
+        )
+        self.widgets["bench_spark_status"] = ctk.CTkLabel(
+            f_weights, text="", text_color="#27ae60", font=("Consolas", 10))
+        self.widgets["bench_spark_status"].pack(side="left", padx=8)
+
         # Status label
         self.widgets["bench_status"] = ctk.CTkLabel(
             f, text="", text_color="#aaaaaa", font=("Consolas", 11), anchor="w")
@@ -3778,6 +4192,61 @@ except Exception as e: print(f"ERROR:{{e}}")
         return f
 
     # ── Benchmark callbacks ──────────────────────────────────────────────────────
+
+    def _bench_download_spark(self):
+        """Télécharge epoch290.pth (SparK InceptionNext pretrained ~200 MB) dans ~/IA_Engine/weights/spark/."""
+        import threading
+        import urllib.request
+        import urllib.error
+        from pathlib import Path
+
+        # Essayer d'abord GitHub Releases, fallback HuggingFace
+        _SPARK_URLS = [
+            "https://github.com/umzi2/SparK_Perceptual/releases/download/model/epoch290.pth",
+            "https://huggingface.co/umzi2/SparK_Perceptual/resolve/main/epoch290.pth",
+        ]
+        dest_dir  = Path.home() / "IA_Engine" / "weights" / "spark"
+        dest_file = dest_dir / "epoch290.pth"
+        dest_dir.mkdir(parents=True, exist_ok=True)
+
+        # Vérification préalable
+        if dest_file.exists() and dest_file.stat().st_size > 50_000_000:
+            self._ui_update(self.widgets["bench_spark_status"].configure,
+                            text=_t("✔ Déjà téléchargé", "✔ Already downloaded"),
+                            text_color="#27ae60")
+            return
+
+        self._ui_update(self.widgets["bench_spark_status"].configure,
+                        text=_t("⏳ Téléchargement…", "⏳ Downloading…"),
+                        text_color="#f39c12")
+
+        def _download():
+            for url in _SPARK_URLS:
+                try:
+                    req = urllib.request.Request(url, headers={"User-Agent": "Universal-SR-Studio/1.0"})
+                    with urllib.request.urlopen(req, timeout=120) as resp, open(dest_file, "wb") as f:
+                        total = int(resp.headers.get("Content-Length", 0))
+                        downloaded = 0
+                        while chunk := resp.read(65536):
+                            f.write(chunk)
+                            downloaded += len(chunk)
+                            if total:
+                                pct = int(100 * downloaded / total)
+                                self._ui_update(self.widgets["bench_spark_status"].configure,
+                                                text=f"⏳ {pct}%", text_color="#f39c12")
+                    if dest_file.stat().st_size > 50_000_000:
+                        self._ui_update(self.widgets["bench_spark_status"].configure,
+                                        text=_t(f"✔ Téléchargé → {dest_file}", f"✔ Downloaded → {dest_file}"),
+                                        text_color="#27ae60")
+                        return
+                except Exception as e:
+                    continue  # essayer prochain URL
+            # Tous les URLs ont échoué
+            self._ui_update(self.widgets["bench_spark_status"].configure,
+                            text=_t("✗ Échec (voir console)", "✗ Download failed (see console)"),
+                            text_color="#e74c3c")
+
+        threading.Thread(target=_download, daemon=True).start()
 
     def _bench_on_engine_change(self, val):
         """Ajuste les défauts selon le moteur choisi."""

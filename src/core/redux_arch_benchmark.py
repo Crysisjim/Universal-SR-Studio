@@ -66,7 +66,7 @@ REDUX_PYTHON = _find_venv_python(REDUX_PATH)
 DEFAULT_TRAIN_GT = str(Path.home() / "IA_Engine/datasets/train/HR")
 DEFAULT_VAL_GT   = str(Path.home() / "IA_Engine/datasets/val/GT")
 DEFAULT_VAL_LQ   = str(Path.home() / "IA_Engine/datasets/val/LQ")
-DEFAULT_TEST_IMG = ""  # Set via --train-gt or leave empty to skip upscale test
+DEFAULT_TEST_IMG = str(Path.home() / "IA_Engine/datasets/val/LQ/Overlord (1).png")
 
 # ── Modes de précision ─────────────────────────────────────────────────────────
 _PRECISION_MODES = {
@@ -278,6 +278,23 @@ ARCH_LIST = [
     _a("dat_s",         "DAT-S",            3, lq_size=48, batch=2, accum=2,
        channels_last=False, extra_ng="  use_checkpoint: true\n"),
     _a("dat_light",     "DAT-Light",        2, lq_size=64, batch=4, channels_last=False),
+
+    # ── Sprint 19/20 — Nouvelles architectures communautaires ─────────────────
+    # SpanF : SPAN simplifié, blocs SPAB1, très léger
+    _a("spanf",         "SpanF (fc=32)",        1, lq_size=64, batch=8, channels_last=False,
+       extra_ng="  feature_channels: 32\n"),
+
+    # SpanPP / SpanC : multi-scale IGConv, reparamétrisable
+    _a("spanc",         "SpanPP/SpanC (fc=48, s×1)", 1, lq_size=64, batch=8, channels_last=False,
+       extra_ng="  feature_channels: 48\n  scale_list: [1]\n  eval_base_scale: 1\n"),
+
+    # GFISRv2 : GatedCNN + FFT-inspired multi-upsampler
+    _a("gfisrv2",       "GFISRv2 (dim=48)",     1, lq_size=64, batch=8, channels_last=False,
+       extra_ng="  dim: 48\n  n_blocks: 24\n"),
+
+    # SMoSR : léger Self-Modulation, compétitif SPAN-S
+    _a("smosr",         "SMoSR (dim=48)",       1, lq_size=64, batch=8, channels_last=False,
+       extra_ng="  dim: 48\n  n_mb: 3\n"),
 ]
 
 _ARCH_BY_NAME = {a["name"]: a for a in ARCH_LIST}
@@ -499,8 +516,8 @@ def run_arch_test(cfg: dict, mode_name: str, n_iter: int, timeout: int,
 
     # Upscale : seulement sur bf16 (ou normal si bf16 absent) pour économiser du temps
     if do_upscale and result["status"] == "ok":
-        if not Path(test_img).exists():
-            print(f"{_CC}[{name}]{_C0} {_CR}[UPSCALE]{_C0} image test introuvable: {test_img}", flush=True)
+        if not test_img or not Path(test_img).exists():
+            print(f"{_CC}[{name}]{_C0} {_CR}[UPSCALE]{_C0} image test introuvable: {test_img!r}", flush=True)
             result["upscale_test"] = {"status": "no_img"}
         else:
             models_dir = exp_dir / "models"
@@ -696,7 +713,7 @@ def main() -> None:
     if not TRAIN_SCRIPT.exists():
         print(f"[ERREUR] train.py introuvable : {TRAIN_SCRIPT}", flush=True)
         sys.exit(1)
-    if REDUX_PYTHON == Path(sys.executable) or not REDUX_PYTHON.exists():
+    if not REDUX_PYTHON.exists():
         print(f"[ERREUR] Venv Python introuvable. Chemins essayés :", flush=True)
         for p in [REDUX_PATH / d / s / "python.exe"
                   for d in ("venv", ".venv") for s in ("Scripts", "bin")]:

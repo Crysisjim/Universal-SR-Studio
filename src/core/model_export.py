@@ -202,6 +202,16 @@ def detect_model_format(model_path: str) -> dict:
                 hints.append("PLKSR")
             if "dat" in keys_str and "spatial_block" in keys_str:
                 hints.append("DAT")
+            if "blocks_2.0.body" in keys_str and "upsampler.MetaUpsample" in keys_str:
+                hints.append("SMoSR (Self-Modulate SR)")
+            if "conv_near.weight" in keys_str and "block_5.conv1" in keys_str:
+                hints.append("SpanF (SPAN simplifié, SPAB1 blocks)")
+            if "MetaIGConv" in keys_str and "upsampler.coord_map" in keys_str:
+                hints.append("SpanC (multi-scale IGConv, reparamétrisable)")
+            if "gfisr_body.0.fc1" in keys_str and "upscale.MetaUpsample" in keys_str:
+                hints.append("GFISRv2 (GatedCNN + Fourier-inspired)")
+            if "blocks.0.0.irca_attn.to_k.weight" in keys_str and "first_conv.weight" in keys_str:
+                hints.append("CATANet (Token Aggregation + LRSA, NeoSR)")
 
             # ── Generic patterns when architecture-specific keys are absent ──
             if not hints:

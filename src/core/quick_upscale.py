@@ -46,6 +46,17 @@ ARCH_SIGNATURES = {
     "ninasr": ["head.0.bias", "body.0.body.2.body"],
     "lmlt":   ["feats.0.lhsb", "to_img.0.weight"],
     "eimn":   ["block1.0.attn.region", "block1.0.layer_scale_1"],
+    # SMoSR: Self-Modulate SR (umzi2) — MetaUpsample buffer is very distinctive
+    "smosr":  ["blocks_2.0.body", "end_block.0.body", "upsampler.MetaUpsample"],
+    # SpanF: variant SPAN avec SPAB1 blocks et conv_near depthwise
+    "spanf":  ["block_1.conv1.eval_conv", "conv_near.weight", "block_5.conv1"],
+    # SpanC: SPAN reparamétrisable + IGConv multi-scale (MetaIGConv buffer)
+    "spanc":  ["block_1.conv_a.eval_conv", "upsampler.coord_map", "MetaIGConv"],
+    # GFISRv2: GatedCNN body + UniUpsampleV3 MetaUpsample
+    "gfisrv2": ["gfisr_body.0.fc1", "upscale.MetaUpsample", "in_to_dim.weight"],
+    # CATANet: Token Aggregation Block (IRCA+IASA) + LRSA (NeoSR, mars 2025)
+    # Clés réelles vérifiées sur state_dict : irca_attn / iasa_attn + first_conv
+    "catanet": ["blocks.0.0.irca_attn.to_k.weight", "blocks.0.0.iasa_attn.to_q.weight", "first_conv.weight"],
 }
 
 
@@ -98,6 +109,37 @@ def detect_scale_from_state(state_dict: dict) -> int:
         s = int(math.sqrt(scale_sq))
         if s >= 1 and s * s == int(scale_sq):
             return s
+    # SMoSR: MetaUpsample buffer stores [254, method_idx, scale, in_dim, out_dim, mid_dim, group, rep]
+    if "upsampler.MetaUpsample" in state_dict:
+        meta = state_dict["upsampler.MetaUpsample"]
+        try:
+            s = int(meta[2].item())
+            if s in (1, 2, 3, 4, 8):
+                return s
+        except Exception:
+            pass
+    # GFISRv2: UniUpsampleV3 stores same MetaUpsample at upscale.MetaUpsample
+    if "upscale.MetaUpsample" in state_dict:
+        meta = state_dict["upscale.MetaUpsample"]
+        try:
+            s = int(meta[2].item())
+            if s in (1, 2, 3, 4, 8):
+                return s
+        except Exception:
+            pass
+    # SpanC: MetaIGConv buffer stores list of scale values as uint8 tensor
+    # eval_base_scale cannot be recovered from state_dict — use min of scale_list as default
+    if "MetaIGConv" in state_dict:
+        meta = state_dict["MetaIGConv"]
+        try:
+            scales = [int(v.item()) for v in meta]
+            if scales:
+                # Return max scale (most common use case)
+                s = max(scales)
+                if s in (1, 2, 3, 4, 8):
+                    return s
+        except Exception:
+            pass
     # conv upsampler (SPANPlus 1x without DySample): always 1x
     if "upsampler.weight" in state_dict and "upsampler.bias" in state_dict:
         if "upsampler.offset" not in " ".join(state_dict.keys()):
@@ -112,6 +154,211 @@ def detect_scale_from_state(state_dict: dict) -> int:
             if s >= 1 and s * s * 3 == ch:
                 return s
     return 4  # Default
+
+
+# ─── Color Fix (post-upscale color drift correction) ────────────────────────
+
+def _cf_resolve_device(device_pref: str) -> str:
+    """
+    Retourne le device effectif selon préférence et disponibilité.
+    'auto'  → cuda si dispo, sinon cpu
+    'cuda'  → force GPU (fallback cpu si absent)
+    'trt'   → torch.compile max-autotune sur GPU (fallback cuda, puis cpu)
+    'cpu'   → toujours PIL
+    """
+    if device_pref in ("cuda", "trt"):
+        if TORCH_AVAILABLE and torch.cuda.is_available():
+            return device_pref   # préserve la distinction cuda/trt
+        return "cpu"
+    if device_pref == "auto":
+        if TORCH_AVAILABLE and torch.cuda.is_available():
+            return "cuda"
+        return "cpu"
+    return "cpu"
+
+
+# ── Cache pour la version torch.compile du BoxBlur (TRT mode) ────────────────
+_cf_trt_fn = None   # type: ignore
+
+
+def _cf_get_trt_boxblur():
+    """
+    Retourne _cf_boxblur_gpu compilé avec torch.compile(mode='max-autotune').
+    Premier appel déclenche l'autotuning Triton (~3 s sur RTX) — résultat mis en cache.
+    Fallback transparent vers _cf_boxblur_gpu si torch.compile non disponible.
+    """
+    global _cf_trt_fn
+    if _cf_trt_fn is None:
+        if TORCH_AVAILABLE:
+            try:
+                _cf_trt_fn = torch.compile(
+                    _cf_boxblur_gpu,
+                    mode="max-autotune",
+                    fullgraph=False,
+                )
+            except Exception:
+                _cf_trt_fn = _cf_boxblur_gpu   # torch < 2.0 → fallback
+        else:
+            _cf_trt_fn = _cf_boxblur_gpu
+    return _cf_trt_fn
+
+
+def _cf_boxblur_gpu(t: "torch.Tensor", r: int, c: int) -> "torch.Tensor":
+    """
+    BoxBlur séparable 1D sur GPU (PyTorch F.conv2d).
+    Entrée/sortie : [1, C, H, W] float32 sur CUDA.
+    Utilise replicate-padding → comportement bord identique à PIL BoxBlur.
+    """
+    import torch.nn.functional as F
+    r = max(1, int(r))
+    k = 2 * r + 1
+    dev = t.device
+    # Filtres séparables : horizontal puis vertical
+    kh = torch.ones(c, 1, 1, k, device=dev, dtype=torch.float32) / k
+    kv = torch.ones(c, 1, k, 1, device=dev, dtype=torch.float32) / k
+    t = F.pad(t, (r, r, 0, 0), mode="replicate")
+    t = F.conv2d(t, kh, groups=c)
+    t = F.pad(t, (0, 0, r, r), mode="replicate")
+    t = F.conv2d(t, kv, groups=c)
+    return t
+
+
+def color_fix_image(
+    sr_np: "np.ndarray",
+    lq_pil: "Image.Image",
+    method: str = "wavelet",
+    wavelets: int = 4,
+    radius: int = 10,
+    fast: bool = False,
+    strength: float = 1.0,
+    planes: "Optional[list]" = None,
+    device: str = "auto",
+    ref_pil: "Optional[Image.Image]" = None,
+) -> "np.ndarray":
+    """
+    Fix color drift post-upscale. Equivalent to vs_colorfix (pifroggi).
+
+    method='wavelet': ATWT (à trous wavelet transform) multi-niveaux.
+        Décompose SR et REF en N niveaux de fréquences progressives.
+        Remplace uniquement le résidu basse-fréquence (couleur globale) du SR par celui du REF.
+        Préserve intégralement le détail haute-fréquence du SR (textures, contours).
+        wavelets=4 → rayon effectif 2^4=16px. Equiv. vs_colorfix.wavelet(wavelets=4).
+        Recommandé : 3–5.
+
+    method='average': region-average single-level (equivalent vs_colorfix.average).
+        fast=False → BoxBlur (précis). fast=True → downscale+upscale (10× plus rapide).
+        Recommandé : radius 5–30.
+
+    device: 'auto'  → CUDA si dispo sinon CPU.
+            'cuda'  → force GPU PyTorch F.conv2d.
+            'trt'   → torch.compile max-autotune (Triton autotuning, ~3s warmup).
+            'cpu'   → toujours PIL.
+        GPU (~10-30× plus rapide que PIL sur 4K). Pas de VapourSynth requis.
+
+    ref_pil: image de référence alternative (vs LQ par défaut).
+        Recommandé : source haute qualité (PNG/TIFF 16-bit) pour éviter le banding.
+        Si None → utilise lq_pil.
+
+    planes : canaux à corriger [0,1,2]=RGB (défaut). Ex: [1,2]=GB seulement.
+    strength: blend [0.0=off, 1.0=correction complète].
+
+    Returns: float32 [H, W, 3] in [0, 1]
+    """
+    from PIL import ImageFilter as _IF
+
+    if planes is None:
+        planes = [0, 1, 2]
+    if strength <= 0.0 or not planes:
+        return sr_np
+
+    h, w = sr_np.shape[:2]
+    nc = sr_np.shape[2]  # nombre de canaux (3 pour RGB)
+
+    # ── Source de référence (LQ par défaut, ou image externe) ────────────────
+    _src_pil = ref_pil if ref_pil is not None else lq_pil
+    lq_up = np.array(_src_pil.resize((w, h), Image.BICUBIC), dtype=np.float32) / 255.0
+
+    # ── Résolution du device ──────────────────────────────────────────────────
+    resolved = _cf_resolve_device(device)
+    use_gpu  = (resolved in ("cuda", "trt") and TORCH_AVAILABLE)
+    _boxblur = _cf_get_trt_boxblur() if resolved == "trt" else _cf_boxblur_gpu
+
+    # ── Helpers ──────────────────────────────────────────────────────────────
+    def _boxblur_pil(arr: "np.ndarray", r: int) -> "np.ndarray":
+        pil = Image.fromarray((arr * 255.0).clip(0, 255).astype(np.uint8))
+        return np.array(pil.filter(_IF.BoxBlur(max(1, r))), dtype=np.float32) / 255.0
+
+    def _np_to_t(arr: "np.ndarray") -> "torch.Tensor":
+        """[H,W,C] numpy → [1,C,H,W] CUDA float32."""
+        return torch.from_numpy(arr.transpose(2, 0, 1)).unsqueeze(0).to("cuda", dtype=torch.float32)
+
+    def _t_to_np(t: "torch.Tensor") -> "np.ndarray":
+        """[1,C,H,W] CUDA → [H,W,C] numpy float32."""
+        return t.squeeze(0).permute(1, 2, 0).clamp(0, 1).cpu().float().numpy()
+
+    # ── WAVELET ───────────────────────────────────────────────────────────────
+    if method == "wavelet":
+        if use_gpu:
+            try:
+                sr_t = _np_to_t(sr_np)
+                lq_t = _np_to_t(lq_up)
+                for level in range(max(1, int(wavelets))):
+                    r = 2 ** level  # 1, 2, 4, 8, 16, 32...
+                    sr_t = _boxblur(sr_t, r, nc)
+                    lq_t = _boxblur(lq_t, r, nc)
+                correction = _t_to_np(lq_t - sr_t)
+            except Exception:
+                # Fallback PIL si CUDA plante (OOM, etc.)
+                use_gpu = False
+
+        if not use_gpu:
+            sr_low = sr_np.copy()
+            lq_low = lq_up.copy()
+            for level in range(max(1, int(wavelets))):
+                r = 2 ** level
+                sr_low = _boxblur_pil(sr_low, r)
+                lq_low = _boxblur_pil(lq_low, r)
+            correction = lq_low - sr_low
+
+    # ── AVERAGE ───────────────────────────────────────────────────────────────
+    elif method == "average":
+        if fast:
+            # Downscale+upscale (chaiNNer-style) — toujours CPU (déjà très rapide)
+            factor = max(2, int(radius))
+            sm_w, sm_h = max(1, w // factor), max(1, h // factor)
+            sr_dn = Image.fromarray((sr_np * 255.0).clip(0, 255).astype(np.uint8)).resize(
+                (sm_w, sm_h), Image.BILINEAR)
+            lq_dn = _src_pil.resize((sm_w, sm_h), Image.BILINEAR)
+            sr_low = np.array(sr_dn.resize((w, h), Image.BILINEAR), dtype=np.float32) / 255.0
+            lq_low = np.array(lq_dn.resize((w, h), Image.BILINEAR), dtype=np.float32) / 255.0
+        elif use_gpu:
+            try:
+                sr_t = _np_to_t(sr_np)
+                lq_t = _np_to_t(lq_up)
+                sr_t = _boxblur(sr_t, int(radius), nc)
+                lq_t = _boxblur(lq_t, int(radius), nc)
+                correction = _t_to_np(lq_t - sr_t)
+            except Exception:
+                use_gpu = False
+
+        if not use_gpu and not fast:
+            sr_low = _boxblur_pil(sr_np, int(radius))
+            lq_low = _boxblur_pil(lq_up, int(radius))
+            correction = lq_low - sr_low
+
+        if fast:
+            correction = lq_low - sr_low
+
+    else:
+        return sr_np
+
+    fixed = sr_np.copy()
+    for c in planes:
+        fixed[:, :, c] = np.clip(sr_np[:, :, c] + correction[:, :, c], 0.0, 1.0)
+
+    if strength < 1.0:
+        fixed = sr_np * (1.0 - strength) + fixed * strength
+    return np.clip(fixed, 0.0, 1.0)
 
 
 # ─── Tiled inference ─────────────────────────────────────────────
@@ -384,6 +631,14 @@ _NEOSR_GENERAL_RUNNER = os.path.join(os.path.dirname(__file__), "neosr_general_r
 # Archs qui appellent net_opt() au niveau module → subprocess neosr_general_runner obligatoire
 _NEOSR_GENERAL_ARCHS = {"ninasr", "lmlt", "eimn", "drct"}
 
+# Archs à exécuter via subprocess traiNNer-redux même si importables en-process.
+# Raison : le kernel CUDA compilé dans le venv traiNNer est requis.
+# - spanplus : DySample update_params() → F.conv2d kernel absent du torch système (Python 3.14 / sm_61)
+# - smosr, gfisrv2 : MetaUpsample (famille DySample) → même problème probable
+# - spanc  : MetaIGConv coord-based → incertain, subprocess par sécurité
+# - spanf  : conv depthwise standard, mais subprocess pour cohérence venv
+_TRAINNER_SUBPROCESS_ARCHS = {"spanplus", "smosr", "gfisrv2", "spanc", "spanf"}
+
 # ─── Model cache ─────────────────────────────────────────────────
 # Clé : chemin absolu canonique du modèle.
 # Valeur : {"model": obj|None, "scale": int, "arch": str, "device": str,
@@ -618,6 +873,14 @@ def upscale_image(
     bit_depth: int = 8,
     quality: int = 95,
     stop_event=None,
+    color_fix: str = "none",
+    color_fix_wavelets: int = 4,
+    color_fix_radius: int = 32,
+    color_fix_fast: bool = False,
+    color_fix_strength: float = 1.0,
+    color_fix_planes: Optional[list] = None,
+    color_fix_device: str = "auto",
+    color_fix_ref: str = "",
 ) -> Tuple[bool, str]:
     """
     Upscale a single image using a trained SR model.
@@ -662,6 +925,31 @@ def upscale_image(
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         log(f"Device : {device}")
 
+        # ── Color Fix post-subprocess helper ──────────────────────────────────────
+        def _post_colorfix(sub_result):
+            """Applique Color Fix sur le fichier sauvegardé par un subprocess."""
+            _ok, _info = sub_result
+            if (_ok and color_fix != "none" and color_fix_strength > 0.0
+                    and IMAGING_AVAILABLE and os.path.isfile(output_path)):
+                try:
+                    _sr_arr = (np.array(Image.open(output_path).convert("RGB"))
+                               .astype(np.float32) / 255.0)
+                    _lq_pil = Image.open(input_path).convert("RGB")
+                    _planes = color_fix_planes if color_fix_planes is not None else [0, 1, 2]
+                    log(f"Color Fix ✓ [{color_fix}] strength={color_fix_strength:.2f}")
+                    _sr_arr = color_fix_image(_sr_arr, _lq_pil,
+                                              method=color_fix,
+                                              wavelets=color_fix_wavelets,
+                                              radius=color_fix_radius,
+                                              fast=color_fix_fast,
+                                              strength=color_fix_strength,
+                                              planes=_planes,
+                                              device=color_fix_device)
+                    _save_output(_sr_arr, output_path, out_format, bit_depth, quality)
+                except Exception as _cf_e:
+                    log(f"Color Fix subprocess : erreur ({_cf_e})")
+            return _ok, _info
+
         # ── Cache check ──
         _cache_key   = os.path.realpath(model_path)
         _cached      = _MODEL_CACHE.get(_cache_key)
@@ -684,10 +972,10 @@ def upscale_image(
                         model_path, input_path, output_path, log,
                         progress_callback, stop_event=stop_event)
                 else:
-                    return _spanplus_subprocess_infer(
+                    return _post_colorfix(_spanplus_subprocess_infer(
                         model_path, input_path, output_path, log,
                         progress_callback, stop_event=stop_event,
-                        tile_size=tile_size, tile_pad=tile_pad, use_amp=use_amp)
+                        tile_size=tile_size, tile_pad=tile_pad, use_amp=use_amp))
             model         = _cached["model"]
             detected_arch = _cached["arch"]
             if scale == 0:
@@ -740,12 +1028,24 @@ def upscale_image(
                     stop_event=stop_event
                 )
 
+            if detected_arch in _TRAINNER_SUBPROCESS_ARCHS:
+                log(f"{detected_arch} → subprocess traiNNer-redux venv (kernel CUDA requis)...")
+                _store_subprocess("trainner")
+                return _post_colorfix(_spanplus_subprocess_infer(
+                    model_path, input_path, output_path, log, progress_callback,
+                    stop_event=stop_event,
+                    tile_size=tile_size, tile_pad=tile_pad, use_amp=use_amp
+                ))
+
             # ── Try to instantiate model in-process ──
             model = None
 
             # Try neosr imports
             if detected_arch and model is None:
                 try:
+                    neosr_path = os.path.join(os.path.expanduser("~"), "IA_Engine", "neosr")
+                    if os.path.isdir(neosr_path) and neosr_path not in sys.path:
+                        sys.path.insert(0, neosr_path)
                     if detected_arch == "span":
                         from neosr.archs.span_arch import span
                         model = span(scale=scale)
@@ -761,6 +1061,19 @@ def upscale_image(
                     elif detected_arch == "esrgan":
                         from neosr.archs.rrdbnet_arch import rrdbnet
                         model = rrdbnet(scale=scale)
+                    elif detected_arch == "catanet":
+                        # net_opt() doit être patché avant l'import (lecture module-level)
+                        import neosr.archs.arch_util as _cat_au
+                        _saved_net_opt = _cat_au.net_opt
+                        _cat_au.net_opt = lambda: (scale, True)
+                        try:
+                            from neosr.archs.catanet_arch import catanet as _CATANet
+                            w = state_dict.get("first_conv.weight")
+                            dim = int(w.shape[0]) if w is not None else 40
+                            model = _CATANet(dim=dim, upscale=scale)
+                            log(f"CATANet instancié (dim={dim}, scale={scale}x)")
+                        finally:
+                            _cat_au.net_opt = _saved_net_opt
                 except ImportError:
                     pass
 
@@ -787,6 +1100,52 @@ def upscale_image(
                     elif detected_arch == "compact":
                         from traiNNer.archs.srvgg_arch import SRVGGNetCompact
                         model = SRVGGNetCompact(upscale=scale)
+                    elif detected_arch == "smosr":
+                        from traiNNer.archs.smosr_arch import SMoSR
+                        w = state_dict.get("blocks_1.0.body.0.W")
+                        dim = int(w.shape[0]) if w is not None else 48
+                        n_mb = len([k for k in state_dict if k.startswith("blocks_2.") and k.endswith(".body.0.W")])
+                        n_mb = n_mb if n_mb > 0 else 3
+                        meta = state_dict.get("upsampler.MetaUpsample")
+                        if meta is not None and scale == 0:
+                            try:
+                                scale = max(1, int(meta[2].item()))
+                            except Exception:
+                                scale = 4
+                        model = SMoSR(scale=max(1, scale), dim=dim, n_mb=n_mb)
+                        log(f"SMoSR instancié (dim={dim}, n_mb={n_mb}, scale={scale}x)")
+                    elif detected_arch == "spanf":
+                        from traiNNer.archs.spanf_arch import spanf
+                        w = state_dict.get("block_1.conv1.eval_conv.weight")
+                        fc = int(w.shape[0]) if w is not None else 32
+                        model = spanf(feature_channels=fc, scale=max(1, scale))
+                        log(f"SpanF instancié (fc={fc}, scale={scale}x)")
+                    elif detected_arch == "spanc":
+                        from traiNNer.archs.spanpp_arch import SpanC
+                        meta = state_dict.get("MetaIGConv")
+                        if meta is not None:
+                            scale_list = tuple(int(v.item()) for v in meta)
+                        else:
+                            scale_list = (2, 4)
+                        w = state_dict.get("conv0.eval_conv.weight")
+                        fc = int(w.shape[0]) if w is not None else 48
+                        model = SpanC(feature_channels=fc, scale_list=scale_list,
+                                      eval_base_scale=max(1, scale) if scale in scale_list else scale_list[0])
+                        log(f"SpanC instancié (fc={fc}, scales={scale_list})")
+                    elif detected_arch == "gfisrv2":
+                        from traiNNer.archs.gfisrv2_arch import GFISRV2
+                        w = state_dict.get("in_to_dim.weight")
+                        dim = int(w.shape[0]) if w is not None else 48
+                        n_blocks = len([k for k in state_dict if k.startswith("gfisr_body.") and k.endswith(".fc1.weight")])
+                        n_blocks = n_blocks if n_blocks > 0 else 24
+                        meta = state_dict.get("upscale.MetaUpsample")
+                        if meta is not None and scale == 0:
+                            try:
+                                scale = max(1, int(meta[2].item()))
+                            except Exception:
+                                scale = 4
+                        model = GFISRV2(scale=max(1, scale), dim=dim, n_blocks=n_blocks)
+                        log(f"GFISRv2 instancié (dim={dim}, n_blocks={n_blocks}, scale={scale}x)")
                 except ImportError:
                     pass
 
@@ -802,11 +1161,11 @@ def upscale_image(
                 # Fallback 2: universal subprocess (spandrel in traiNNer venv)
                 _store_subprocess("trainner")
                 log(f"Tentative via subprocess traiNNer-redux venv ({detected_arch or 'arch inconnue'})...")
-                return _spanplus_subprocess_infer(
+                return _post_colorfix(_spanplus_subprocess_infer(
                     model_path, input_path, output_path, log, progress_callback,
                     stop_event=stop_event,
                     tile_size=tile_size, tile_pad=tile_pad, use_amp=use_amp
-                )
+                ))
 
             if not isinstance(model, torch.jit.ScriptModule):
                 model.load_state_dict(state_dict, strict=False)
@@ -838,16 +1197,72 @@ def upscale_image(
             return False, "Arrêt demandé par l'utilisateur."
 
         with torch.no_grad(), amp_ctx:
-            if tile_size > 0 and (img.width > tile_size or img.height > tile_size):
-                log(f"Mode tiling : {tile_size}px, padding {tile_pad}px")
-                output = tile_inference(model, img_tensor, tile_size, tile_pad, scale,
-                                        stop_event=stop_event)
-            else:
-                output = model(img_tensor)
+            try:
+                if tile_size > 0 and (img.width > tile_size or img.height > tile_size):
+                    log(f"Mode tiling : {tile_size}px, padding {tile_pad}px")
+                    output = tile_inference(model, img_tensor, tile_size, tile_pad, scale,
+                                            stop_event=stop_event)
+                else:
+                    output = model(img_tensor)
+            except Exception as _cuda_e:
+                _esc = str(_cuda_e)
+                if "no kernel image" in _esc or "cudaErrorNoKernelImageForDevice" in _esc:
+                    log("⚠ Kernel CUDA incompatible → fallback CPU (plus lent)")
+                    _model_cpu = model.cpu()
+                    _tensor_cpu = img_tensor.cpu()
+                    with torch.amp.autocast("cpu", enabled=False):
+                        if tile_size > 0 and (img.width > tile_size or img.height > tile_size):
+                            output = tile_inference(_model_cpu, _tensor_cpu, tile_size, tile_pad,
+                                                    scale, stop_event=stop_event)
+                        else:
+                            output = _model_cpu(_tensor_cpu)
+                    # output reste sur CPU — .cpu() ligne suivante est no-op
+                    if device.type == "cuda":
+                        model.to(device)  # remet le modèle sur GPU pour les appels suivants
+                else:
+                    raise
 
         # ── Save output ──
         output = output.squeeze(0).clamp(0, 1).cpu().float().numpy()
         output = np.transpose(output, (1, 2, 0))   # [H, W, 3] float32 [0,1]
+
+        # ── Color Fix (post-process) ──
+        if color_fix != "none" and color_fix_strength > 0.0 and IMAGING_AVAILABLE:
+            _planes = color_fix_planes if color_fix_planes is not None else [0, 1, 2]
+            _cf_dev = _cf_resolve_device(color_fix_device)
+
+            # ── Chargement image de référence (optionnel) ──
+            _ref_pil = None
+            if color_fix_ref and os.path.isfile(color_fix_ref):
+                try:
+                    _ref_pil = Image.open(color_fix_ref).convert("RGB")
+                    log(f"Color Fix ref : {os.path.basename(color_fix_ref)}")
+                except Exception as _e:
+                    log(f"Color Fix ref : impossible de charger ({_e}) — LQ utilisé")
+
+            _ref_label = f" ref={os.path.basename(color_fix_ref)}" if _ref_pil else ""
+            if color_fix == "wavelet":
+                log(f"Color Fix [wavelet] wavelets={color_fix_wavelets} "
+                    f"strength={color_fix_strength:.2f} planes={_planes} "
+                    f"device={_cf_dev}{_ref_label}")
+            else:
+                log(f"Color Fix [average] radius={color_fix_radius} fast={color_fix_fast} "
+                    f"strength={color_fix_strength:.2f} planes={_planes} "
+                    f"device={_cf_dev}{_ref_label}")
+
+            if _cf_dev == "trt":
+                log("Color Fix TRT : premier appel → autotuning Triton (~3 s), "
+                    "résultat mis en cache pour les prochaines images.")
+
+            output = color_fix_image(output, img,
+                                     method=color_fix,
+                                     wavelets=color_fix_wavelets,
+                                     radius=color_fix_radius,
+                                     fast=color_fix_fast,
+                                     strength=color_fix_strength,
+                                     planes=_planes,
+                                     device=color_fix_device,
+                                     ref_pil=_ref_pil)
 
         os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
         _save_output(output, output_path, out_format, bit_depth, quality)

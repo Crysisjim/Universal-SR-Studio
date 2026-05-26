@@ -68,29 +68,97 @@ def run(model_path: str, input_path: str, output_path: str,
     except Exception as e:
         print(f"[Runner] spandrel echec ({e}), tentative manuelle...", flush=True)
 
-    # ── 2. Fallback: manual SpanPlus (traiNNer-redux, not yet in spandrel) ──
+    # ── 2. Fallback: manual traiNNer-redux exotic archs (not yet in spandrel) ──
     if model is None:
         try:
-            from traiNNer.archs.spanplus_arch import SpanPlus
             state_dict = _load_state_dict(model_path)
 
-            fc_t = state_dict.get("feats.0.eval_conv.weight",
-                                  state_dict.get("feats.0.sk.weight", None))
-            fc = fc_t.shape[0] if fc_t is not None else 48
+            # Détection arch depuis les clés du state_dict
+            detected = None
+            if "feats.0.eval_conv.weight" in state_dict and "upsampler.offset.weight" in state_dict:
+                detected = "spanplus"
+            elif "blocks_2.0.body" in " ".join(state_dict.keys()) and "upsampler.MetaUpsample" in state_dict:
+                detected = "smosr"
+            elif "gfisr_body.0.fc1.weight" in state_dict and "upscale.MetaUpsample" in state_dict:
+                detected = "gfisrv2"
+            elif "block_1.conv_a.eval_conv.weight" in state_dict and "MetaIGConv" in state_dict:
+                detected = "spanc"
+            elif "block_1.conv1.eval_conv.weight" in state_dict and "conv_near.weight" in state_dict:
+                detected = "spanf"
+            elif "feats.0.eval_conv.weight" in state_dict or "feats.0.sk.weight" in state_dict:
+                detected = "spanplus"  # SPANPlus sans DySample (1x conv upsampler)
 
-            upsampler = "conv"
-            if "upsampler.offset.weight" in state_dict:
-                upsampler = "dys"
-                ch = state_dict["upsampler.offset.weight"].shape[0]
-                s = int(math.sqrt(ch / 8.0))
-                if s >= 1 and s * s == int(ch / 8.0):
-                    scale = s
+            if detected == "spanplus":
+                from traiNNer.archs.spanplus_arch import SpanPlus
+                fc_t = state_dict.get("feats.0.eval_conv.weight", state_dict.get("feats.0.sk.weight"))
+                fc = fc_t.shape[0] if fc_t is not None else 48
+                upsampler = "conv"
+                if "upsampler.offset.weight" in state_dict:
+                    upsampler = "dys"
+                    ch = state_dict["upsampler.offset.weight"].shape[0]
+                    s = int(math.sqrt(ch / 8.0))
+                    if s >= 1 and s * s == int(ch / 8.0):
+                        scale = s
+                model = SpanPlus(feature_channels=fc, upscale=scale, upsampler=upsampler)
+                model.load_state_dict(state_dict, strict=True)
+                print(f"[Runner] SpanPlus manuel : fc={fc}, scale={scale}x, up={upsampler}", flush=True)
 
-            model = SpanPlus(feature_channels=fc, upscale=scale, upsampler=upsampler)
-            model.load_state_dict(state_dict, strict=True)
-            print(f"[Runner] SpanPlus manuel : fc={fc}, scale={scale}x, up={upsampler}", flush=True)
+            elif detected == "smosr":
+                from traiNNer.archs.smosr_arch import SMoSR
+                w = state_dict.get("blocks_1.0.body.0.W")
+                dim = int(w.shape[0]) if w is not None else 48
+                n_mb = len([k for k in state_dict if k.startswith("blocks_2.") and k.endswith(".body.0.W")])
+                n_mb = n_mb if n_mb > 0 else 3
+                meta = state_dict.get("upsampler.MetaUpsample")
+                if meta is not None and scale <= 0:
+                    try:
+                        scale = max(1, int(meta[2].item()))
+                    except Exception:
+                        scale = 4
+                model = SMoSR(scale=max(1, scale), dim=dim, n_mb=n_mb)
+                model.load_state_dict(state_dict, strict=False)
+                print(f"[Runner] SMoSR manuel : dim={dim}, n_mb={n_mb}, scale={scale}x", flush=True)
+
+            elif detected == "gfisrv2":
+                from traiNNer.archs.gfisrv2_arch import GFISRV2
+                w = state_dict.get("in_to_dim.weight")
+                dim = int(w.shape[0]) if w is not None else 48
+                n_blocks = len([k for k in state_dict if k.startswith("gfisr_body.") and k.endswith(".fc1.weight")])
+                n_blocks = n_blocks if n_blocks > 0 else 24
+                meta = state_dict.get("upscale.MetaUpsample")
+                if meta is not None and scale <= 0:
+                    try:
+                        scale = max(1, int(meta[2].item()))
+                    except Exception:
+                        scale = 4
+                model = GFISRV2(scale=max(1, scale), dim=dim, n_blocks=n_blocks)
+                model.load_state_dict(state_dict, strict=False)
+                print(f"[Runner] GFISRv2 manuel : dim={dim}, n_blocks={n_blocks}, scale={scale}x", flush=True)
+
+            elif detected == "spanc":
+                from traiNNer.archs.spanpp_arch import SpanC
+                meta = state_dict.get("MetaIGConv")
+                if meta is not None:
+                    scale_list = tuple(int(v.item()) for v in meta)
+                else:
+                    scale_list = (2, 4)
+                w = state_dict.get("conv0.eval_conv.weight")
+                fc = int(w.shape[0]) if w is not None else 48
+                eval_base = max(1, scale) if scale in scale_list else scale_list[0]
+                model = SpanC(feature_channels=fc, scale_list=scale_list, eval_base_scale=eval_base)
+                model.load_state_dict(state_dict, strict=False)
+                print(f"[Runner] SpanC manuel : fc={fc}, scales={scale_list}", flush=True)
+
+            elif detected == "spanf":
+                from traiNNer.archs.spanf_arch import spanf
+                w = state_dict.get("block_1.conv1.eval_conv.weight")
+                fc = int(w.shape[0]) if w is not None else 32
+                model = spanf(feature_channels=fc, scale=max(1, scale))
+                model.load_state_dict(state_dict, strict=False)
+                print(f"[Runner] SpanF manuel : fc={fc}, scale={scale}x", flush=True)
+
         except Exception as e:
-            print(f"[Runner] SpanPlus manuel echec : {e}", flush=True)
+            print(f"[Runner] Fallback traiNNer manuel echec : {e}", flush=True)
             model = None
 
     if model is None:

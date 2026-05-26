@@ -10,8 +10,8 @@ DEFAULT_LANGUAGE = "fr"
 TRANSLATIONS = {
     # ===== GÉNÉRAL =====
     "app_title": {
-        "fr": "Universal SR Studio V2.4 - Interface NeoSR & TraiNNer",
-        "en": "Universal SR Studio V2.4 - NeoSR & TraiNNer Interface"
+        "fr": "Universal SR Studio V2.5 - Interface NeoSR & TraiNNer",
+        "en": "Universal SR Studio V2.5 - NeoSR & TraiNNer Interface"
     },
     
     # ===== ONGLETS =====

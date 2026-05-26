@@ -133,7 +133,10 @@ class ConfigHandler:
         flat["auto_ngrok"] = str(mon.get("auto_ngrok", False)).lower()
         
         net_g = cfg.get("network_g", {})
-        flat["arch"] = net_g.get("type", "omnisr")
+        # Registry key → UI display name (inverse of _ARCH_DISPLAY_TO_REGISTRY)
+        _REGISTRY_TO_DISPLAY = {"spanc": "spanpp"}
+        _raw_arch = net_g.get("type", "omnisr")
+        flat["arch"] = _REGISTRY_TO_DISPLAY.get(_raw_arch, _raw_arch)
         for k, v in net_g.items():
             if k not in ["type", "num_in_ch", "num_out_ch", "upsampling", "scale", "upscale"]:
                 flat[f"dyn_{k}"] = v
@@ -151,7 +154,12 @@ class ConfigHandler:
         # NeoSR uses: otf, paired
         raw_type = str(ds_train.get("type", "paired")).lower()
         if "realesrgan" in raw_type or "otf" in raw_type:
-            flat["dataset_mode"] = "otf"
+            # Detect bicubic-only OTF from absence of high_order_degradation or gaussian_noise_prob == 0
+            _is_bicubic = (not cfg.get("high_order_degradation", True)
+                           and float(ds_train.get("gaussian_noise_prob", cfg.get("gaussian_noise_prob", 0.65))) < 0.01)
+            flat["dataset_mode"] = "bicubic" if _is_bicubic else "otf"
+        elif "bicubic" in raw_type:
+            flat["dataset_mode"] = "bicubic"
         elif "paired" in raw_type:
             flat["dataset_mode"] = "paired"
         elif "single" in raw_type:
@@ -205,7 +213,9 @@ class ConfigHandler:
         flat["ema"] = str(train.get("ema", train.get("ema_decay", 0.999)))
         flat["sam"] = train.get("sam", "none")
         flat["sam_init"] = train.get("sam_init", -1)
-        flat["eco"] = str(train.get("eco", False)).lower()
+        flat["eco_mode"] = str(train.get("eco", False)).lower()
+        eco_pt = paths.get("eco_pretrain_g")
+        flat["eco_pretrain_path"] = "" if eco_pt is None else str(eco_pt)
         flat["match_lq_colors"] = str(train.get("match_lq_colors", False)).lower()
         
         opt_g = train.get("optim_g", {})
@@ -403,6 +413,11 @@ class ConfigHandler:
                     flat["weight_loss_contextual"] = lw
                     flat["ctx_distance_type"] = loss.get("distance_type", "cosine")
                     flat["ctx_band_width"]    = loss.get("band_width",    0.5)
+                elif "spark" in lt:
+                    flat["loss_spark"] = "true"
+                    flat["weight_loss_spark"] = lw
+                    flat["spark_criterion"]   = loss.get("criterion", "fd")
+                    flat["spark_path"]        = loss.get("path", "")
 
         flat["print_freq"] = logger.get("print_freq", 100)
         flat["save_freq"] = logger.get("save_checkpoint_freq", 5000)
@@ -546,7 +561,8 @@ class ConfigHandler:
             arch = data.get("arch", "omnisr")
             lq_size = safe_num("patch_size", 64, int)
             bs = safe_num("batch_size", 4, int)
-            is_otf = data.get("dataset_mode", "paired") in ("otf", "realesrgandataset")
+            _ds_mode = data.get("dataset_mode", "paired")
+            is_otf = _ds_mode in ("otf", "realesrgandataset", "bicubic")
 
             config = {
                 "name": exp_name,
@@ -562,7 +578,8 @@ class ConfigHandler:
             }
 
             if is_otf:
-                config["high_order_degradation"] = True
+                _is_bicubic_mode = _ds_mode == "bicubic"
+                config["high_order_degradation"] = not _is_bicubic_mode
                 config["high_order_degradations_debug"] = False
                 config["lq_usm"] = False
                 # First degradation
@@ -710,7 +727,12 @@ class ConfigHandler:
                 "pixelshuffle": "ps", "pixel_shuffle": "ps",
                 "convolution": "conv",
             }
-            net_g = {"type": arch}
+            # UI display name → traiNNer ARCH_REGISTRY key (lowercase class name)
+            _ARCH_DISPLAY_TO_REGISTRY = {
+                "spanpp": "spanc",  # repo=spanpp, class=SpanC, registry="spanc"
+            }
+            arch_type = _ARCH_DISPLAY_TO_REGISTRY.get(arch, arch)
+            net_g = {"type": arch_type}
             for k, v in data.items():
                 if k.startswith("dyn_") and v is not None and str(v).strip() != "":
                     field = k[4:]
@@ -718,18 +740,25 @@ class ConfigHandler:
                         continue
                     if field == "upsampler":
                         v = _UPSAMPLER_ALIASES.get(str(v).lower().strip(), v)
-                    # Parse stringified lists (e.g. "[8, 16]") into real lists
-                    # so YAML writes [8, 16] not '[8, 16]' (dat_arch.py fix)
-                    if isinstance(v, str) and v.strip().startswith("[") and v.strip().endswith("]"):
-                        try:
-                            inner = v.strip()[1:-1]
-                            parsed = [int(float(x.strip())) if float(x.strip()).is_integer()
-                                      else float(x.strip())
-                                      for x in inner.split(",") if x.strip()]
-                            net_g[field] = parsed
-                            continue
-                        except Exception:
-                            pass
+                    # Parse list/tuple notation: "(2, 4)", "[2, 4]", "2, 4" → [2, 4]
+                    # SpanPP uses tuple notation (2, 4) for scale_list
+                    if isinstance(v, str):
+                        _s = v.strip()
+                        # Convert tuple (...) or bare "a, b" to bracket [...]
+                        if _s.startswith("(") and _s.endswith(")"):
+                            _s = "[" + _s[1:-1] + "]"
+                        elif not _s.startswith("[") and "," in _s:
+                            _s = "[" + _s + "]"
+                        if _s.startswith("[") and _s.endswith("]"):
+                            try:
+                                inner = _s[1:-1]
+                                parsed = [int(float(x.strip())) if float(x.strip()).is_integer()
+                                          else float(x.strip())
+                                          for x in inner.split(",") if x.strip()]
+                                net_g[field] = parsed
+                                continue
+                            except Exception:
+                                pass
                     try:
                         f = float(v)
                         net_g[field] = int(f) if f.is_integer() else f
@@ -753,6 +782,9 @@ class ConfigHandler:
             resume = data.get("resume_state", "")
             if resume:
                 config["path"]["resume_state"] = resume.replace("\\", "/")
+            eco_pretrain = data.get("eco_pretrain_path", "")
+            if eco_pretrain:
+                config["path"]["eco_pretrain_g"] = eco_pretrain.replace("\\", "/")
 
             # Train
             lr = safe_num("lr", 5e-4, float)
@@ -782,6 +814,7 @@ class ConfigHandler:
                 "ema_decay": safe_num("ema", 0.999, float),
                 "ema_power": 0.75,
                 "grad_clip": safe_bool("grad_clip", False),
+                "eco": safe_bool("eco_mode", False),
                 "optim_g": {
                     "type": data.get("optim_g", "AdamW"),
                     "lr": lr,
@@ -833,6 +866,12 @@ class ConfigHandler:
                 losses.append({"type": "lumaloss", "loss_weight": safe_num("weight_loss_luma", 1.0, float), "criterion": data.get("luma_criterion", "l1")})
             if safe_bool("loss_contextual", False):
                 losses.append({"type": "contextualloss", "loss_weight": safe_num("weight_loss_contextual", 1.0, float), "distance_type": data.get("ctx_distance_type", "cosine"), "band_width": safe_num("ctx_band_width", 0.5, float)})
+            if safe_bool("loss_spark", False):
+                _spark_entry = {"type": "SparkLoss", "loss_weight": safe_num("weight_loss_spark", 1.0, float), "criterion": data.get("spark_criterion", "fd")}
+                _spark_path = (data.get("spark_path") or "").strip()
+                if _spark_path:
+                    _spark_entry["path"] = _spark_path
+                losses.append(_spark_entry)
             if use_gan:
                 losses.append({"type": "ganloss", "gan_type": data.get("gan_type", "vanilla"),
                                "loss_weight": safe_num("gan_loss_weight", 0.1, float)})
@@ -1068,10 +1107,11 @@ class ConfigHandler:
             "network_g": (lambda a: {"type": a, **({} if a in _ARCHS_NO_CHANNELS else {"num_in_ch": 3, "num_out_ch": 3})})(data.get("arch", "omnisr")),
             "path": {"strict_load_g": False, "resume_state": data.get("resume_state", "").strip(), "pretrain_network_g": data.get("pretrain_model", "").strip()},
             "train": {
-                "total_iter": total_iter, "n_iter": total_iter, 
+                "total_iter": total_iter, "n_iter": total_iter,
                 "warmup_iter": safe_num("warmup_iter", -1, int),
                 "ema": safe_num("ema", 0.999, float),
                 "grad_clip": safe_bool("grad_clip", False),
+                "eco": safe_bool("eco_mode", False),
                 "match_lq_colors": safe_bool("match_lq_colors", False),
                 "optim_g": {
                     "type": optim_type, "lr": safe_num("lr", 5e-5, float), 

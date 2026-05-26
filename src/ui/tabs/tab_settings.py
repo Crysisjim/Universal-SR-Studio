@@ -1645,7 +1645,7 @@ except ImportError:
 
         tk.Label(content_tk, text="Universal SR Studio", font=("Roboto", 24, "bold"),
                  fg="#3498db", bg="#1a1a2e").pack(pady=(5, 2))
-        tk.Label(content_tk, text="v2.4.0 -- Super-Resolution Training Suite",
+        tk.Label(content_tk, text="v2.5.0 -- Super-Resolution Training Suite",
                  fg="#AAAAAA", bg="#1a1a2e", font=("Roboto", 12)).pack()
 
         sep = tk.Frame(content_tk, height=2, bg="#3498db")
@@ -1685,6 +1685,109 @@ except ImportError:
             tk.Label(row, text=role, fg="#999999", bg="#111128", anchor="w").pack(side="left", padx=10)
         tk.Label(credits_frame, text="", bg="#111128", height=0).pack(pady=(0, 5))
 
+        # ─── REMERCIEMENTS ─────────────────────────────────────────────────────
+        thanks_frame = tk.Frame(content_tk, bg="#0d1117", bd=1, relief="solid",
+                                highlightbackground="#2a4a2a", highlightthickness=1)
+        thanks_frame.pack(fill="x", pady=10, padx=40)
+
+        tk.Label(thanks_frame, text=_t("🙏 Remerciements", "🙏 Acknowledgements"),
+                 font=("Roboto", 13, "bold"), fg="#2ecc71", bg="#0d1117").pack(pady=(10, 6))
+
+        # Engines
+        tk.Label(thanks_frame, text=_t("— Moteurs d'entraînement —", "— Training Engines —"),
+                 fg="#888888", bg="#0d1117", font=("Roboto", 10, "italic")).pack()
+        for name, url, desc in [
+            ("neosr-project", "https://github.com/neosr-project/neosr",
+             _t("NeoSR — moteur SR moderne (PyTorch)", "NeoSR — modern SR training framework")),
+            ("the-database", "https://github.com/the-database/traiNNer-redux",
+             _t("traiNNer-redux — fork avancé avec OTF, ECO, SpanF...", "traiNNer-redux — advanced fork with OTF, ECO, SpanF...")),
+        ]:
+            row = tk.Frame(thanks_frame, bg="#0d1117"); row.pack(fill="x", padx=20, pady=1)
+            lbl = tk.Label(row, text=name, fg="#3498db", bg="#0d1117", cursor="hand2",
+                           font=("Roboto", 11, "underline"), anchor="w", width=20)
+            lbl.pack(side="left")
+            lbl.bind("<Button-1>", lambda e, u=url: webbrowser.open(u))
+            tk.Label(row, text=desc, fg="#999999", bg="#0d1117", anchor="w",
+                     font=("Roboto", 10)).pack(side="left", padx=8)
+
+        # Architectures & Losses communautaires
+        tk.Label(thanks_frame, text="", bg="#0d1117", height=0).pack(pady=2)
+        tk.Label(thanks_frame, text=_t("— Architectures & Losses communautaires —",
+                                        "— Community Architectures & Losses —"),
+                 fg="#888888", bg="#0d1117", font=("Roboto", 10, "italic")).pack()
+        for name, url, desc in [
+            ("umzi2 (Umzi)", "https://github.com/umzi2",
+             "SMoSR · SpanC (spanpp) · GFISRv2 · SparK Perceptual Loss"),
+            ("zhengchen1999 / NeoSR team", "https://github.com/neosr-project/neosr",
+             "CATANet (Token Aggregation + LRSA)"),
+            ("XPixelGroup / XLAB", "https://github.com/XPixelGroup",
+             "SwinIR · HAT · DRCT · RCAN · RealESRGAN"),
+            ("xinntao / Real-ESRGAN", "https://github.com/xinntao/Real-ESRGAN",
+             "RealESRGAN · ESRGAN · RRDB — base de l'écosystème SR"),
+            ("BasicSR community", "https://github.com/XPixelGroup/BasicSR",
+             _t("Framework BasicSR (losses, métriques, pipeline)", "BasicSR framework (losses, metrics, pipeline)")),
+            ("2minkyulee", "https://github.com/2minkyulee/ECO",
+             _t("ECO Training Mode (AAAI 2024)", "ECO Training Mode (AAAI 2024)")),
+        ]:
+            row = tk.Frame(thanks_frame, bg="#0d1117"); row.pack(fill="x", padx=20, pady=1)
+            lbl = tk.Label(row, text=name, fg="#e67e22", bg="#0d1117", cursor="hand2",
+                           font=("Roboto", 10, "underline"), anchor="w", width=26)
+            lbl.pack(side="left")
+            lbl.bind("<Button-1>", lambda e, u=url: webbrowser.open(u))
+            tk.Label(row, text=desc, fg="#999999", bg="#0d1117", anchor="w",
+                     font=("Roboto", 10)).pack(side="left", padx=8)
+
+        # IA Assistantes
+        tk.Label(thanks_frame, text="", bg="#0d1117", height=0).pack(pady=2)
+        tk.Label(thanks_frame, text=_t("— IA ayant participé à ce projet —",
+                                        "— AI assistants who contributed to this project —"),
+                 fg="#888888", bg="#0d1117", font=("Roboto", 10, "italic")).pack()
+        for name, org, desc in [
+            ("Claude Sonnet / Opus",  "Anthropic",
+             _t("Code principal, refactoring, intégration", "Main code, refactoring, integration")),
+            ("Gemini 3.1 Pro",        "Google",
+             _t("Base du code, architecture initiale", "Code base, initial architecture")),
+            ("Grok",                   "xAI",
+             _t("Contributions initiales", "Initial contributions")),
+        ]:
+            row = tk.Frame(thanks_frame, bg="#0d1117"); row.pack(fill="x", padx=20, pady=1)
+            tk.Label(row, text=name, font=("Roboto", 10, "bold"), fg="#9b59b6",
+                     bg="#0d1117", anchor="w", width=22).pack(side="left")
+            tk.Label(row, text=f"({org})", fg="#666688", bg="#0d1117",
+                     font=("Roboto", 10), anchor="w", width=12).pack(side="left")
+            tk.Label(row, text=desc, fg="#999999", bg="#0d1117", anchor="w",
+                     font=("Roboto", 10)).pack(side="left", padx=5)
+
+        # Outils & économies de tokens
+        tk.Label(thanks_frame, text="", bg="#0d1117", height=0).pack(pady=2)
+        tk.Label(thanks_frame, text=_t("— Outils & économies de tokens —",
+                                        "— Tools & token savings —"),
+                 fg="#888888", bg="#0d1117", font=("Roboto", 10, "italic")).pack()
+        for tname, turl, tdesc in [
+            ("Caveman (Nick Frichot)", "https://github.com/nickfrichot/caveman",
+             _t("Mode réponse ultra-compact — économies de tokens majeures 😊",
+                "Ultra-compact reply mode — major token savings 😊")),
+            ("Graphify", "https://github.com/graphifyy/graphify",
+             _t("Graphes de connaissance — contexte persistant, moins de relecture",
+                "Knowledge graphs — persistent context, less re-reading")),
+            ("Obsidian", "https://obsidian.md",
+             _t("Coffre de notes — mémoire inter-sessions, tokens économisés 😊",
+                "Note vault — cross-session memory, tokens saved 😊")),
+        ]:
+            row = tk.Frame(thanks_frame, bg="#0d1117"); row.pack(fill="x", padx=20, pady=1)
+            lbl = tk.Label(row, text=tname, fg="#f39c12", bg="#0d1117", cursor="hand2",
+                           font=("Roboto", 10, "underline"), anchor="w", width=26)
+            lbl.pack(side="left")
+            lbl.bind("<Button-1>", lambda e, u=turl: webbrowser.open(u))
+            tk.Label(row, text=tdesc, fg="#999999", bg="#0d1117", anchor="w",
+                     font=("Roboto", 10)).pack(side="left", padx=8)
+
+        tk.Label(thanks_frame,
+                 text=_t("Merci à toute la communauté SR open-source 💙",
+                          "Thanks to the entire open-source SR community 💙"),
+                 fg="#555577", bg="#0d1117", font=("Roboto", 10, "italic")).pack(pady=(6, 10))
+
+        # ─── LIENS MOTEURS ─────────────────────────────────────────────────────
         links_frame = tk.Frame(content_tk, bg="#1a1a2e")
         links_frame.pack(pady=10)
         tk.Label(links_frame, text=_t("Moteurs SR :", "SR Engines:"), fg="#888888", bg="#1a1a2e").pack(side="left")

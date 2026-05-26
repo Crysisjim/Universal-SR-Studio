@@ -225,8 +225,10 @@ class ConfigTab(ctk.CTkFrame):
             "ai_check": self.create_page_ai_check(), "pipeline": self.create_page_pipeline(),
         }
         self.show_frame("gen")
-        # Init engine-dependent widgets (families, discriminators, GAN types, scales)
-        self.on_engine_change("NeoSR")
+        # Init engine-dependent widgets — restaure le dernier moteur ou défaut TraiNNer-Redux
+        _default_engine = self.settings.get("engine", "TraiNNer-Redux")
+        self.widgets["engine"].set(_default_engine)
+        self.on_engine_change(_default_engine)
         self.on_arch_change("omnisr"); self.on_disc_change("unet"); self.frame_gan_opts.pack_forget()
 
     # --- PAGES ---
@@ -240,7 +242,7 @@ class ConfigTab(ctk.CTkFrame):
 
         # MOTEUR AVEC LISTENER
         self.add_label_tip(f_sub, _t("Moteur :", "Engine:"), "engine")
-        self.widgets["engine"] = ctk.CTkOptionMenu(f_sub, values=["NeoSR", "TraiNNer-Redux"], command=self.on_engine_change)
+        self.widgets["engine"] = ctk.CTkOptionMenu(f_sub, values=["TraiNNer-Redux", "NeoSR"], command=self.on_engine_change)
         self.widgets["engine"].pack(side="left", padx=10)
 
         self.add_label_tip(f_sub, _t("Scale :", "Scale:"), "scale"); self.widgets["scale"] = ctk.CTkOptionMenu(f_sub, values=NEOSR_SCALES, width=70); self.widgets["scale"].pack(side="left", padx=10); self.widgets["scale"].set("4")
@@ -313,6 +315,9 @@ class ConfigTab(ctk.CTkFrame):
         return DISC_INTERNAL_NAMES.get(display_name, display_name)
 
     def on_engine_change(self, choice):
+        # 0. Sauvegarde du choix moteur (persist à travers les sessions)
+        try: self.settings.set("engine", choice)
+        except Exception: pass
         # 1. Mise à jour du ConfigHandler
         try: self.config_handler.set_engine(choice)
         except Exception: pass
@@ -401,6 +406,8 @@ class ConfigTab(ctk.CTkFrame):
             "loss_gv",    "weight_loss_gv",    "gv_patch_size",    "gv_criterion",
             "loss_luma",  "weight_loss_luma",  "luma_criterion",
             "loss_contextual", "weight_loss_contextual", "ctx_distance_type", "ctx_band_width",
+            "loss_spark", "weight_loss_spark", "spark_criterion", "spark_path",
+            "eco_mode", "eco_pretrain_path",
         ]
         state_redux = "normal" if is_redux else "disabled"
         for k in _REDUX_ONLY:
@@ -479,11 +486,11 @@ class ConfigTab(ctk.CTkFrame):
         f = ctk.CTkFrame(self.page_container, fg_color="transparent"); self.add_header(f, _t("Datasets & Chemins", "Datasets & Paths"))
         f_mode = ctk.CTkFrame(f, fg_color="transparent"); f_mode.pack(fill="x", pady=5)
         ctk.CTkLabel(f_mode, text=_t("Mode de Dataset :", "Dataset Mode:"), width=120, anchor="w").pack(side="left")
-        self.widgets["dataset_mode"] = ctk.CTkOptionMenu(f_mode, values=["otf", "paired"], width=180); self.widgets["dataset_mode"].pack(side="left"); self.widgets["dataset_mode"].set("otf"); ToolTip(self.widgets["dataset_mode"], get_tooltip("dataset_mode"))
-        self.row_file_picker(f, _t("Train HQ (GT) :", "Train HQ (GT):"), "dataroot_gt", default=self.settings.get("ds_train_gt"))
-        self.row_file_picker(f, _t("Val HQ (GT) :", "Val HQ (GT):"), "val_gt", default=self.settings.get("ds_val_gt"), tip_key="val_freq")
-        self.row_file_picker(f, _t("Val LQ (Optionnel) :", "Val LQ (Optional):"), "val_lq", default=self.settings.get("ds_val_lq"))
-        self.row_file_picker(f, _t("Train LQ (Optionnel) :", "Train LQ (Optional):"), "dataroot_lq", default=self.settings.get("ds_train_lq"))
+        self.widgets["dataset_mode"] = ctk.CTkOptionMenu(f_mode, values=["otf", "bicubic", "paired"], width=180); self.widgets["dataset_mode"].pack(side="left"); self.widgets["dataset_mode"].set("otf"); ToolTip(self.widgets["dataset_mode"], get_tooltip("dataset_mode"))
+        self.row_file_picker(f, _t("Train HQ (GT) :", "Train HQ (GT):"), "dataroot_gt", default=self.settings.get("ds_train_gt"), save_key="ds_train_gt")
+        self.row_file_picker(f, _t("Val HQ (GT) :", "Val HQ (GT):"), "val_gt", default=self.settings.get("ds_val_gt"), tip_key="val_freq", save_key="ds_val_gt")
+        self.row_file_picker(f, _t("Val LQ (Optionnel) :", "Val LQ (Optional):"), "val_lq", default=self.settings.get("ds_val_lq"), save_key="ds_val_lq")
+        self.row_file_picker(f, _t("Train LQ (Optionnel) :", "Train LQ (Optional):"), "dataroot_lq", default=self.settings.get("ds_train_lq"), save_key="ds_train_lq")
 
         row_sh = ctk.CTkFrame(f, fg_color="transparent"); row_sh.pack(fill="x", pady=2)
         self.widgets["use_shuffle"] = ctk.CTkCheckBox(row_sh, text=_t("Shuffle (Mélanger)", "Shuffle (Randomize)"), onvalue="true", offvalue="false"); self.widgets["use_shuffle"].pack(side="left", padx=5); self.widgets["use_shuffle"].select()
@@ -511,6 +518,18 @@ class ConfigTab(ctk.CTkFrame):
         self.add_header(f, _t("Reprise / Pretrain", "Resume / Pretrain"))
         self.row_file_picker(f, _t("Resume State (.state) :", "Resume State (.state):"), "resume_state", is_file=True)
         self.row_file_picker(f, _t("Pretrain Model (.pth) :", "Pretrain Model (.pth):"), "pretrain_model", is_file=True)
+
+        # --- ECO Training Mode (AAAI 2024, traiNNer-redux only) ---
+        self.add_header(f, _t("ECO Training Mode (Redux)", "ECO Training Mode (Redux)"))
+        f_eco = ctk.CTkFrame(f, fg_color="transparent"); f_eco.pack(fill="x", pady=2)
+        self.widgets["eco_mode"] = ctk.CTkCheckBox(
+            f_eco, text=_t("Activer ECO", "Enable ECO"),
+            width=140, onvalue="true", offvalue="false"
+        )
+        self.widgets["eco_mode"].pack(side="left", padx=5)
+        ToolTip(self.widgets["eco_mode"], get_tooltip("eco_mode"))
+        self.row_file_picker(f, _t("Pretrain ECO (.pth) :", "ECO Pretrain (.pth):"),
+                             "eco_pretrain_path", is_file=True, tip_key="eco_pretrain_path")
         return f
 
     def _init_log_slider(self, slider, entry, emoji_lbl, lo=1e-6, hi=1e-3, emoji_map=None):
@@ -1172,6 +1191,7 @@ class ConfigTab(ctk.CTkFrame):
         lbl_w = ctk.CTkLabel(f_fdl, text="W:", width=20); lbl_w.pack(side="left"); self.widgets["weight_loss_fdl"] = ctk.CTkEntry(f_fdl, width=50); self.widgets["weight_loss_fdl"].insert(0, "1.0"); self.widgets["weight_loss_fdl"].pack(side="left", padx=5)
         self.widgets["fdl_model"] = ctk.CTkOptionMenu(f_fdl, values=["vgg", "dinov2", "resnet", "effnet"], width=90); self.widgets["fdl_model"].pack(side="left"); self.widgets["fdl_model"].set("vgg"); ToolTip(self.widgets["fdl_model"], get_tooltip("fdl_model"))
 
+
         # Helper : popup d'options pour une loss (CTkToplevel persistant, caché par défaut)
         def _loss_popup(title, fields):
             """
@@ -1329,6 +1349,13 @@ class ConfigTab(ctk.CTkFrame):
         ctk.CTkLabel(f_ctx, text="W:", width=20).pack(side="left"); self.widgets["weight_loss_contextual"] = ctk.CTkEntry(f_ctx, width=42); self.widgets["weight_loss_contextual"].insert(0, "1.0"); self.widgets["weight_loss_contextual"].pack(side="left", padx=3)
         self.widgets["ctx_distance_type"] = ctk.CTkOptionMenu(f_ctx, values=["cosine", "l2"], width=82); self.widgets["ctx_distance_type"].pack(side="left", padx=3); self.widgets["ctx_distance_type"].set("cosine"); ToolTip(self.widgets["ctx_distance_type"], _t("Métrique de distance entre patches VGG.\ncosine : Angle entre vecteurs — plus robuste aux changements d'échelle. Recommandé.\nl2 : Distance euclidienne — plus sensible à la magnitude.", "Distance metric between VGG patches.\ncosine: Angle between vectors — more robust to scale changes. Recommended.\nl2: Euclidean distance — more sensitive to magnitude."))
         ctk.CTkLabel(f_ctx, text="BW:", width=28).pack(side="left"); self.widgets["ctx_band_width"] = ctk.CTkEntry(f_ctx, width=42); self.widgets["ctx_band_width"].insert(0, "0.5"); self.widgets["ctx_band_width"].pack(side="left", padx=3); ToolTip(self.widgets["ctx_band_width"], _t("Bandwidth (largeur de bande contextuelle).\nContrôle la tolérance aux décalages spatiaux entre patches.\nDéfaut : 0.5  |  Plus haut → plus de tolérance, pénalité plus douce.", "Bandwidth (contextual bandwidth).\nControls tolerance to spatial shifts between patches.\nDefault: 0.5  |  Higher → more tolerance, softer penalty."))
+        # SparK Perceptual (Redux uniquement — InceptionNext features)
+        f_spark = ctk.CTkFrame(f_loss_right, fg_color="transparent"); f_spark.pack(fill="x", pady=2, padx=6)
+        chk_spark = ctk.CTkCheckBox(f_spark, text="SparK (Percep)", width=120, onvalue="true", offvalue="false"); chk_spark.pack(side="left"); self.widgets["loss_spark"] = chk_spark; ToolTip(chk_spark, get_tooltip("loss_spark"))
+        ctk.CTkLabel(f_spark, text="W:", width=20).pack(side="left"); self.widgets["weight_loss_spark"] = ctk.CTkEntry(f_spark, width=42); self.widgets["weight_loss_spark"].insert(0, "1.0"); self.widgets["weight_loss_spark"].pack(side="left", padx=3)
+        self.widgets["spark_criterion"] = ctk.CTkOptionMenu(f_spark, values=["fd", "charbonnier"], width=100); self.widgets["spark_criterion"].pack(side="left", padx=3); self.widgets["spark_criterion"].set("fd"); ToolTip(self.widgets["spark_criterion"], _t("Critère SparK :\n- fd : Fourier Domain (magnitude + phase, recommandé)\n- charbonnier : Charbonnier sur les features brutes", "SparK criterion:\n- fd: Fourier Domain (magnitude + phase, recommended)\n- charbonnier: Charbonnier on raw features"))
+        self.widgets["spark_path"] = ctk.CTkEntry(f_spark, width=130, placeholder_text=_t("epoch290.pth (opt)", "epoch290.pth (opt)")); self.widgets["spark_path"].pack(side="left", padx=3); ToolTip(self.widgets["spark_path"], _t("Chemin local vers les poids InceptionNext (epoch290.pth).\nLaissez vide pour téléchargement auto depuis GitHub.", "Local path to InceptionNext weights (epoch290.pth).\nLeave empty for automatic download from GitHub."))
+
         ctk.CTkLabel(f_loss_right, text="", height=4).pack()  # bottom padding
 
         self.add_header(f, _t("Monitoring", "Monitoring")); f_mon = ctk.CTkFrame(f, fg_color="transparent"); f_mon.pack(fill="x", pady=5)
@@ -3109,6 +3136,8 @@ class ConfigTab(ctk.CTkFrame):
                 base_est += 0.8
             if "loss_wavelet" in self.widgets and str(self.widgets["loss_wavelet"].get()).lower() in ("true", "1", "on"):
                 base_est += 0.3
+            if "loss_spark" in self.widgets and str(self.widgets["loss_spark"].get()).lower() in ("true", "1", "on"):
+                base_est += 0.6  # InceptionNext ~200 MB weights + FFT projections
 
             if self.total_vram_gb > 0:
                 pct = base_est / self.total_vram_gb
