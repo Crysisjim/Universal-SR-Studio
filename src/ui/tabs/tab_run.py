@@ -2621,7 +2621,7 @@ class RunTab(ctk.CTkFrame):
             if not enabled:
                 return
             volume = int(self.settings.get("sound_volume", 70))
-            sound_path = os.path.join(os.path.dirname(os.path.abspath(sys.argv[0])), "assets", "success.wav")
+            sound_path = os.path.join(os.getcwd(), "assets", "success.wav")
             if not os.path.exists(sound_path):
                 return
             self._play_wav_with_volume(sound_path, volume)

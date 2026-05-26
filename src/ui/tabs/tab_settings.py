@@ -12,6 +12,14 @@ import glob
 from src.core.settings import SettingsManager
 from src.core.compute_estimator import detect_gpu_name, get_pytorch_recommendation
 
+def _get_assets_dir() -> str:
+    """Return assets base dir — works in dev mode and PyInstaller portable.
+    PyInstaller 6+ puts assets inside _internal/ (= sys._MEIPASS).
+    main.py does os.chdir(_MEIPASS) when frozen, so os.getcwd() is correct.
+    """
+    return os.getcwd()
+
+
 def _t(fr: str, en: str) -> str:
     """Return FR or EN string based on active language."""
     try:
@@ -418,9 +426,14 @@ log("[OK] TERMINE !")
         if not os.path.exists(py_venv):
             return ""
         try:
+            _env = os.environ.copy()
+            _env["PYTHONIOENCODING"] = "utf-8"
+            _env["PYTHONUTF8"] = "1"
             r = subprocess.run(
                 [py_venv, "-c", "import torch; print(torch.__version__)"],
-                capture_output=True, text=True, timeout=10,
+                capture_output=True, text=True, timeout=30,
+                encoding="utf-8", errors="replace",
+                env=_env,
                 creationflags=0x08000000 if sys.platform == "win32" else 0,
             )
             if r.returncode == 0:
@@ -869,7 +882,7 @@ except ImportError:
 
         # Sound file info
         import sys
-        sound_path = os.path.join(os.path.dirname(os.path.abspath(sys.argv[0])), "assets", "success.wav")
+        sound_path = os.path.join(_get_assets_dir(), "assets", "success.wav")
         if os.path.exists(sound_path):
             size_kb = os.path.getsize(sound_path) // 1024
             ctk.CTkLabel(f, text=f"Fichier son: assets/success.wav ({size_kb} Ko)",
@@ -909,7 +922,7 @@ except ImportError:
     def _test_event_sound(self, sound_name: str):
         """Play one of the event WAV files for testing."""
         import sys
-        snd_path = os.path.join(os.path.dirname(os.path.abspath(sys.argv[0])),
+        snd_path = os.path.join(_get_assets_dir(),
                                 "assets", f"{sound_name}.WAV")
         if not os.path.isfile(snd_path):
             messagebox.showwarning(_t("Son", "Sound"), _t(f"Fichier assets/{sound_name}.WAV introuvable", f"File assets/{sound_name}.WAV not found"))
@@ -925,7 +938,7 @@ except ImportError:
         if not self.settings.get("sound_about_enabled", True):
             return
         import sys
-        snd_path = os.path.join(os.path.dirname(os.path.abspath(sys.argv[0])),
+        snd_path = os.path.join(_get_assets_dir(),
                                 "assets", "about.WAV")
         if not os.path.isfile(snd_path):
             return
@@ -942,7 +955,7 @@ except ImportError:
 
     def _test_sound(self):
         import sys
-        sound_path = os.path.join(os.path.dirname(os.path.abspath(sys.argv[0])), "assets", "success.wav")
+        sound_path = os.path.join(_get_assets_dir(), "assets", "success.wav")
         if not os.path.exists(sound_path):
             messagebox.showwarning(_t("Son", "Sound"), _t("Fichier assets/success.wav introuvable", "File assets/success.wav not found"))
             return
@@ -1586,7 +1599,7 @@ except ImportError:
             # Try multiple paths for the bg image
             search_paths = [
                 os.path.join(os.getcwd(), "assets"),
-                os.path.join(os.path.dirname(os.path.abspath(sys.argv[0])), "assets"),
+                os.path.join(_get_assets_dir(), "assets"),
                 os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "assets"),
             ]
             for base in search_paths:
@@ -1764,10 +1777,10 @@ except ImportError:
                                         "— Tools & token savings —"),
                  fg="#888888", bg="#0d1117", font=("Roboto", 10, "italic")).pack()
         for tname, turl, tdesc in [
-            ("Caveman (Nick Frichot)", "https://github.com/nickfrichot/caveman",
+            ("Caveman (Julius Brussee)", "https://github.com/JuliusBrussee/caveman",
              _t("Mode réponse ultra-compact — économies de tokens majeures 😊",
                 "Ultra-compact reply mode — major token savings 😊")),
-            ("Graphify", "https://github.com/graphifyy/graphify",
+            ("Graphify", "https://github.com/safishamsi/graphify",
              _t("Graphes de connaissance — contexte persistant, moins de relecture",
                 "Knowledge graphs — persistent context, less re-reading")),
             ("Obsidian", "https://obsidian.md",

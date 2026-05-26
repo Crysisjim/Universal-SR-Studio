@@ -328,9 +328,8 @@ class ToolsTab(ctk.CTkFrame):
         """Play a WAV from assets/, respecting the setting toggle."""
         if setting_key and not self.settings.get(setting_key, True):
             return
-        import sys as _sys
         sound_path = os.path.join(
-            os.path.dirname(os.path.abspath(_sys.argv[0])),
+            os.getcwd(),
             "assets", f"{sound_name}.WAV")
         if not os.path.isfile(sound_path):
             sound_path = sound_path[:-4] + ".wav"  # try lowercase
