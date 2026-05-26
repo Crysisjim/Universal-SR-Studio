@@ -130,6 +130,16 @@ python src/core/benchmark_runner.py --engine neosr --type feature
 python src/core/benchmark_runner.py --list
 ```
 
+### Roadmap — v2.5.5
+
+| Feature | Description |
+|---------|-------------|
+| **Persistent batch subprocess** | Keep the model loaded in VRAM across all frames — no reload per image. Eliminates ~17-25h overhead on 30k-frame batches. |
+| **Temporal SR training** | Enter a video as GT reference, extract frame sequences, train TSPAN/TSPANv2 with sliding window input `[B, N, C, H, W]`. Full temporal consistency pipeline. |
+| **Temporal SR inference** | Sliding window N-frame inference with TSPAN/TSPANv2 and frame reassembly. |
+| **NVIDIA NIM provider** | `build.nvidia.com` as a new AI assistant provider — OpenAI-compatible API, free model credits (Llama, Mistral, Phi…). |
+| **VOSR** | Third inference engine (CVPR 2026, diffusion-based SR). |
+
 ### Contributing
 
 Pull requests welcome. For major changes, open an issue first.
@@ -245,6 +255,16 @@ Puis utiliser l'onglet **⚙️ Paramètres** pour installer les moteurs d'entra
 | ⚙️ Paramètres | Installeur moteurs, chemins, langue, apparence, clés API |
 | 🌐 Distribué | Entraînement multi-machines (expérimental) |
 | 📖 Wiki | Ouvre la documentation wiki GitHub dans le navigateur |
+
+### Roadmap — v2.5.5
+
+| Feature | Description |
+|---------|-------------|
+| **Subprocess persistant (batch)** | Modèle chargé en VRAM sur toute la durée du batch — plus de rechargement par image. Élimine 17-25h de surcoût sur 30k frames. |
+| **Entraînement Temporal SR** | Vidéo GT en entrée → extraction séquences frames → entraînement TSPAN/TSPANv2 avec fenêtre glissante `[B, N, C, H, W]`. Pipeline temporel complet. |
+| **Inférence Temporal SR** | Inférence N frames en fenêtre glissante avec TSPAN/TSPANv2 + réassemblage. |
+| **Provider NVIDIA NIM** | `build.nvidia.com` comme nouveau provider IA — API compatible OpenAI, crédits gratuits (Llama, Mistral, Phi…). |
+| **VOSR** | Troisième moteur d'inférence (CVPR 2026, SR diffusion). |
 
 ### Contribuer
 
