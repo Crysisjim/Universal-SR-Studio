@@ -422,24 +422,41 @@ log("[OK] TERMINE !")
 
     @staticmethod
     def _get_venv_torch_version(py_venv: str) -> str:
-        """Return installed torch version string (e.g. '2.6.0+cu124') or '' if absent."""
+        """Return installed torch version string (e.g. '2.6.0+cu124') or '' if absent.
+
+        NOTE: -c flag sets sys.path[0]="" which resolves to CWD (_internal/ in PyInstaller).
+        _internal/ bundles numpy → torch import finds wrong numpy → fails silently.
+        Fix: write a temp script in the engine dir so sys.path[0] = engine dir (no conflict).
+        """
         if not os.path.exists(py_venv):
             return ""
+        # Engine root = py_venv/../../../  (python.exe → Scripts → .venv → engine)
+        engine_dir = os.path.dirname(os.path.dirname(os.path.dirname(py_venv)))
+        tmp_script = os.path.join(engine_dir, "_uss_check_torch.py")
         try:
             _env = os.environ.copy()
             _env["PYTHONIOENCODING"] = "utf-8"
             _env["PYTHONUTF8"] = "1"
+            with open(tmp_script, "w", encoding="utf-8") as _f:
+                _f.write("import torch; print(torch.__version__)\n")
             r = subprocess.run(
-                [py_venv, "-c", "import torch; print(torch.__version__)"],
+                [py_venv, tmp_script],
                 capture_output=True, text=True, timeout=30,
                 encoding="utf-8", errors="replace",
                 env=_env,
+                cwd=engine_dir,
                 creationflags=0x08000000 if sys.platform == "win32" else 0,
             )
             if r.returncode == 0:
                 return r.stdout.strip()
         except Exception:
             pass
+        finally:
+            try:
+                if os.path.exists(tmp_script):
+                    os.remove(tmp_script)
+            except Exception:
+                pass
         return ""
 
     @staticmethod
