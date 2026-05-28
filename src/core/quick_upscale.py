@@ -1663,7 +1663,21 @@ def upscale_image(
             if not isinstance(model, torch.jit.ScriptModule):
                 model.load_state_dict(state_dict, strict=False)
 
-            model = model.to(device).eval()
+            try:
+                model = model.to(device).eval()
+            except Exception as _cuda_err:
+                # cudaErrorNoKernelImageForDevice ou autre erreur CUDA (Pascal incompatible)
+                # → fallback subprocess traiNNer venv (compilé pour sm_61)
+                _err_str = str(_cuda_err)
+                if "no kernel image" in _err_str or "cudaErrorNoKernelImageForDevice" in _err_str or "AcceleratorError" in _err_str:
+                    log(f"GPU incompatible pour {detected_arch or 'arch'} (Pascal/Maxwell) → subprocess traiNNer")
+                    _store_subprocess("trainner")
+                    return _post_colorfix(_spanplus_subprocess_infer(
+                        model_path, input_path, output_path, log, progress_callback,
+                        stop_event=stop_event,
+                        tile_size=tile_size, tile_pad=tile_pad, use_amp=use_amp
+                    ))
+                raise  # autre erreur CUDA → propage
             log("Modèle chargé et prêt")
 
             # Mise en cache pour les appels suivants

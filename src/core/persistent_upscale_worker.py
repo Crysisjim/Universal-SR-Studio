@@ -308,9 +308,9 @@ def cmd_init(payload: dict) -> None:
                            eval_base_scale=_eval_scale,
                            ig_kernel_size=_ig_k,
                            implicit_dim=_implicit_dim,
-                           latent_layers=_latent_layers).eval()
-            _model.load_state_dict(sd, strict=False)
-            _model = _model.to(_device)
+                           latent_layers=_latent_layers)
+            _model.load_state_dict(sd, strict=False)  # MUST be before .eval()
+            _model = _model.to(_device).eval()  # eval() after weights loaded → eval_convs correct
             _arch  = "SpanPP"
             _scale = _eval_scale
             _emit({"status": "ready", "arch": _arch, "scale": _scale, "backend": "spanpp-manual"})
