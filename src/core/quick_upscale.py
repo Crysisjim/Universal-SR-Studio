@@ -1118,6 +1118,7 @@ def _spanplus_subprocess_infer(
     tile_size: int = 0,
     tile_pad: int = 32,
     use_amp: bool = False,
+    scale_hint: int = 0,
 ) -> "Tuple[bool, str]":
     """
     Run inference in the traiNNer-redux venv subprocess.
@@ -1151,9 +1152,9 @@ def _spanplus_subprocess_infer(
         ("[Runner] Sauvegarde",  0.92),
     ]
 
-    # Pass tile/amp params as argv so universal_runner can use them
+    # Pass tile/amp/scale params as argv so universal_runner can use them
     cmd = [venv_py, runner, model_path, input_path, output_path,
-           str(tile_size), str(tile_pad), "1" if use_amp else "0"]
+           str(tile_size), str(tile_pad), "1" if use_amp else "0", str(scale_hint)]
     try:
         proc = subprocess.Popen(
             cmd,
@@ -1419,7 +1420,7 @@ def upscale_image(
                     return _post_colorfix(_spanplus_subprocess_infer(
                         model_path, input_path, output_path, log,
                         progress_callback, stop_event=stop_event,
-                        tile_size=tile_size, tile_pad=tile_pad, use_amp=use_amp))
+                        tile_size=tile_size, tile_pad=tile_pad, use_amp=use_amp, scale_hint=scale))
             model         = _cached["model"]
             detected_arch = _cached["arch"]
             if scale == 0:
@@ -1465,7 +1466,7 @@ def upscale_image(
                 return _post_colorfix(_spanplus_subprocess_infer(
                     model_path, input_path, output_path, log, progress_callback,
                     stop_event=stop_event,
-                    tile_size=tile_size, tile_pad=tile_pad, use_amp=use_amp
+                    tile_size=tile_size, tile_pad=tile_pad, use_amp=use_amp, scale_hint=scale
                 ))
 
             # ── Video SR (TVT, DAM-VSR) : nécessite entrée multi-frames ──────────
@@ -1478,7 +1479,7 @@ def upscale_image(
                 return _post_colorfix(_spanplus_subprocess_infer(
                     model_path, input_path, output_path, log, progress_callback,
                     stop_event=stop_event,
-                    tile_size=tile_size, tile_pad=tile_pad, use_amp=use_amp
+                    tile_size=tile_size, tile_pad=tile_pad, use_amp=use_amp, scale_hint=scale
                 ))
 
             # ESC : net_opt() au niveau module, subprocess neosr venv obligatoire
@@ -1505,7 +1506,7 @@ def upscale_image(
                 return _post_colorfix(_spanplus_subprocess_infer(
                     model_path, input_path, output_path, log, progress_callback,
                     stop_event=stop_event,
-                    tile_size=tile_size, tile_pad=tile_pad, use_amp=use_amp
+                    tile_size=tile_size, tile_pad=tile_pad, use_amp=use_amp, scale_hint=scale
                 ))
 
             # ── Try to instantiate model in-process ──
@@ -1659,7 +1660,7 @@ def upscale_image(
                 return _post_colorfix(_spanplus_subprocess_infer(
                     model_path, input_path, output_path, log, progress_callback,
                     stop_event=stop_event,
-                    tile_size=tile_size, tile_pad=tile_pad, use_amp=use_amp
+                    tile_size=tile_size, tile_pad=tile_pad, use_amp=use_amp, scale_hint=scale
                 ))
 
             if not isinstance(model, torch.jit.ScriptModule):
@@ -1677,7 +1678,7 @@ def upscale_image(
                     return _post_colorfix(_spanplus_subprocess_infer(
                         model_path, input_path, output_path, log, progress_callback,
                         stop_event=stop_event,
-                        tile_size=tile_size, tile_pad=tile_pad, use_amp=use_amp
+                        tile_size=tile_size, tile_pad=tile_pad, use_amp=use_amp, scale_hint=scale
                     ))
                 raise  # autre erreur CUDA → propage
             log("Modèle chargé et prêt")

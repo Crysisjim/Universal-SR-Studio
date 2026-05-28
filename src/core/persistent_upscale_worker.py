@@ -85,6 +85,16 @@ def _detect_scale(sd: dict) -> int:
         s = int(math.sqrt(scale_sq))
         if s >= 1 and s * s == int(scale_sq):
             return s
+    # SpanC/SpanPP: MetaIGConv buffer stores list of scale values (uint8)
+    if "MetaIGConv" in sd:
+        try:
+            scales = [int(v.item()) for v in sd["MetaIGConv"]]
+            if scales:
+                s = max(scales)  # default to max scale (real upscale intent)
+                if s in (1, 2, 3, 4, 8):
+                    return s
+        except Exception:
+            pass
     # Legacy: check any upsampler conv shape ratio vs conv_first
     for k, v in sd.items():
         if "upsampler" in k and hasattr(v, "shape") and v.ndim == 4:
@@ -306,7 +316,7 @@ def cmd_init(payload: dict) -> None:
                 _ig_k = 3
             # Prefer user-selected scale if valid, otherwise auto-detect
             _requested = _scale_hint if _scale_hint > 0 else _scale
-            _eval_scale = max(1, _requested) if _requested in _scale_list else _scale_list[0]
+            _eval_scale = max(1, _requested) if _requested in _scale_list else min(_scale_list)
             _model = SpanC(feature_channels=_fc, scale_list=_scale_list,
                            eval_base_scale=_eval_scale,
                            ig_kernel_size=_ig_k,

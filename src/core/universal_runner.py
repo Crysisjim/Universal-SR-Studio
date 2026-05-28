@@ -49,9 +49,10 @@ def _load_state_dict(model_path: str) -> dict:
 
 
 def run(model_path: str, input_path: str, output_path: str,
-        tile_size: int = 0, tile_pad: int = 32, use_amp: bool = False) -> None:
+        tile_size: int = 0, tile_pad: int = 32, use_amp: bool = False,
+        scale_hint: int = 0) -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"[Runner] Device : {device} | tile={tile_size}px | amp={use_amp}", flush=True)
+    print(f"[Runner] Device : {device} | tile={tile_size}px | amp={use_amp} | scale_hint={scale_hint}", flush=True)
 
     model = None
     scale = 1
@@ -160,7 +161,11 @@ def run(model_path: str, input_path: str, output_path: str,
                     ig_k = max(1, int(round(math.sqrt(_k2))))
                 else:
                     ig_k = 3
-                eval_base = max(1, scale) if scale in scale_list else scale_list[0]
+                # Honor user-selected scale if valid, else min (smallest = current auto behavior)
+                if scale_hint > 0 and scale_hint in scale_list:
+                    eval_base = scale_hint
+                else:
+                    eval_base = min(scale_list)
                 model = SpanC(feature_channels=fc, scale_list=scale_list, eval_base_scale=eval_base,
                               ig_kernel_size=ig_k, implicit_dim=implicit_dim, latent_layers=latent_layers)
                 model.load_state_dict(state_dict, strict=False)
@@ -238,14 +243,16 @@ def run(model_path: str, input_path: str, output_path: str,
 
 if __name__ == "__main__":
     if len(sys.argv) < 4:
-        print("Usage: universal_runner.py <model_path> <input_path> <output_path> [tile_size] [tile_pad] [use_amp]", flush=True)
+        print("Usage: universal_runner.py <model_path> <input_path> <output_path> [tile_size] [tile_pad] [use_amp] [scale_hint]", flush=True)
         sys.exit(1)
-    _tile_size = int(sys.argv[4]) if len(sys.argv) > 4 else 0
-    _tile_pad  = int(sys.argv[5]) if len(sys.argv) > 5 else 32
-    _use_amp   = sys.argv[6] == "1" if len(sys.argv) > 6 else False
+    _tile_size  = int(sys.argv[4]) if len(sys.argv) > 4 else 0
+    _tile_pad   = int(sys.argv[5]) if len(sys.argv) > 5 else 32
+    _use_amp    = sys.argv[6] == "1" if len(sys.argv) > 6 else False
+    _scale_hint = int(sys.argv[7]) if len(sys.argv) > 7 else 0
     try:
         run(sys.argv[1], sys.argv[2], sys.argv[3],
-            tile_size=_tile_size, tile_pad=_tile_pad, use_amp=_use_amp)
+            tile_size=_tile_size, tile_pad=_tile_pad, use_amp=_use_amp,
+            scale_hint=_scale_hint)
     except Exception:
         traceback.print_exc()
         sys.exit(1)
