@@ -1298,6 +1298,69 @@ class ToolsTab(ctk.CTkFrame):
 
         scale_str = self.widgets["ups_scale"].get()
         scale = 0 if scale_str == "Auto" else int(scale_str)
+
+        # ── Multi-scale model detection (Auto mode only) ──────────────────────
+        # If Scale=Auto and model has MetaIGConv (SpanPP / SpanC family → multiple
+        # trained scales in a single checkpoint), ask the user which scale to use
+        # instead of silently defaulting to max.
+        if scale == 0 and model and os.path.isfile(model):
+            try:
+                import torch as _tch
+                _sd = None
+                if model.endswith(".safetensors"):
+                    from safetensors.torch import load_file as _lf
+                    _sd = _lf(model, device="cpu")
+                else:
+                    _ck = _tch.load(model, map_location="cpu", weights_only=False)
+                    for _k in ("params_ema", "params_g", "params", "model", "state_dict"):
+                        if _k in _ck:
+                            _sd = _ck[_k]; break
+                    if _sd is None and any(k.endswith(".weight") for k in _ck):
+                        _sd = _ck
+                if _sd is not None and "MetaIGConv" in _sd:
+                    _ms = sorted(set(int(v.item()) for v in _sd["MetaIGConv"]))
+                    if len(_ms) > 1:
+                        import tkinter as _tk
+                        _result = [max(_ms)]   # default = max if dialog dismissed
+                        _dlg = ctk.CTkToplevel(self)
+                        _dlg.title(_t("Scale multi-échelle", "Multi-scale model"))
+                        _dlg.resizable(False, False)
+                        _dlg.transient(self.winfo_toplevel())
+                        _dlg.grab_set()
+                        # Center on main window
+                        self.update_idletasks()
+                        _pw = self.winfo_toplevel().winfo_width()
+                        _ph = self.winfo_toplevel().winfo_height()
+                        _px = self.winfo_toplevel().winfo_rootx()
+                        _py = self.winfo_toplevel().winfo_rooty()
+                        _dh = 130 + len(_ms) * 38
+                        _dlg.geometry(f"300x{_dh}+{_px + _pw//2 - 150}+{_py + _ph//2 - _dh//2}")
+                        ctk.CTkLabel(
+                            _dlg,
+                            text=_t(
+                                f"Modèle multi-échelle détecté\nScales disponibles : {' / '.join(str(s)+'×' for s in _ms)}\n\nChoisissez le scale de sortie :",
+                                f"Multi-scale model detected\nAvailable scales: {' / '.join(str(s)+'×' for s in _ms)}\n\nChoose output scale:"
+                            ),
+                            font=ctk.CTkFont(size=12), justify="center",
+                        ).pack(pady=(14, 6), padx=14)
+                        _var = _tk.IntVar(value=max(_ms))
+                        for _s in _ms:
+                            ctk.CTkRadioButton(
+                                _dlg,
+                                text=f"{_s}×",
+                                variable=_var, value=_s,
+                                font=ctk.CTkFont(size=13),
+                            ).pack(anchor="w", padx=60, pady=2)
+                        def _confirm_scale():
+                            _result[0] = _var.get()
+                            _dlg.destroy()
+                        ctk.CTkButton(_dlg, text=_t("Confirmer", "Confirm"),
+                                      command=_confirm_scale, width=130).pack(pady=12)
+                        _dlg.wait_window()
+                        scale = _result[0]
+            except Exception:
+                pass   # silently fall through — Auto continues with max scale
+
         tile_str = self.widgets["ups_tile"].get()
         if tile_str == "Auto":
             # Auto = tiling intelligent : taille basée sur la VRAM disponible
