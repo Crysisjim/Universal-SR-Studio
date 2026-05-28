@@ -7,6 +7,7 @@ import os
 import sys
 import math
 import time
+import json
 import threading
 import traceback
 from typing import Optional, Tuple, Callable
@@ -52,12 +53,31 @@ ARCH_SIGNATURES = {
     "spanf":  ["block_1.conv1.eval_conv", "conv_near.weight", "block_5.conv1"],
     # SpanC: SPAN reparamétrisable + IGConv multi-scale (MetaIGConv buffer)
     "spanc":  ["block_1.conv_a.eval_conv", "upsampler.coord_map", "MetaIGConv"],
+    # SpanPP: SpanC avec blocs SPAB (c1_r/c2_r/c3_r) + upsampler IGConv Fourier (amplitude/freq/query_kernel)
+    # Classe SpanC dans spanpp_arch.py — même arch, blocs internes différents de spanc
+    "spanpp": ["block_1.c1_r.conv3.eval_conv.weight", "upsampler.amplitude", "MetaIGConv"],
     # GFISRv2: GatedCNN body + UniUpsampleV3 MetaUpsample
     "gfisrv2": ["gfisr_body.0.fc1", "upscale.MetaUpsample", "in_to_dim.weight"],
     # CATANet: Token Aggregation Block (IRCA+IASA) + LRSA (NeoSR, mars 2025)
     # Clés réelles vérifiées sur state_dict : irca_attn / iasa_attn + first_conv
     "catanet": ["blocks.0.0.irca_attn.to_k.weight", "blocks.0.0.iasa_attn.to_q.weight", "first_conv.weight"],
+
+    # ── v2.5.5 : nouveaux moteurs ─────────────────────────────────────────────
+    # OSEDiff : One-Step Efficient Diffusion SR (diffusion UNet + VAE, SD-based)
+    # Clés typiques : unet.conv_in, vae.encoder.conv_in, time_embedding ou time_embed
+    "osediff": ["unet.conv_in.weight", "vae.encoder.conv_in.weight"],
+    # VOSR : diffusion-based SR (CVPR 2026 track) — possible DM-style keys
+    # Alternate: scheduler.alphas_cumprod (if checkpoint contains scheduler)
+    "vosr": ["model.diffusion_model.input_blocks.0.0.weight", "model.diffusion_model.out.2.weight"],
+    # TVT : Transformer Video Tokens — video SR, temporal attention
+    "tvt": ["temporal_attn.0.norm1.weight", "frame_token.weight"],
+    # DAM-VSR : Dual Attention Mechanism Video SR — temporal + spatial dual attn
+    "dam_vsr": ["dual_attn.temporal_attn.to_q.weight", "flow_warp.weight"],
 }
+
+# Modèles à renvoyer avec message spécialisé (pas d'inférence image directe)
+_DIFFUSION_ARCHS = {"osediff", "vosr"}          # besoins runtime diffusion
+_VIDEO_ARCHS     = {"tvt", "dam_vsr"}            # besoin entrée multi-frames
 
 
 def detect_arch_from_state(state_dict: dict) -> Optional[str]:
@@ -349,6 +369,101 @@ def color_fix_image(
         if fast:
             correction = lq_low - sr_low
 
+    # ── LAB (vs_colorfix v2.0) ─────────────────────────────────────────────────
+    # Corrects chroma (a*, b*) in CIE-LAB space while preserving SR luminance (L*).
+    # Best for: stylized content, strong saturation drift, when luminance is correct.
+    elif method == "lab":
+        try:
+            from PIL import ImageCms as _cms
+            _srgb  = _cms.createProfile("sRGB")
+            _lab_p = _cms.createProfile("LAB")
+            _to_lab   = _cms.buildTransformFromOpenProfiles(_srgb, _lab_p, "RGB", "LAB")
+            _to_rgb   = _cms.buildTransformFromOpenProfiles(_lab_p, _srgb, "LAB", "RGB")
+
+            sr_u8  = (sr_np * 255.0).clip(0, 255).astype(np.uint8)
+            lq_u8  = np.array(_src_pil.resize((w, h), Image.BICUBIC))
+
+            sr_pil = Image.fromarray(sr_u8)
+            lq_pil_r = Image.fromarray(lq_u8)
+
+            sr_lab  = np.array(_cms.applyTransform(sr_pil,  _to_lab)).astype(np.float32)
+            lq_lab  = np.array(_cms.applyTransform(lq_pil_r, _to_lab)).astype(np.float32)
+
+            # Replace a* and b* from ref, keep L* from SR
+            mixed_lab = sr_lab.copy()
+            mixed_lab[:, :, 1] = lq_lab[:, :, 1]  # a*
+            mixed_lab[:, :, 2] = lq_lab[:, :, 2]  # b*
+
+            mixed_u8  = np.array(_cms.applyTransform(
+                Image.fromarray(mixed_lab.clip(0, 255).astype(np.uint8)), _to_rgb))
+            fixed_lab = mixed_u8.astype(np.float32) / 255.0
+
+            if strength < 1.0:
+                fixed_lab = sr_np * (1.0 - strength) + fixed_lab * strength
+            return np.clip(fixed_lab, 0.0, 1.0)
+        except Exception:
+            # Fallback: simple channel-mean correction if ImageCms unavailable
+            sr_mean = sr_np.mean(axis=(0, 1))
+            lq_mean = lq_up.mean(axis=(0, 1))
+            fixed_lab = sr_np.copy()
+            for c in planes:
+                if sr_mean[c] > 1e-6:
+                    fixed_lab[:, :, c] = np.clip(sr_np[:, :, c] * (lq_mean[c] / sr_mean[c]), 0, 1)
+            if strength < 1.0:
+                fixed_lab = sr_np * (1.0 - strength) + fixed_lab * strength
+            return np.clip(fixed_lab, 0.0, 1.0)
+
+    # ── HISTOGRAM matching (vs_colorfix v2.0) ──────────────────────────────────
+    # Matches the full histogram (CDF) of each channel from ref to SR.
+    # Best for: dramatic color palette differences, strong stylization.
+    elif method == "hist":
+        fixed_hist = sr_np.copy()
+        for c in planes:
+            src_ch  = sr_np[:, :, c].ravel()
+            ref_ch  = lq_up[:, :, c].ravel()
+            # Build CDFs
+            bins = 256
+            src_hist, edges = np.histogram(src_ch, bins=bins, range=(0.0, 1.0))
+            ref_hist, _     = np.histogram(ref_ch, bins=bins, range=(0.0, 1.0))
+            src_cdf = np.cumsum(src_hist).astype(np.float64)
+            ref_cdf = np.cumsum(ref_hist).astype(np.float64)
+            if src_cdf[-1] > 0:
+                src_cdf /= src_cdf[-1]
+            if ref_cdf[-1] > 0:
+                ref_cdf /= ref_cdf[-1]
+            # Mapping: for each src bin, find ref bin with matching CDF
+            lut = np.interp(src_cdf, ref_cdf, np.linspace(0.0, 1.0, bins))
+            # Apply LUT
+            src_idx = np.clip((src_ch * (bins - 1)).astype(int), 0, bins - 1)
+            fixed_hist[:, :, c] = lut[src_idx].reshape(h, w)
+
+        if strength < 1.0:
+            fixed_hist = sr_np * (1.0 - strength) + fixed_hist * strength
+        return np.clip(fixed_hist, 0.0, 1.0)
+
+    # ── COLORMAP / LUT quantile (vs_colorfix v2.0 style) ────────────────────────
+    # Quantile-based sparse LUT mapping from SR colors to reference colors.
+    # Faster than full histogram matching — 64 quantile samples, interp LUT.
+    # Best for: fast global correction, large images, mild stylization drift.
+    elif method == "colormap":
+        n_q = 64
+        fixed_cmap = sr_np.copy()
+        for c in planes:
+            src_ch = sr_np[:, :, c].ravel().astype(np.float64)
+            ref_ch = lq_up[:, :, c].ravel().astype(np.float64)
+            quants = np.linspace(0.0, 1.0, n_q)
+            src_q  = np.quantile(src_ch, quants)
+            ref_q  = np.quantile(ref_ch, quants)
+            # Ensure src_q strictly increasing for interp
+            src_q, idx = np.unique(src_q, return_index=True)
+            ref_q = ref_q[idx]
+            mapped = np.interp(src_ch, src_q, ref_q).clip(0.0, 1.0)
+            fixed_cmap[:, :, c] = mapped.reshape(h, w)
+
+        if strength < 1.0:
+            fixed_cmap = sr_np * (1.0 - strength) + fixed_cmap * strength
+        return np.clip(fixed_cmap, 0.0, 1.0)
+
     else:
         return sr_np
 
@@ -549,10 +664,23 @@ def _onnx_upscale(
     _prog(0.50)
 
     inp_name = sess.get_inputs()[0].name
+    # Cast input to dtype expected by the model (float32 or float16)
+    _inp_type = sess.get_inputs()[0].type  # e.g. 'tensor(float)' or 'tensor(float16)'
+    if "float16" in _inp_type:
+        img_t = img_t.astype(np.float16)
+    # else keep float32 (default)
     try:
         out_np = sess.run(None, {inp_name: img_t})[0]  # [1, 3, H*s, W*s]
     except Exception as e:
+        err = str(e)
+        if "newbyteorder" in err:
+            return False, (
+                "Erreur inference ONNX : onnxruntime incompatible avec NumPy 2.0.\n"
+                "Fix : pip install \"onnxruntime-gpu>=1.18.0\"\n"
+                f"(détail : {err})"
+            )
         return False, f"Erreur inference ONNX : {e}"
+    out_np = out_np.astype(np.float32)  # always convert output back to float32
 
     _prog(0.90)
 
@@ -665,6 +793,319 @@ def clear_model_cache() -> int:
     return n
 
 
+# ─── Persistent batch subprocess session ─────────────────────────────────────
+_PERSISTENT_WORKER = os.path.join(os.path.dirname(__file__), "persistent_upscale_worker.py")
+
+
+class PersistentBatchSession:
+    """
+    Garde un subprocess venv Python vivant pendant tout le batch.
+    Protocole JSON-lines : chaque commande = 1 ligne JSON sur stdin,
+    chaque réponse = 1 ligne JSON sur stdout.
+
+    Gain : le modèle est chargé UNE seule fois → ~2-5s économisés par image.
+    Sur 30 000 frames : 16-25h de gain vs un subprocess par image.
+
+    Usage :
+        with PersistentBatchSession(venv_py, model_path, tile_size, tile_pad, use_amp) as s:
+            ok, msg = s.infer(input_path, output_path)
+    """
+
+    def __init__(self, venv_py: str, model_path: str,
+                 tile_size: int = 256, tile_pad: int = 32, use_amp: bool = False,
+                 log: Optional[Callable] = None):
+        self._venv_py    = venv_py
+        self._model_path = model_path
+        self._tile_size  = tile_size
+        self._tile_pad   = tile_pad
+        self._use_amp    = use_amp
+        self._log        = log or (lambda m: None)
+        self._proc       = None
+        self.arch: str   = "unknown"
+        self.scale: int  = 2
+        self._ready      = False
+
+    def _send(self, obj: dict) -> dict:
+        """Send one JSON command, receive one JSON response."""
+        line = json.dumps(obj, ensure_ascii=False) + "\n"
+        self._proc.stdin.write(line)
+        self._proc.stdin.flush()
+        resp_line = self._proc.stdout.readline()
+        if not resp_line:
+            raise RuntimeError("Worker process closed stdout unexpectedly")
+        return json.loads(resp_line.strip())
+
+    def start(self) -> bool:
+        """Launch the persistent worker subprocess and init the model."""
+        import subprocess as _sp
+        import json
+
+        if not os.path.isfile(self._venv_py):
+            self._log(f"[PersistentBatch] venv Python introuvable : {self._venv_py}")
+            return False
+        if not os.path.isfile(_PERSISTENT_WORKER):
+            self._log(f"[PersistentBatch] Worker introuvable : {_PERSISTENT_WORKER}")
+            return False
+
+        _env = os.environ.copy()
+        _env["PYTHONIOENCODING"] = "utf-8"
+        _env["PYTHONUTF8"] = "1"
+
+        engine_dir = os.path.dirname(os.path.dirname(os.path.dirname(self._venv_py)))
+        try:
+            self._proc = _sp.Popen(
+                [self._venv_py, _PERSISTENT_WORKER],
+                stdin=_sp.PIPE, stdout=_sp.PIPE, stderr=_sp.PIPE,
+                text=True, encoding="utf-8", errors="replace",
+                env=_env, cwd=engine_dir,
+            )
+        except Exception as e:
+            self._log(f"[PersistentBatch] Échec lancement : {e}")
+            return False
+
+        # Send init command
+        try:
+            resp = self._send({
+                "cmd": "init",
+                "model": self._model_path,
+                "tile_size": self._tile_size,
+                "tile_pad":  self._tile_pad,
+                "use_amp":   self._use_amp,
+            })
+        except Exception as e:
+            self._log(f"[PersistentBatch] Erreur init : {e}")
+            self.stop()
+            return False
+
+        if resp.get("status") == "ready":
+            self.arch  = resp.get("arch",  "unknown")
+            self.scale = resp.get("scale", 2)
+            self._ready = True
+            self._log(f"[PersistentBatch] Prêt — arch={self.arch} scale={self.scale}×")
+            return True
+        else:
+            self._log(f"[PersistentBatch] Init refusé : {resp.get('msg', '?')}")
+            self.stop()
+            return False
+
+    def infer(self, input_path: str, output_path: str,
+              prev_input: Optional[str] = None,
+              prev_output: Optional[str] = None,
+              dandere_threshold: float = 0.02) -> Tuple[bool, str, dict]:
+        """
+        Run inference on one image. Model stays loaded in VRAM.
+        If prev_input + prev_output are provided AND tile_size > 0 was set at init,
+        the worker uses dandere2x tile compositing (only changed tiles go to GPU).
+        Returns: (ok, msg, extra) where extra may contain dandere stats.
+        """
+        if not self._ready or self._proc is None:
+            return False, "Session non démarrée", {}
+        if self._proc.poll() is not None:
+            return False, f"Worker terminé prématurément (code {self._proc.returncode})", {}
+        payload: dict = {"cmd": "infer", "input": input_path, "output": output_path}
+        if prev_input and prev_output:
+            payload["prev_input"] = prev_input
+            payload["prev_output"] = prev_output
+            payload["dandere_threshold"] = dandere_threshold
+        try:
+            resp = self._send(payload)
+        except Exception as e:
+            return False, f"Erreur communication worker : {e}", {}
+        ok  = resp.get("status") == "ok"
+        msg = resp.get("msg", "")
+        extra = {k: resp[k] for k in ("dandere_changed", "dandere_total", "dandere_pct")
+                 if k in resp}
+        return ok, msg, extra
+
+    def stop(self) -> None:
+        """Graceful shutdown — free VRAM, terminate process."""
+        import json
+        if self._proc is None:
+            return
+        try:
+            if self._proc.poll() is None:
+                self._proc.stdin.write(json.dumps({"cmd": "quit"}) + "\n")
+                self._proc.stdin.flush()
+                self._proc.wait(timeout=5)
+        except Exception:
+            pass
+        finally:
+            try:
+                self._proc.kill()
+            except Exception:
+                pass
+            self._proc = None
+            self._ready = False
+
+    def __enter__(self):
+        self.start()
+        return self
+
+    def __exit__(self, *_):
+        self.stop()
+
+    @property
+    def is_ready(self) -> bool:
+        return self._ready
+
+
+# ─── Dandere2x helpers ────────────────────────────────────────────────────────
+
+def _dandere_block_mae(prev_arr: "np.ndarray", curr_arr: "np.ndarray",
+                        block_size: int) -> "np.ndarray":
+    """
+    Vectorized per-block MAE using numpy reshape (no Python loops).
+    Returns float32 [bh, bw] — mean absolute error per block.
+    ~100x faster than a block-level Python loop.
+    """
+    h, w = prev_arr.shape[:2]
+    bh = math.ceil(h / block_size)
+    bw = math.ceil(w / block_size)
+    ph, pw = bh * block_size, bw * block_size
+    # Pad to exact multiple of block_size
+    p = np.pad(prev_arr.astype(np.float32), ((0, ph - h), (0, pw - w), (0, 0)), mode='edge')
+    c = np.pad(curr_arr.astype(np.float32), ((0, ph - h), (0, pw - w), (0, 0)), mode='edge')
+    # Reshape to [bh, block_size, bw, block_size, 3] then transpose → [bh, bw, bs, bs, 3]
+    pb = p.reshape(bh, block_size, bw, block_size, 3).transpose(0, 2, 1, 3, 4)
+    cb = c.reshape(bh, block_size, bw, block_size, 3).transpose(0, 2, 1, 3, 4)
+    return np.abs(cb - pb).mean(axis=(2, 3, 4))   # [bh, bw]
+
+
+def dandere_compute_diff(
+    prev_arr: "np.ndarray",
+    curr_arr: "np.ndarray",
+    block_size: int = 16,
+    threshold: float = 0.02,
+    search_window: int = 0,
+) -> "tuple":
+    """
+    Block-level difference detection.
+
+    search_window=0 (default): fully vectorized numpy — fast (microseconds).
+    search_window>0: motion-compensated Python loops — slow but handles pans.
+    For block mode the fast path is always used (no compositing at SR level).
+
+    Returns:
+        changed_mask  : bool [bh, bw]           True = block changed
+        motion_vectors: int32 [bh, bw, 2]       (dy, dx) — zeros when no MV
+    """
+    h, w = prev_arr.shape[:2]
+    bh = math.ceil(h / block_size)
+    bw = math.ceil(w / block_size)
+    motion_vectors = np.zeros((bh, bw, 2), dtype=np.int32)
+
+    if search_window == 0:
+        # Fast vectorized path — no motion vectors
+        mae = _dandere_block_mae(prev_arr, curr_arr, block_size)
+        return mae > threshold, motion_vectors
+
+    # Slow motion-search path (kept for reference / future use)
+    changed_mask = np.ones((bh, bw), dtype=bool)
+    for by in range(bh):
+        for bx in range(bw):
+            y0 = by * block_size;  x0 = bx * block_size
+            y1 = min(y0 + block_size, h);  x1 = min(x0 + block_size, w)
+            bH = y1 - y0;  bW = x1 - x0
+            curr_block = curr_arr[y0:y1, x0:x1]
+            best_mae = threshold;  best_dy = 0;  best_dx = 0;  found = False
+            for dy in range(-search_window, search_window + 1):
+                for dx in range(-search_window, search_window + 1):
+                    py0 = y0 + dy;  px0 = x0 + dx
+                    py1 = py0 + bH;  px1 = px0 + bW
+                    if py0 < 0 or px0 < 0 or py1 > h or px1 > w:
+                        continue
+                    mae = np.mean(np.abs(curr_block - prev_arr[py0:py1, px0:px1]))
+                    if mae < best_mae:
+                        best_mae, best_dy, best_dx, found = mae, dy, dx, True
+            if found:
+                changed_mask[by, bx] = False
+                motion_vectors[by, bx] = [best_dy, best_dx]
+    return changed_mask, motion_vectors
+
+
+def dandere_compose(
+    prev_sr: "np.ndarray",
+    curr_sr: "np.ndarray",
+    diff_mask: "np.ndarray",
+    motion_vectors: "np.ndarray | None" = None,
+    block_size: int = 16,
+    scale: int = 4,
+    feather: int = 0,
+) -> "np.ndarray":
+    """
+    [LEGACY — not used in block mode with global SR upscalers]
+
+    Compositing at SR level creates visible seams when the SR model has a
+    global receptive field (SPANPlus, SPAN, SwinIR…): the same LQ block
+    produces slightly different SR output depending on surrounding context,
+    so mixing blocks from two SR runs always shows a texture discontinuity.
+
+    Kept for completeness / future tile-based upscaler integration.
+    Current block mode skips frames with 0% changed blocks instead.
+    """
+    bsz    = block_size * scale
+    h,  w  = curr_sr.shape[:2]
+    hp, wp = prev_sr.shape[:2]
+    bh, bw = diff_mask.shape
+    result = curr_sr.copy()
+    for by in range(bh):
+        for bx in range(bw):
+            if diff_mask[by, bx]:
+                continue
+            dst_y0 = by * bsz;  dst_x0 = bx * bsz
+            dst_y1 = min(dst_y0 + bsz, h);  dst_x1 = min(dst_x0 + bsz, w)
+            dy_sr = int(motion_vectors[by, bx, 0]) * scale if motion_vectors is not None else 0
+            dx_sr = int(motion_vectors[by, bx, 1]) * scale if motion_vectors is not None else 0
+            src_y0 = dst_y0 + dy_sr;  src_x0 = dst_x0 + dx_sr
+            src_y1 = src_y0 + (dst_y1 - dst_y0);  src_x1 = src_x0 + (dst_x1 - dst_x0)
+            if src_y0 < 0 or src_x0 < 0 or src_y1 > hp or src_x1 > wp:
+                continue
+            result[dst_y0:dst_y1, dst_x0:dst_x1] = prev_sr[src_y0:src_y1, src_x0:src_x1]
+    return result
+
+
+def dandere_should_skip(
+    prev_arr: "np.ndarray",
+    curr_arr: "np.ndarray",
+    block_size: int = 32,
+    threshold: float = 0.02,
+) -> bool:
+    """
+    Block-level skip decision — more accurate than global MAE.
+
+    Returns True only if EVERY block's MAE is below threshold.
+    A character turning their head changes only the face blocks (maybe 5% of
+    image) but those blocks have high MAE → max() > threshold → don't skip.
+    Global MAE would give ~0.002 for the same case → wrongly skipped.
+
+    block_size=32: coarser blocks → faster; still catches local motion.
+    """
+    mae = _dandere_block_mae(prev_arr, curr_arr, block_size)
+    return bool(mae.max() <= threshold)
+
+
+def dandere_frame_similarity(
+    prev_arr: "np.ndarray",
+    curr_arr: "np.ndarray",
+    detect_global_motion: bool = False,
+    motion_check_px: int = 3,
+) -> "tuple":
+    """
+    [LEGACY] Returns (mean_diff, has_global_motion).
+    Prefer dandere_should_skip() for skip-mode decisions.
+    """
+    mean_diff = float(np.abs(curr_arr - prev_arr).mean())
+    return mean_diff, False
+
+
+def _pil_to_float(pil: "Image.Image") -> "np.ndarray":
+    return np.array(pil.convert("RGB"), dtype=np.float32) / 255.0
+
+
+def _float_to_pil(arr: "np.ndarray") -> "Image.Image":
+    return Image.fromarray((arr.clip(0, 1) * 255).round().astype(np.uint8))
+
+
 def _spanplus_subprocess_infer(
     model_path: str,
     input_path: str,
@@ -744,6 +1185,7 @@ def _neosr_subprocess_infer(
     log: Callable,
     progress_callback: Optional[Callable] = None,
     stop_event=None,
+    use_amp: bool = False,
 ) -> "Tuple[bool, str]":
     """
     Run ESC inference in the neosr venv subprocess.
@@ -771,7 +1213,7 @@ def _neosr_subprocess_infer(
         ("[NeoSR] Sauvegarde", 0.92),
     ]
 
-    cmd = [venv_py, runner, model_path, input_path, output_path]
+    cmd = [venv_py, runner, model_path, input_path, output_path, "1" if use_amp else "0"]
     try:
         proc = subprocess.Popen(
             cmd,
@@ -966,7 +1408,7 @@ def upscale_image(
                 if stype == "esc":
                     return _neosr_subprocess_infer(
                         model_path, input_path, output_path, log,
-                        progress_callback, stop_event=stop_event)
+                        progress_callback, stop_event=stop_event, use_amp=use_amp)
                 elif stype == "neosr_general":
                     return _neosr_general_subprocess_infer(
                         model_path, input_path, output_path, log,
@@ -1010,13 +1452,40 @@ def upscale_image(
                     "subprocess_type": stype,
                 }
 
+            # ── Diffusion SR (OSEDiff, VOSR) : nécessite runtime diffusion ──────────
+            # Ces modèles utilisent un UNet SD + VAE — inférence itérative non supportée
+            # par le pipeline tile_inference. Tentative via spandrel subprocess ;
+            # si spandrel ne les supporte pas, l'erreur sera claire.
+            if detected_arch in _DIFFUSION_ARCHS:
+                log(f"⚠ {detected_arch.upper()} détecté — modèle diffusion SR. "
+                    f"Tentative via spandrel subprocess (traiNNer venv)...")
+                _store_subprocess("trainner")
+                return _post_colorfix(_spanplus_subprocess_infer(
+                    model_path, input_path, output_path, log, progress_callback,
+                    stop_event=stop_event,
+                    tile_size=tile_size, tile_pad=tile_pad, use_amp=use_amp
+                ))
+
+            # ── Video SR (TVT, DAM-VSR) : nécessite entrée multi-frames ──────────
+            # Inférence image par image non supportée nativement — spandrel subprocess.
+            # Un mode vidéo dédié sera ajouté en v2.6.0.
+            if detected_arch in _VIDEO_ARCHS:
+                log(f"⚠ {detected_arch.upper()} détecté — modèle Video SR (multi-frames). "
+                    f"Inférence frame unique via spandrel subprocess...")
+                _store_subprocess("trainner")
+                return _post_colorfix(_spanplus_subprocess_infer(
+                    model_path, input_path, output_path, log, progress_callback,
+                    stop_event=stop_event,
+                    tile_size=tile_size, tile_pad=tile_pad, use_amp=use_amp
+                ))
+
             # ESC : net_opt() au niveau module, subprocess neosr venv obligatoire
             if detected_arch == "esc":
                 log("ESC détecté → subprocess neosr venv...")
                 _store_subprocess("esc")
                 return _neosr_subprocess_infer(
                     model_path, input_path, output_path, log, progress_callback,
-                    stop_event=stop_event
+                    stop_event=stop_event, use_amp=use_amp
                 )
 
             # ninasr/lmlt/eimn/drct : net_opt() au niveau module → neosr_general_runner
@@ -1120,18 +1589,24 @@ def upscale_image(
                         fc = int(w.shape[0]) if w is not None else 32
                         model = spanf(feature_channels=fc, scale=max(1, scale))
                         log(f"SpanF instancié (fc={fc}, scale={scale}x)")
-                    elif detected_arch == "spanc":
+                    elif detected_arch in ("spanc", "spanpp"):
                         from traiNNer.archs.spanpp_arch import SpanC
                         meta = state_dict.get("MetaIGConv")
                         if meta is not None:
                             scale_list = tuple(int(v.item()) for v in meta)
                         else:
-                            scale_list = (2, 4)
-                        w = state_dict.get("conv0.eval_conv.weight")
+                            scale_list = (1, 2) if detected_arch == "spanpp" else (2, 4)
+                        # spanc: feature_channels depuis conv0.eval_conv
+                        # spanpp: feature_channels depuis block_1.c1_r.conv3.eval_conv (pas de conv0)
+                        if detected_arch == "spanpp":
+                            w = state_dict.get("block_1.c1_r.conv3.eval_conv.weight")
+                        else:
+                            w = state_dict.get("conv0.eval_conv.weight")
                         fc = int(w.shape[0]) if w is not None else 48
+                        _eval_scale = max(1, scale) if scale in scale_list else scale_list[0]
                         model = SpanC(feature_channels=fc, scale_list=scale_list,
-                                      eval_base_scale=max(1, scale) if scale in scale_list else scale_list[0])
-                        log(f"SpanC instancié (fc={fc}, scales={scale_list})")
+                                      eval_base_scale=_eval_scale)
+                        log(f"{'SpanPP' if detected_arch == 'spanpp' else 'SpanC'} instancié (fc={fc}, scales={scale_list})")
                     elif detected_arch == "gfisrv2":
                         from traiNNer.archs.gfisrv2_arch import GFISRV2
                         w = state_dict.get("in_to_dim.weight")
@@ -1245,10 +1720,13 @@ def upscale_image(
                 log(f"Color Fix [wavelet] wavelets={color_fix_wavelets} "
                     f"strength={color_fix_strength:.2f} planes={_planes} "
                     f"device={_cf_dev}{_ref_label}")
-            else:
+            elif color_fix == "average":
                 log(f"Color Fix [average] radius={color_fix_radius} fast={color_fix_fast} "
                     f"strength={color_fix_strength:.2f} planes={_planes} "
                     f"device={_cf_dev}{_ref_label}")
+            else:
+                log(f"Color Fix [{color_fix}] strength={color_fix_strength:.2f} "
+                    f"planes={_planes}{_ref_label}")
 
             if _cf_dev == "trt":
                 log("Color Fix TRT : premier appel → autotuning Triton (~3 s), "
@@ -1297,10 +1775,39 @@ def upscale_folder(
     tile_pad: int = 32,
     use_amp: bool = True,
     callback: Optional[Callable] = None,
+    stop_event=None,
+    # ── Serialization ──
+    serialize: bool = False,
+    serialize_start: int = 0,
+    # ── Color Fix ──
+    color_fix: str = "none",
+    color_fix_wavelets: int = 4,
+    color_fix_radius: int = 32,
+    color_fix_fast: bool = False,
+    color_fix_strength: float = 1.0,
+    color_fix_device: str = "auto",
+    # ── Persistent batch subprocess (v2.5.5) ──
+    persistent_batch: bool = False,
+    # ── Dandere2x (v2.5.5) ──
+    dandere_mode: bool = False,
+    dandere_block_size: int = 16,
+    dandere_threshold: float = 0.02,
+    dandere_full_skip: bool = False,  # skip entire frame if global diff < threshold
+    dandere_full_skip_threshold: float = 0.005,
 ) -> Tuple[int, int, list]:
     """
     Upscale all images in a folder.
-    
+
+    persistent_batch: Keep model loaded in VRAM across all frames (subprocess archs only).
+                      Eliminates ~2-5s model reload per image. Major gain on large batches.
+
+    dandere_mode: Dandere2x-inspired block skip.
+      dandere_full_skip=False (default): block-level compositing — upscale every frame,
+        but copy unchanged blocks from previous SR output (saves color fix + I/O time).
+      dandere_full_skip=True: skip entire frames that are nearly identical to the previous
+        (global MSE < dandere_full_skip_threshold). Zero upscale cost for those frames.
+        Best for anime with many static shots.
+
     Returns:
         (success_count, total_count, errors: list[str])
     """
@@ -1308,34 +1815,173 @@ def upscale_folder(
         return 0, 0, [f"Dossier introuvable : {input_folder}"]
 
     exts = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".tif"}
-    files = [f for f in os.listdir(input_folder)
-             if os.path.splitext(f)[1].lower() in exts]
-    
-    if not files:
+    raw_files = [f for f in os.listdir(input_folder)
+                 if os.path.splitext(f)[1].lower() in exts]
+
+    if not raw_files:
         return 0, 0, ["Aucune image trouvée"]
 
+    # Natural sort (frame_1 < frame_2 < … < frame_10)
+    import re as _re
+    def _nat_key(s):
+        return [int(t) if t.isdigit() else t.lower() for t in _re.split(r'(\d+)', s)]
+    files = sorted(raw_files, key=_nat_key)
+
     os.makedirs(output_folder, exist_ok=True)
-    
-    success = 0
-    errors = []
-    
-    for i, fname in enumerate(sorted(files)):
-        in_path = os.path.join(input_folder, fname)
-        base, ext = os.path.splitext(fname)
-        out_path = os.path.join(output_folder, f"{base}_upscaled.png")
-        
+
+    def _cb(msg: str) -> None:
         if callback:
-            callback(f"[{i+1}/{len(files)}] {fname}")
-        
-        ok, msg = upscale_image(
-            model_path, in_path, out_path,
-            scale=scale, tile_size=tile_size, tile_pad=tile_pad,
-            use_amp=use_amp, callback=callback
+            callback(msg)
+
+    def _stopped() -> bool:
+        return stop_event is not None and stop_event.is_set()
+
+    # Determine if the model is a subprocess arch (needs persistent worker)
+    _is_subprocess_arch = False
+    if os.path.isfile(model_path) and persistent_batch:
+        try:
+            import safetensors.torch as _st
+            if model_path.endswith(".safetensors"):
+                _sd_keys = set(list(_st.load_file(model_path, device="cpu").keys())[:5])
+            else:
+                _ck = torch.load(model_path, map_location="cpu", weights_only=False)
+                _sd = _ck if any(k.endswith(".weight") for k in _ck.keys()) else (
+                    _ck.get("params_ema") or _ck.get("params") or _ck)
+                _sd_keys = set(list(_sd.keys())[:5])
+            _arch_detected = detect_arch_from_state(
+                {k: None for k in _sd_keys})  # type: ignore
+            _is_subprocess_arch = (_arch_detected or "") in _TRAINNER_SUBPROCESS_ARCHS
+        except Exception:
+            pass
+
+    # ── Persistent batch session (subprocess archs) ────────────────────────────
+    _session: Optional[PersistentBatchSession] = None
+    if persistent_batch and _is_subprocess_arch:
+        _session = PersistentBatchSession(
+            venv_py=_TRAINNER_VENV_PY,
+            model_path=model_path,
+            tile_size=tile_size,
+            tile_pad=tile_pad,
+            use_amp=use_amp,
+            log=_cb,
         )
-        
-        if ok:
-            success += 1
-        else:
-            errors.append(f"{fname}: {msg}")
-    
-    return success, len(files), errors
+        if not _session.start():
+            _session = None
+            _cb("[PersistentBatch] Démarrage échoué — mode normal utilisé")
+
+    success = 0
+    errors  = []
+    skipped_dandere = 0
+
+    # Dandere2x state
+    _prev_lq_arr: Optional["np.ndarray"] = None  # previous input as float32 [H,W,3]
+    _prev_sr_arr: Optional["np.ndarray"] = None  # previous SR output as float32
+
+    total = len(files)
+    try:
+        for i, fname in enumerate(files):
+            if _stopped():
+                errors.append("Arrêt demandé par l'utilisateur.")
+                break
+
+            in_path = os.path.join(input_folder, fname)
+            base, _ = os.path.splitext(fname)
+            if serialize:
+                out_name = f"{serialize_start + i:05d}.png"
+            else:
+                out_name = f"{base}_upscaled.png"
+            out_path = os.path.join(output_folder, out_name)
+
+            _cb(f"[{i+1}/{total}] {fname}")
+
+            # ── Dandere2x — load current LQ frame ────────────────────────────
+            _curr_lq_arr: Optional["np.ndarray"] = None
+            if dandere_mode and IMAGING_AVAILABLE:
+                try:
+                    _curr_lq_arr = _pil_to_float(Image.open(in_path))
+                except Exception:
+                    pass
+
+            # ── Dandere2x — full-frame skip ────────────────────────────────
+            if (dandere_mode and dandere_full_skip and
+                    _prev_lq_arr is not None and _curr_lq_arr is not None and
+                    _prev_sr_arr is not None):
+                diff = dandere_frame_similarity(_prev_lq_arr, _curr_lq_arr)
+                if diff < dandere_full_skip_threshold:
+                    # Frame virtually identical → copy previous SR output
+                    _cb(f"  [Dandere2x] Skip (diff={diff:.4f} < {dandere_full_skip_threshold})")
+                    skipped_dandere += 1
+                    if IMAGING_AVAILABLE:
+                        _float_to_pil(_prev_sr_arr).save(out_path)
+                    _prev_lq_arr = _curr_lq_arr
+                    success += 1
+                    continue
+
+            # ── Normal upscale ────────────────────────────────────────────────
+            if _session is not None:
+                # Persistent subprocess session
+                ok, msg = _session.infer(in_path, out_path)
+            else:
+                ok, msg = upscale_image(
+                    model_path, in_path, out_path,
+                    scale=scale, tile_size=tile_size, tile_pad=tile_pad,
+                    use_amp=use_amp, callback=callback,
+                    stop_event=stop_event,
+                    color_fix=color_fix,
+                    color_fix_wavelets=color_fix_wavelets,
+                    color_fix_radius=color_fix_radius,
+                    color_fix_fast=color_fix_fast,
+                    color_fix_strength=color_fix_strength,
+                    color_fix_device=color_fix_device,
+                )
+
+            if ok:
+                success += 1
+                # ── Dandere2x — block compositing ──────────────────────────────
+                if (dandere_mode and not dandere_full_skip and
+                        _prev_lq_arr is not None and _curr_lq_arr is not None and
+                        IMAGING_AVAILABLE):
+                    try:
+                        _curr_sr_arr = _pil_to_float(Image.open(out_path))
+                        if _prev_sr_arr is not None:
+                            _diff_mask = dandere_compute_diff(
+                                _prev_lq_arr, _curr_lq_arr,
+                                block_size=dandere_block_size,
+                                threshold=dandere_threshold,
+                            )
+                            changed_pct = _diff_mask.mean() * 100
+                            _cb(f"  [Dandere2x] {changed_pct:.1f}% blocs changés")
+                            _composed = dandere_compose(
+                                _prev_sr_arr, _curr_sr_arr,
+                                _diff_mask,
+                                block_size=dandere_block_size,
+                                scale=scale if scale > 0 else 4,
+                            )
+                            _float_to_pil(_composed).save(out_path)
+                            _prev_sr_arr = _composed
+                        else:
+                            _prev_sr_arr = _curr_sr_arr
+                    except Exception as _de:
+                        _cb(f"  [Dandere2x] Erreur compositing : {_de}")
+                elif ok and IMAGING_AVAILABLE:
+                    # First frame or no dandere — just cache SR
+                    if dandere_mode:
+                        try:
+                            _prev_sr_arr = _pil_to_float(Image.open(out_path))
+                        except Exception:
+                            pass
+            else:
+                errors.append(f"{fname}: {msg}")
+
+            # Update dandere2x LQ reference
+            if dandere_mode:
+                _prev_lq_arr = _curr_lq_arr
+
+    finally:
+        if _session is not None:
+            _session.stop()
+
+    if skipped_dandere > 0:
+        _cb(f"[Dandere2x] {skipped_dandere}/{total} frames sautées (identiques)")
+
+    return success, total, errors
