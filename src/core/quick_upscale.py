@@ -1603,10 +1603,28 @@ def upscale_image(
                         else:
                             w = state_dict.get("conv0.eval_conv.weight")
                         fc = int(w.shape[0]) if w is not None else 48
+                        # Détecter latent_layers depuis query_kernel (défaut=4 mais peut varier)
+                        # Indices pairs = Conv2d, dernier = sortie(3ch) → latent_layers = nb_conv - 1
+                        _qk_keys = [k for k in state_dict if k.startswith("upsampler.query_kernel.") and k.endswith(".weight")]
+                        _latent_layers = max(4, len(_qk_keys) - 1) if _qk_keys else 4
+                        # implicit_dim depuis la forme de query_kernel.0
+                        _qk0 = state_dict.get("upsampler.query_kernel.0.weight")
+                        _implicit_dim = int(_qk0.shape[0]) if _qk0 is not None else 256
+                        # ig_kernel_size depuis freq: shape[0] = fc * k^2
+                        _freq = state_dict.get("upsampler.freq")
+                        if _freq is not None:
+                            import math as _math
+                            _k2 = _freq.shape[0] / fc
+                            _ig_k = max(1, int(round(_math.sqrt(_k2))))
+                        else:
+                            _ig_k = 3
                         _eval_scale = max(1, scale) if scale in scale_list else scale_list[0]
                         model = SpanC(feature_channels=fc, scale_list=scale_list,
-                                      eval_base_scale=_eval_scale)
-                        log(f"{'SpanPP' if detected_arch == 'spanpp' else 'SpanC'} instancié (fc={fc}, scales={scale_list})")
+                                      eval_base_scale=_eval_scale,
+                                      ig_kernel_size=_ig_k,
+                                      implicit_dim=_implicit_dim,
+                                      latent_layers=_latent_layers)
+                        log(f"{'SpanPP' if detected_arch == 'spanpp' else 'SpanC'} instancié (fc={fc}, scales={scale_list}, latent={_latent_layers}, idim={_implicit_dim})")
                     elif detected_arch == "gfisrv2":
                         from traiNNer.archs.gfisrv2_arch import GFISRV2
                         w = state_dict.get("in_to_dim.weight")

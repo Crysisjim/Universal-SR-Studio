@@ -284,14 +284,31 @@ def cmd_init(payload: dict) -> None:
     # Distinct de SPANPlus (feats.*) et SpanC-NeoSR (conv_a). Exclusif traiNNer-redux.
     if "block_1.c1_r.conv3.eval_conv.weight" in sd and "upsampler.amplitude" in sd:
         try:
+            import math as _math
             from traiNNer.archs.spanpp_arch import SpanC
             _meta = sd.get("MetaIGConv")
             _scale_list = tuple(int(v.item()) for v in _meta) if _meta is not None else (1, 2)
             _w  = sd.get("block_1.c1_r.conv3.eval_conv.weight")
             _fc = int(_w.shape[0]) if _w is not None else 48
+            # latent_layers: compter les Conv2d dans query_kernel (nb_total - 1 finale)
+            _qk_keys = [k for k in sd if k.startswith("upsampler.query_kernel.") and k.endswith(".weight")]
+            _latent_layers = max(4, len(_qk_keys) - 1) if _qk_keys else 4
+            # implicit_dim depuis query_kernel.0
+            _qk0 = sd.get("upsampler.query_kernel.0.weight")
+            _implicit_dim = int(_qk0.shape[0]) if _qk0 is not None else 256
+            # ig_kernel_size depuis freq shape[0] = fc * k^2
+            _freq = sd.get("upsampler.freq")
+            if _freq is not None:
+                _k2 = _freq.shape[0] / _fc
+                _ig_k = max(1, int(round(_math.sqrt(_k2))))
+            else:
+                _ig_k = 3
             _eval_scale = max(1, _scale) if _scale in _scale_list else _scale_list[0]
             _model = SpanC(feature_channels=_fc, scale_list=_scale_list,
-                           eval_base_scale=_eval_scale).eval()
+                           eval_base_scale=_eval_scale,
+                           ig_kernel_size=_ig_k,
+                           implicit_dim=_implicit_dim,
+                           latent_layers=_latent_layers).eval()
             _model.load_state_dict(sd, strict=False)
             _model = _model.to(_device)
             _arch  = "SpanPP"
