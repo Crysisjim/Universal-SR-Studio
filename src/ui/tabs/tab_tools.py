@@ -1514,6 +1514,7 @@ class ToolsTab(ctk.CTkFrame):
                             tile_pad=tile_pad,
                             use_amp=use_amp,
                             log=callback,
+                            scale_hint=scale,  # user-selected scale (0=auto)
                         )
                         if not _session.start():
                             callback(_t("[Persistent] Démarrage échoué — mode normal utilisé",
