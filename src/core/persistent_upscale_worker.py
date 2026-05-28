@@ -204,6 +204,7 @@ def cmd_init(payload: dict) -> None:
         return
 
     _scale = _detect_scale(sd)
+    _scale_hint = int(payload.get("scale_hint", 0))  # user-selected scale (0=auto)
 
     # 1) GFISRV2 manual — MUST run before spandrel (spandrel misidentifies it as SPAN)
     # Mirror universal_runner.py: no upsampler/mid_dim params, strict=False.
@@ -303,7 +304,9 @@ def cmd_init(payload: dict) -> None:
                 _ig_k = max(1, int(round(_math.sqrt(_k2))))
             else:
                 _ig_k = 3
-            _eval_scale = max(1, _scale) if _scale in _scale_list else _scale_list[0]
+            # Prefer user-selected scale if valid, otherwise auto-detect
+            _requested = _scale_hint if _scale_hint > 0 else _scale
+            _eval_scale = max(1, _requested) if _requested in _scale_list else _scale_list[0]
             _model = SpanC(feature_channels=_fc, scale_list=_scale_list,
                            eval_base_scale=_eval_scale,
                            ig_kernel_size=_ig_k,

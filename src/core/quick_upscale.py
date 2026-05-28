@@ -813,13 +813,14 @@ class PersistentBatchSession:
 
     def __init__(self, venv_py: str, model_path: str,
                  tile_size: int = 256, tile_pad: int = 32, use_amp: bool = False,
-                 log: Optional[Callable] = None):
+                 log: Optional[Callable] = None, scale_hint: int = 0):
         self._venv_py    = venv_py
         self._model_path = model_path
         self._tile_size  = tile_size
         self._tile_pad   = tile_pad
         self._use_amp    = use_amp
         self._log        = log or (lambda m: None)
+        self._scale_hint = scale_hint  # user-selected scale (0=auto)
         self._proc       = None
         self.arch: str   = "unknown"
         self.scale: int  = 2
@@ -871,6 +872,7 @@ class PersistentBatchSession:
                 "tile_size": self._tile_size,
                 "tile_pad":  self._tile_pad,
                 "use_amp":   self._use_amp,
+                "scale_hint": self._scale_hint,  # user-selected scale (0=auto)
             })
         except Exception as e:
             self._log(f"[PersistentBatch] Erreur init : {e}")
@@ -1896,6 +1898,7 @@ def upscale_folder(
             tile_pad=tile_pad,
             use_amp=use_amp,
             log=_cb,
+            scale_hint=scale,  # user-selected scale (0=auto)
         )
         if not _session.start():
             _session = None

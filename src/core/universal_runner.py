@@ -81,6 +81,8 @@ def run(model_path: str, input_path: str, output_path: str,
                 detected = "smosr"
             elif "gfisr_body.0.fc1.weight" in state_dict and "upscale.MetaUpsample" in state_dict:
                 detected = "gfisrv2"
+            elif "block_1.c1_r.conv3.eval_conv.weight" in state_dict and "upsampler.amplitude" in state_dict:
+                detected = "spanpp"
             elif "block_1.conv_a.eval_conv.weight" in state_dict and "MetaIGConv" in state_dict:
                 detected = "spanc"
             elif "block_1.conv1.eval_conv.weight" in state_dict and "conv_near.weight" in state_dict:
@@ -135,19 +137,35 @@ def run(model_path: str, input_path: str, output_path: str,
                 model.load_state_dict(state_dict, strict=False)
                 print(f"[Runner] GFISRv2 manuel : dim={dim}, n_blocks={n_blocks}, scale={scale}x", flush=True)
 
-            elif detected == "spanc":
+            elif detected in ("spanc", "spanpp"):
                 from traiNNer.archs.spanpp_arch import SpanC
                 meta = state_dict.get("MetaIGConv")
                 if meta is not None:
                     scale_list = tuple(int(v.item()) for v in meta)
                 else:
-                    scale_list = (2, 4)
-                w = state_dict.get("conv0.eval_conv.weight")
+                    scale_list = (1, 2) if detected == "spanpp" else (2, 4)
+                if detected == "spanpp":
+                    w = state_dict.get("block_1.c1_r.conv3.eval_conv.weight")
+                else:
+                    w = state_dict.get("conv0.eval_conv.weight")
                 fc = int(w.shape[0]) if w is not None else 48
+                # Detect IGConv params from checkpoint
+                _qk_keys = [k for k in state_dict if k.startswith("upsampler.query_kernel.") and k.endswith(".weight")]
+                latent_layers = max(4, len(_qk_keys) - 1) if _qk_keys else 4
+                _qk0 = state_dict.get("upsampler.query_kernel.0.weight")
+                implicit_dim = int(_qk0.shape[0]) if _qk0 is not None else 256
+                _freq = state_dict.get("upsampler.freq")
+                if _freq is not None:
+                    _k2 = _freq.shape[0] / fc
+                    ig_k = max(1, int(round(math.sqrt(_k2))))
+                else:
+                    ig_k = 3
                 eval_base = max(1, scale) if scale in scale_list else scale_list[0]
-                model = SpanC(feature_channels=fc, scale_list=scale_list, eval_base_scale=eval_base)
+                model = SpanC(feature_channels=fc, scale_list=scale_list, eval_base_scale=eval_base,
+                              ig_kernel_size=ig_k, implicit_dim=implicit_dim, latent_layers=latent_layers)
                 model.load_state_dict(state_dict, strict=False)
-                print(f"[Runner] SpanC manuel : fc={fc}, scales={scale_list}", flush=True)
+                scale = eval_base  # update scale for inference dimensions
+                print(f"[Runner] {'SpanPP' if detected == 'spanpp' else 'SpanC'} manuel : fc={fc}, scales={scale_list}, eval={eval_base}x", flush=True)
 
             elif detected == "spanf":
                 from traiNNer.archs.spanf_arch import spanf
