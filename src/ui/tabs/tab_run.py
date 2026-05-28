@@ -1988,11 +1988,23 @@ class RunTab(ctk.CTkFrame):
             self._val_dataset_dir = ""
             if cfg_data:
                 _ds_list = cfg_data.get("datasets", [])
+
+                def _extract_dir(ds_dict):
+                    """Extract first valid directory from a dataset entry.
+                    Redux YAML: dataroot_gt / dataroot_lq can be a list → take first element."""
+                    for _key in ("dataroot_gt", "gt_path", "dataroot_lq", "lq_path"):
+                        _v = ds_dict.get(_key, "")
+                        if isinstance(_v, list):
+                            _v = _v[0] if _v else ""
+                        _v = str(_v).strip()
+                        if _v:
+                            return _v
+                    return ""
+
                 if isinstance(_ds_list, list):
                     for _ds in _ds_list:
                         if str(_ds.get("name", "")).lower().startswith("val"):
-                            _d = str(_ds.get("dataroot_gt", _ds.get("gt_path",
-                                     _ds.get("dataroot_lq", _ds.get("lq_path", "")))))
+                            _d = _extract_dir(_ds)
                             if _d:
                                 self._val_dataset_dir = _d
                                 break
@@ -2000,8 +2012,7 @@ class RunTab(ctk.CTkFrame):
                     # NeoSR flat TOML — datasets is a dict of sub-tables
                     for _k, _ds in _ds_list.items():
                         if isinstance(_ds, dict) and str(_ds.get("name", _k)).lower().startswith("val"):
-                            _d = str(_ds.get("dataroot_gt", _ds.get("gt_path",
-                                     _ds.get("dataroot_lq", _ds.get("lq_path", "")))))
+                            _d = _extract_dir(_ds)
                             if _d:
                                 self._val_dataset_dir = _d
                                 break
@@ -2085,8 +2096,14 @@ class RunTab(ctk.CTkFrame):
 
     def browse(self, entry, key):
         ft = [("Config", "*.toml *.yml *.yaml")] if "config" in key else [("Exe", "*.exe")] if "python" in key else [("Py", "*.py")]
-        p = filedialog.askopenfilename(filetypes=ft)
-        if p: 
+        # initialdir : pour les configs, ouvrir dans IA_Engine/Option Custom
+        initialdir = None
+        if "config" in key:
+            _candidate = os.path.join(os.path.expanduser("~"), "IA_Engine", "Option Custom")
+            if os.path.isdir(_candidate):
+                initialdir = _candidate
+        p = filedialog.askopenfilename(filetypes=ft, initialdir=initialdir)
+        if p:
             entry.delete(0, "end"); entry.insert(0, p); self.settings.set(key, p)
             if key == "config_path": self.detect_engine_and_setup(p)
 
@@ -2660,7 +2677,7 @@ class RunTab(ctk.CTkFrame):
         win = ctk.CTkToplevel(self)
         self._metrics_win = win
         win.title(_t("Métriques d'Entraînement", "Training Metrics"))
-        win.geometry("820x540")
+        win.geometry("820x700")
         win.attributes("-topmost", True)
         win.after(500, lambda: win.attributes("-topmost", False))
 
@@ -2680,7 +2697,7 @@ class RunTab(ctk.CTkFrame):
 
         # ── Parsing ─────────────────────────────────────────────────────────
         def parse_metrics():
-            _losses, _psnrs = [], []
+            _losses, _psnrs, _loss_d = [], [], []
             _log = self.textbox_logs.get("1.0", "end")
             for _line in _log.split("\n"):
                 m = re.search(r'l_g_total[:\s]+([0-9.e+\-]+)', _line)
@@ -2691,6 +2708,17 @@ class RunTab(ctk.CTkFrame):
                 if m:
                     try: _losses.append(float(m.group(1)))
                     except Exception: pass
+                # Loss D — d_total si NeoSR/legacy, sinon (l_d_real+l_d_fake)/2 pour traiNNer-redux
+                md = re.search(r'd_total[:\s]+([0-9.e+\-]+)', _line)
+                if md:
+                    try: _loss_d.append(float(md.group(1)))
+                    except Exception: pass
+                else:
+                    md_r = re.search(r'(?:l_)?d_real[:\s]+([0-9.e+\-]+)', _line)
+                    md_f = re.search(r'(?:l_)?d_fake[:\s]+([0-9.e+\-]+)', _line)
+                    if md_r and md_f:
+                        try: _loss_d.append((float(md_r.group(1)) + float(md_f.group(1))) / 2)
+                        except Exception: pass
                 # PSNR — NeoSR: "Best PSNR : 24.6367........ dB"  → [0-9]+\.[0-9]+ évite de capturer les points trailers
                 # Redux: "psnr = 32.88" ou "psnr: 32.88"
                 mp = re.search(r'psnr\s*[=:]\s*([0-9]+\.[0-9]+)', _line, re.IGNORECASE)
@@ -2699,8 +2727,14 @@ class RunTab(ctk.CTkFrame):
                     except Exception: pass
             _pf = re.search(r'print[_\s]freq\s*[=:]\s*(\d+)', _log, re.IGNORECASE)
             _freq = int(_pf.group(1)) if _pf else 100
-            _vf = re.search(r'val[_\s]freq\s*[=:]\s*(\d+)', _log, re.IGNORECASE)
-            _val_freq = int(_vf.group(1)) if _vf else 5000
+            # Inférer val_freq depuis les données réelles (ratio loss pts / psnr pts)
+            # plutôt que de parser le log (val_freq souvent absent du log traiNNer-redux)
+            if _losses and _psnrs and len(_psnrs) > 1:
+                _estimated_iter = len(_losses) * _freq
+                _val_freq = max(1, _estimated_iter // len(_psnrs))
+            else:
+                _vf = re.search(r'val[_\s]freq\s*[=:]\s*(\d+)', _log, re.IGNORECASE)
+                _val_freq = int(_vf.group(1)) if _vf else 5000
             # Détecter l'iter de départ (resume ou début) pour l'axe X
             # Cherche le premier [ iter: N,NNN ] dans les lignes de log
             _start_iter = 0
@@ -2708,7 +2742,7 @@ class RunTab(ctk.CTkFrame):
             if _first_iter_m:
                 try: _start_iter = int(_first_iter_m.group(1).replace(",", "")) - _freq
                 except Exception: pass
-            return _losses, _psnrs, _freq, _val_freq, max(0, _start_iter)
+            return _losses, _psnrs, _loss_d, _freq, _val_freq, max(0, _start_iter)
 
         # ── Draw ─────────────────────────────────────────────────────────────
         def draw_graph(data, color, label, y_offset, height, print_freq, start_iter=0):
@@ -2717,17 +2751,17 @@ class RunTab(ctk.CTkFrame):
             min_v, max_v = min(data), max(data)
             if max_v == min_v:
                 max_v = min_v + 1
-            w = canvas.winfo_width() - 80
-            h = height - 50
-            x_start, y_start = 60, y_offset + 20
+            w = canvas.winfo_width() - 92   # +12 left margin vs old -80
+            h = height - 60                  # +10 bottom margin vs old -50
+            x_start, y_start = 74, y_offset + 22   # left 74 (was 60), top +22 (was +20)
             # Axes
             canvas.create_line(x_start, y_start, x_start, y_start + h, fill="#444")
             canvas.create_line(x_start, y_start + h, x_start + w, y_start + h, fill="#444")
             # Label
-            canvas.create_text(x_start + w // 2, y_offset + 5, text=label, fill=color, font=("Roboto", 11, "bold"))
+            canvas.create_text(x_start + w // 2, y_offset + 11, text=label, fill=color, font=("Roboto", 11, "bold"))
             # Y — Min/Max
-            canvas.create_text(x_start - 5, y_start, text=f"{max_v:.4f}", fill="#888", anchor="e", font=("Roboto", 8))
-            canvas.create_text(x_start - 5, y_start + h, text=f"{min_v:.4f}", fill="#888", anchor="e", font=("Roboto", 8))
+            canvas.create_text(x_start - 6, y_start, text=f"{max_v:.4f}", fill="#888", anchor="e", font=("Roboto", 8))
+            canvas.create_text(x_start - 6, y_start + h, text=f"{min_v:.4f}", fill="#888", anchor="e", font=("Roboto", 8))
             # X — graduation ~6 ticks (offset par start_iter si resume)
             n = len(data)
             tick_step = max(1, n // 6)
@@ -2754,12 +2788,13 @@ class RunTab(ctk.CTkFrame):
                 canvas.create_line(*points, fill=color, width=2, smooth=True)
 
         # ── Refresh ───────────────────────────────────────────────────────────
-        _state = {"losses": [], "psnrs": [], "freq": 100, "val_freq": 5000, "start_iter": 0}
+        _state = {"losses": [], "psnrs": [], "loss_d": [], "freq": 100, "val_freq": 5000, "start_iter": 0}
 
         def redraw(event=None):
             canvas.delete("all")
             losses = _state["losses"]
             psnrs  = _state["psnrs"]
+            loss_d = _state["loss_d"]
             pf     = _state["freq"]
             vf     = _state["val_freq"]
             si     = _state["start_iter"]
@@ -2769,25 +2804,32 @@ class RunTab(ctk.CTkFrame):
                                    text=_t("Aucune métrique — en attente de l'entraînement...", "No metrics yet — waiting for training..."),
                                    fill="#555", font=("Roboto", 12))
                 return
-            if losses and psnrs:
-                draw_graph(losses, "#e74c3c", f"Loss ({len(losses)} pts)", 0, ch // 2, pf, si)
-                draw_graph(psnrs, "#2ecc71", f"PSNR ({len(psnrs)} pts)", ch // 2, ch // 2, vf, si)
-            elif losses:
-                draw_graph(losses, "#e74c3c", f"Loss ({len(losses)} pts)", 0, ch, pf, si)
-            else:
-                draw_graph(psnrs, "#2ecc71", f"PSNR ({len(psnrs)} pts)", 0, ch, vf, si)
+            has_g = bool(losses)
+            has_d = bool(loss_d)
+            has_p = bool(psnrs)
+            n_panels = sum([has_g, has_d, has_p])
+            ph = ch // n_panels if n_panels > 0 else ch
+            offset = 0
+            if has_g:
+                draw_graph(losses, "#e74c3c", f"Loss G ({len(losses)} pts)", offset, ph, pf, si)
+                offset += ph
+            if has_d:
+                draw_graph(loss_d, "#9b59b6", f"Loss D ({len(loss_d)} pts)", offset, ph, pf, si)
+                offset += ph
+            if has_p:
+                draw_graph(psnrs, "#2ecc71", f"PSNR ({len(psnrs)} pts)", offset, ph, vf, si)
 
         def refresh_data(manual=False):
             if not win.winfo_exists():
                 return
-            losses, psnrs, freq, val_freq, start_iter = parse_metrics()
+            losses, psnrs, loss_d, freq, val_freq, start_iter = parse_metrics()
             _state["losses"] = losses
             _state["psnrs"] = psnrs
+            _state["loss_d"] = loss_d
             _state["freq"] = freq
             _state["val_freq"] = val_freq
             _state["start_iter"] = start_iter
-            n_pts = len(losses) + len(psnrs)
-            lbl_status.configure(text=f"Loss: {len(losses)} pts  |  PSNR: {len(psnrs)} pts  |  auto-refresh 5s  |  2 pts min/graphe")
+            lbl_status.configure(text=f"Loss G: {len(losses)} pts  |  Loss D: {len(loss_d)} pts  |  PSNR: {len(psnrs)} pts  |  auto-refresh 5s")
             redraw()
             # Reschedule auto-refresh
             if win.winfo_exists():
@@ -3513,6 +3555,19 @@ class RunTab(ctk.CTkFrame):
         ) if all_val_images else ["default"]
         if not val_names:
             val_names = sorted(all_val_images.keys()) or ["default"]
+
+        # Rafraîchir sr_image / lq_image depuis all_val_images qui inclut le dataset LQ folder
+        # Fix : à l'ouverture, pil_lq était None même si all_val_images l'avait trouvé
+        _init_name = next(
+            (n for n in val_names if all_val_images.get(n, {}).get("sr")),
+            val_names[0] if val_names else None
+        )
+        if _init_name and _init_name in all_val_images:
+            _entry = all_val_images[_init_name]
+            if _entry.get("sr"):
+                sr_image = _entry["sr"]
+            if _entry.get("lq"):
+                lq_image = _entry["lq"]
 
         # Create preview window
         win = ctk.CTkToplevel(self)

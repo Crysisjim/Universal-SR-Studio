@@ -186,7 +186,8 @@ class ConfigTab(ctk.CTkFrame):
         super().__init__(master, **kwargs)
         self.config_handler = config_handler
         self.settings = SettingsManager()
-        self.widgets = {} 
+        self.widgets = {}
+        self._sliders = {}  # slider refs pour snap dynamique (patch_size etc.)
         self.aug_labels = {}
         self.dynamic_widgets_g = []
         self.dynamic_widgets_d = []
@@ -378,6 +379,14 @@ class ConfigTab(ctk.CTkFrame):
             self.widgets["percep_criterion"].configure(values=percep_types)
             if self.widgets["percep_criterion"].get() not in percep_types:
                 self.widgets["percep_criterion"].set(percep_types[0])
+
+        # LDL criterion options par moteur
+        # Redux: charbonnier, l1, l2, huber — NeoSR: l1, l2, huber, chc (pas charbonnier)
+        ldl_types = ["charbonnier", "l1", "l2", "huber"] if is_redux else ["l1", "l2", "huber", "chc"]
+        if "ldl_criterion" in self.widgets:
+            self.widgets["ldl_criterion"].configure(values=ldl_types)
+            if self.widgets["ldl_criterion"].get() not in ldl_types:
+                self.widgets["ldl_criterion"].set(ldl_types[0])
 
         # 9. Griser les losses NeoSR-only en mode Redux
         _NEOSR_ONLY = [
@@ -578,9 +587,9 @@ class ConfigTab(ctk.CTkFrame):
     def create_page_train(self):
         f = ctk.CTkScrollableFrame(self.page_container, fg_color="transparent"); self.add_header(f, _t("Hyperparamètres", "Hyperparameters"))
         f_grid = ctk.CTkFrame(f, fg_color="transparent"); f_grid.pack(fill="x")
-        self.add_param_grid(f_grid, "Batch Size", "4", "batch_size", 0, 0, "Nombre d'images par calcul GPU.\nAugmenter consomme plus de VRAM mais accélère le training.")
-        self.add_param_grid(f_grid, "Accumulate", "1", "accumulate", 0, 1, "Multiplicateur de Batch Virtuel.\nPermet de simuler un gros batch (ex: 4x4=16) sans exploser la VRAM.")
-        self.add_param_grid(f_grid, "Patch Size", "64", "patch_size", 0, 2, "Taille des carrés d'images découpés (ex: 64x64).\nPlus grand = meilleure cohérence globale, mais VRAM x4.")
+        self.add_slider_param(f_grid, "Batch Size", 4, "batch_size", 0, 0, "Nombre d'images par calcul GPU.\nAugmenter consomme plus de VRAM mais accélère le training.", from_=1, to=64, step=1)
+        self.add_slider_param(f_grid, "Accumulate", 1, "accumulate", 0, 1, "Multiplicateur de Batch Virtuel.\nPermet de simuler un gros batch (ex: 4x4=16) sans exploser la VRAM.", from_=1, to=32, step=1)
+        self.add_slider_param(f_grid, "Patch Size", 64, "patch_size", 0, 2, "Taille des carrés d'images découpés (ex: 64x64).\nPlus grand = meilleure cohérence globale, mais VRAM x4.", from_=32, to=512, step=8)
         self.add_param_grid(f_grid, "Total Iter", "150000", "total_iter", 1, 0, "Nombre total de pas d'entraînement.\nPour un anime complet, 150k - 300k est recommandé.")
         self.add_param_grid(f_grid, "Warmup Iter", "-1", "warmup_iter", 1, 1, "warmup_iter")
         self.add_param_grid(f_grid, "Warmup Steps", "-1", "warmup_steps", 1, 2, "warmup_steps")
@@ -1291,7 +1300,7 @@ class ConfigTab(ctk.CTkFrame):
         f_ldl = ctk.CTkFrame(f_loss_adv, fg_color="transparent"); f_ldl.pack(fill="x", pady=2)
         chk_ldl = ctk.CTkCheckBox(f_ldl, text="LDL", width=140, onvalue="true", offvalue="false"); chk_ldl.pack(side="left"); self.widgets["loss_ldl"] = chk_ldl; ToolTip(chk_ldl, get_tooltip("loss_ldl"))
         ctk.CTkLabel(f_ldl, text="W:", width=20).pack(side="left"); self.widgets["weight_loss_ldl"] = ctk.CTkEntry(f_ldl, width=50); self.widgets["weight_loss_ldl"].insert(0, "1.0"); self.widgets["weight_loss_ldl"].pack(side="left", padx=5)
-        self.widgets["ldl_criterion"] = ctk.CTkOptionMenu(f_ldl, values=["l1", "l2", "huber"], width=80); self.widgets["ldl_criterion"].pack(side="left", padx=5); self.widgets["ldl_criterion"].set("l1"); ToolTip(self.widgets["ldl_criterion"], _t("Critère LDL.\nl1 : Standard.\nl2 : Lissé.\nhuber : Hybride L1/L2.", "LDL criterion.\nl1: Standard.\nl2: Smoothed.\nhuber: L1/L2 hybrid."))
+        self.widgets["ldl_criterion"] = ctk.CTkOptionMenu(f_ldl, values=["charbonnier", "l1", "l2", "huber"], width=105); self.widgets["ldl_criterion"].pack(side="left", padx=5); self.widgets["ldl_criterion"].set("charbonnier"); ToolTip(self.widgets["ldl_criterion"], _t("Critère LDL.\nRedux : charbonnier (défaut), l1, l2, huber.\nNeoSR : l1 (défaut), l2, huber, chc (pas charbonnier).", "LDL criterion.\nRedux: charbonnier (default), l1, l2, huber.\nNeoSR: l1 (default), l2, huber, chc (charbonnier not supported)."))
         ctk.CTkLabel(f_ldl, text="ksize:", width=45).pack(side="left"); self.widgets["ldl_ksize"] = ctk.CTkEntry(f_ldl, width=45); self.widgets["ldl_ksize"].insert(0, "7"); self.widgets["ldl_ksize"].pack(side="left", padx=5)
         ToolTip(self.widgets["ldl_ksize"], _t("Taille du kernel LDL (entier impair).\n7 = défaut.", "LDL kernel size (odd integer).\n7 = default."))
 
@@ -1352,7 +1361,7 @@ class ConfigTab(ctk.CTkFrame):
         # SparK Perceptual (Redux uniquement — InceptionNext features)
         f_spark = ctk.CTkFrame(f_loss_right, fg_color="transparent"); f_spark.pack(fill="x", pady=2, padx=6)
         chk_spark = ctk.CTkCheckBox(f_spark, text="SparK (Percep)", width=120, onvalue="true", offvalue="false"); chk_spark.pack(side="left"); self.widgets["loss_spark"] = chk_spark; ToolTip(chk_spark, get_tooltip("loss_spark"))
-        ctk.CTkLabel(f_spark, text="W:", width=20).pack(side="left"); self.widgets["weight_loss_spark"] = ctk.CTkEntry(f_spark, width=42); self.widgets["weight_loss_spark"].insert(0, "1.0"); self.widgets["weight_loss_spark"].pack(side="left", padx=3)
+        ctk.CTkLabel(f_spark, text="W:", width=20).pack(side="left"); self.widgets["weight_loss_spark"] = ctk.CTkEntry(f_spark, width=42); self.widgets["weight_loss_spark"].insert(0, "0.2"); self.widgets["weight_loss_spark"].pack(side="left", padx=3)
         self.widgets["spark_criterion"] = ctk.CTkOptionMenu(f_spark, values=["fd", "charbonnier"], width=100); self.widgets["spark_criterion"].pack(side="left", padx=3); self.widgets["spark_criterion"].set("fd"); ToolTip(self.widgets["spark_criterion"], _t("Critère SparK :\n- fd : Fourier Domain (magnitude + phase, recommandé)\n- charbonnier : Charbonnier sur les features brutes", "SparK criterion:\n- fd: Fourier Domain (magnitude + phase, recommended)\n- charbonnier: Charbonnier on raw features"))
         self.widgets["spark_path"] = ctk.CTkEntry(f_spark, width=130, placeholder_text=_t("epoch290.pth (opt)", "epoch290.pth (opt)")); self.widgets["spark_path"].pack(side="left", padx=3); ToolTip(self.widgets["spark_path"], _t("Chemin local vers les poids InceptionNext (epoch290.pth).\nLaissez vide pour téléchargement auto depuis GitHub.", "Local path to InceptionNext weights (epoch290.pth).\nLeave empty for automatic download from GitHub."))
 
@@ -2506,13 +2515,34 @@ class ConfigTab(ctk.CTkFrame):
     def on_arch_change(self, arch):
         if arch == "(Aucun)": return
         engine = self.widgets["engine"].get()
-        
+
         target_dict = REDUX_ARCH_FIELDS if "Redux" in engine else ARCH_FIELDS
-        
+
         # Fallback si l'architecture n'est pas dans le dictionnaire (ex: custom)
         fields = target_dict.get(arch, target_dict.get("default", []))
-        
+
         self.build_dynamic_fields(fields, self.frame_dynamic_g, self.dynamic_widgets_g, "dyn_")
+
+        # Snap patch_size selon l'arch pour éviter les crash de forme
+        _sl = self._sliders.get("patch_size")
+        _pe = self.widgets.get("patch_size")
+        if _sl is not None and _pe is not None:
+            # SpanC multi-scale : step 16 (GT crop = lq×2 → doit être ×16)
+            if arch in ("spanpp", "spanc"):
+                _step, _from, _to = 16, 32, 512
+            else:
+                _step, _from, _to = 8, 32, 512
+            _n = max(1, (_to - _from) // _step)
+            _sl.configure(from_=_from, to=_to, number_of_steps=_n)
+            try:
+                _cur = int(_pe.get())
+                _snapped = max(_from, min(_to, round(_cur / _step) * _step))
+                if _snapped != _cur:
+                    _pe.delete(0, "end"); _pe.insert(0, str(_snapped))
+                _sl.set(float(_snapped))
+            except Exception:
+                pass
+
         self.refresh_ui_stats()
 
     def on_disc_change(self, arch_display): 
@@ -3163,6 +3193,32 @@ class ConfigTab(ctk.CTkFrame):
         else: e = ctk.CTkEntry(f); e.insert(0, default); e.bind("<KeyRelease>", lambda event: self.update_vram_estimate())
         e.pack(fill="x"); self.widgets[key] = e; parent.grid_columnconfigure(col, weight=1)
 
+    def add_slider_param(self, parent, label, default, key, row, col, tip_text=None, from_=1, to=100, step=1):
+        f = ctk.CTkFrame(parent, fg_color="transparent")
+        f.grid(row=row, column=col, padx=5, pady=5, sticky="ew")
+        lbl = ctk.CTkLabel(f, text=label, font=("Roboto", 10)); lbl.pack(anchor="w")
+        if tip_text:
+            ToolTip(lbl, get_tooltip(tip_text, tip_text))
+        f_row = ctk.CTkFrame(f, fg_color="transparent"); f_row.pack(fill="x")
+        n_steps = max(1, round((to - from_) / step))
+        slider = ctk.CTkSlider(f_row, from_=from_, to=to, number_of_steps=n_steps)
+        slider.pack(side="left", fill="x", expand=True, padx=(0, 4))
+        entry = ctk.CTkEntry(f_row, width=44); entry.pack(side="left")
+        entry.insert(0, str(int(default))); slider.set(float(default))
+        def _on_slider(val, _e=entry, _s=step):
+            v = round(float(val) / _s) * _s
+            _e.delete(0, "end"); _e.insert(0, str(int(v)))
+            self.update_vram_estimate()
+        def _on_entry(event, _sl=slider, _f=from_, _t=to, _s=step, _e=entry):
+            try:
+                v = max(_f, min(_t, round(int(_e.get()) / _s) * _s)); _sl.set(float(v))
+            except ValueError: pass
+            self.update_vram_estimate()
+        slider.configure(command=_on_slider)
+        entry.bind("<KeyRelease>", _on_entry)
+        entry.bind("<FocusOut>", _on_entry)   # sync slider lors du chargement de config
+        self.widgets[key] = entry; self._sliders[key] = slider; parent.grid_columnconfigure(col, weight=1)
+
     def add_header(self, parent, text): ctk.CTkLabel(parent, text=text, font=("Roboto", 16, "bold"), text_color="#3B8ED0", anchor="w").pack(fill="x", pady=(15, 5))
     def add_label_tip(self, parent, text, tip_key=None):
         lbl = ctk.CTkLabel(parent, text=text); lbl.pack(side="left", padx=5); ToolTip(lbl, get_tooltip(tip_key, "")) if tip_key else None
@@ -3183,10 +3239,21 @@ class ConfigTab(ctk.CTkFrame):
         for f in self.frames.values(): f.pack_forget()
         self.frames[name].pack(fill="both", expand=True)
     def browse(self, e, f, k):
-        if f:
-            p = filedialog.askopenfilename()
+        # initialdir : dataset paths → IA_Engine/datasets ; sinon valeur actuelle
+        _DS_KEYS = {"ds_train_gt", "ds_val_gt", "ds_val_lq", "ds_train_lq"}
+        initialdir = None
+        if k in _DS_KEYS:
+            _candidate = os.path.join(os.path.expanduser("~"), "IA_Engine", "datasets")
+            if os.path.isdir(_candidate):
+                initialdir = _candidate
         else:
-            p = filedialog.askdirectory()
+            _cur = e.get().strip()
+            if _cur:
+                initialdir = _cur if os.path.isdir(_cur) else os.path.dirname(_cur)
+        if f:
+            p = filedialog.askopenfilename(initialdir=initialdir)
+        else:
+            p = filedialog.askdirectory(initialdir=initialdir)
         if p:
             e.delete(0, "end")
             e.insert(0, p)

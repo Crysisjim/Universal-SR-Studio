@@ -143,6 +143,20 @@ ARCH_MULTIPLIER = {
     "dat_light": 0.50,
     "hat_m": 0.28,
     "omnisr": 1.0,         # baseline ref — measured 7.62 it/s at scale=1
+    # ── Sprint 19/20 — Nouvelles architectures ──────────────────────────────────
+    # CATANet (dim=40, NeoSR): measured 0.528 it/s @ GTX 1080 Ti, batch=4, patch=96, scale=1
+    #   normalized: 0.528 / (0.18 * (64/96) * (4/1)^0.25) = 0.528 / 0.170 ≈ 3.1
+    "catanet": 3.1,
+    # SMoSR: measured 1.012 it/s @ GTX 1080 Ti, batch=8, patch=128, scale=1 (dim=72)
+    # normalized: 1.012 / (0.18 * 0.5 * 0.5 * 1.414) = 15.9 → 16.0
+    "smosr": 16.0,
+    # SpanF: SPAN simplifié fc=32 — très léger, estimé légèrement + rapide que SPAN
+    "spanf": 18.0,
+    # SpanC / SpanPP: multi-scale IGConv, légèrement + lourd que SPAN
+    "spanc": 14.0,
+    "spanpp": 14.0,
+    # GFISRv2: GatedCNN + FFT multi-upsampler, classe compact/intermédiaire
+    "gfisrv2": 8.0,
 }
 
 # Base VRAM (GB) at batch=4, patch=64 — used by estimate_vram()
@@ -226,6 +240,24 @@ ARCH_BASE_VRAM = {
     "swinir_s": 1.5,       # 1.76 GB SMI à scale=1 (beaucoup moins que swinir_m)
     "swin2sr_s": 2.0,
     "swin2sr_m": 5.0,
+    # ── Sprint 19/20 ─────────────────────────────────────────────────────────────
+    # Calibration : base = training_vram / ((batch/4) * (patch/64)^1.5)
+    # training_vram = torch.cuda.memory_reserved() (log neosr/traiNNer)
+    # CATANet (dim=40): log neosr [ VRAM: 4.67 GB ] @ batch=4, patch=96
+    #   base = 4.67 / (1 * (96/64)^1.5) = 4.67 / 1.837 ≈ 2.54
+    "catanet": 2.54,
+    # SMoSR dim=72: log traiNNer [ VRAM: 9.05 GB ] = torch.cuda.memory_reserved()
+    #   @ batch=8, patch=128. base = 9.05 / (2 * 2.828) ≈ 1.60
+    "smosr": 1.6,
+    # SpanF fc=72: log traiNNer [ VRAM: 5.43 GB ] = torch.cuda.memory_reserved()
+    #   @ batch=8, patch=128. Widget GPU Windows (2.9 GB) = WDDM sous-compte CUDA.
+    #   base = 5.43 / (2 * 2.828) ≈ 0.96
+    "spanf": 0.96,
+    # SpanC / SpanPP : multi-scale IGConv — estimé ~2× spanf
+    "spanc": 1.9,
+    "spanpp": 1.9,
+    # GFISRv2 : GatedCNN + FFT — estimé, classe compact+
+    "gfisrv2": 2.2,
 }
 
 

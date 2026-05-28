@@ -7,6 +7,27 @@ import time
 import ctypes
 
 
+def kill_process_tree(pid: int) -> None:
+    """Kill a process and all its children (prevents zombie worker processes)."""
+    if os.name == 'nt':
+        try:
+            subprocess.run(
+                ['taskkill', '/F', '/T', '/PID', str(pid)],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+        except Exception:
+            pass
+    else:
+        try:
+            os.killpg(os.getpgid(pid), signal.SIGKILL)
+        except Exception:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except Exception:
+                pass
+
+
 def kill_process_on_port(port: int) -> None:
     """Kill any process listening on the given TCP port (Windows)."""
     if os.name != 'nt':
@@ -40,6 +61,176 @@ class TrainingRunner:
         
         self.is_running = False
         self.stop_requested = False
+
+    @staticmethod
+    def _patch_sr_model_multiscale(script_path: str, log_callback) -> None:
+        """Auto-patch traiNNer/models/sr_model.py for SpanC multi-scale compatibility.
+
+        Three fixes applied:
+        1. GT resize: when scale_list=[1,2], SpanC samples scale=1 → output=96px
+           but GT is 192px (lq_size * dataset_scale). Resize GT before all losses.
+        2. target swap: losses loop uses gt_for_loss instead of self.gt directly.
+        3. LDL EMA resize: EMA net samples a scale independently → output_ema may
+           have a different size than main output. Resize output_ema to match.
+
+        Survives git pull — re-applies on every training start if any part is missing.
+        """
+        engine_dir = os.path.dirname(script_path)
+        target = os.path.join(engine_dir, "traiNNer", "models", "sr_model.py")
+        if not os.path.isfile(target):
+            return
+        try:
+            with open(target, "r", encoding="utf-8") as f:
+                src = f.read()
+
+            changed = False
+
+            # Part 1: insert gt_for_loss block after assert isinstance(self.output, Tensor)
+            if "gt_for_loss = self.gt" not in src:
+                marker1 = "                assert isinstance(self.output, Tensor)"
+                if marker1 not in src:
+                    log_callback("[WARN] sr_model.py: marqueur Part1 non trouvé, patch multi-scale ignoré.\n")
+                    return
+                insert_block = (
+                    "\n"
+                    "                # [USS] SpanC/multi-scale: resize GT if output spatial dims differ\n"
+                    "                # (e.g. scale_list=[1,2] → scale=1 sampled → output=96px, GT=192px)\n"
+                    "                gt_for_loss = self.gt\n"
+                    "                if self.output.shape[-2:] != self.gt.shape[-2:]:\n"
+                    "                    gt_for_loss = F.interpolate(\n"
+                    "                        self.gt,\n"
+                    "                        size=self.output.shape[-2:],\n"
+                    '                        mode="bicubic",\n'
+                    "                        antialias=True,\n"
+                    "                    ).clamp(0, 1)\n"
+                )
+                idx1 = src.find(marker1)
+                end_of_line1 = src.find("\n", idx1) + 1
+                src = src[:end_of_line1] + insert_block + src[end_of_line1:]
+                changed = True
+
+            # Part 2: replace target = self.gt in losses loop with gt_for_loss
+            old_target = (
+                "                for label, loss in self.losses.items():\n"
+                "                    target = self.gt"
+            )
+            new_target = (
+                "                for label, loss in self.losses.items():\n"
+                "                    target = gt_for_loss"
+            )
+            if old_target in src:
+                src = src.replace(old_target, new_target, 1)
+                changed = True
+
+            # Part 3: resize output_ema in LDL block to match self.output
+            if "# [USS] SpanC multi-scale: EMA may sample" not in src:
+                ldl_marker = "                        l_g_loss = loss(self.output, output_ema, target)"
+                if ldl_marker in src:
+                    ldl_insert = (
+                        "                        # [USS] SpanC multi-scale: EMA may sample a different scale\n"
+                        "                        # Align output_ema to self.output size before LDL comparison\n"
+                        "                        if output_ema.shape[-2:] != self.output.shape[-2:]:\n"
+                        "                            output_ema = F.interpolate(\n"
+                        "                                output_ema,\n"
+                        "                                size=self.output.shape[-2:],\n"
+                        '                                mode="bicubic",\n'
+                        "                                antialias=True,\n"
+                        "                            ).clamp(0, 1)\n"
+                        "                        l_g_loss = loss(self.output, output_ema, target)"
+                    )
+                    src = src.replace(ldl_marker, ldl_insert, 1)
+                    changed = True
+
+            if changed:
+                with open(target, "w", encoding="utf-8") as f:
+                    f.write(src)
+                log_callback("[PATCH] sr_model.py — support multi-scale SpanC (GT resize + LDL EMA align) appliqué.\n")
+        except Exception as e:
+            log_callback(f"[WARN] Impossible de patcher sr_model.py : {e}\n")
+
+    @staticmethod
+    def _patch_ldl_loss_huber(script_path: str, log_callback) -> None:
+        """Auto-patch traiNNer/losses/ldl_loss.py to add 'huber' criterion support.
+
+        LDLLoss only supports l1/l2/charbonnier by default. When criterion='huber'
+        is set in the YAML, self.criterion is never assigned → AttributeError at runtime.
+        Adds torch.nn.HuberLoss() branch + error for unknown criterion types.
+        """
+        engine_dir = os.path.dirname(script_path)
+        target = os.path.join(engine_dir, "traiNNer", "losses", "ldl_loss.py")
+        if not os.path.isfile(target):
+            return
+        try:
+            with open(target, "r", encoding="utf-8") as f:
+                src = f.read()
+            if "HuberLoss" in src:
+                return  # already patched
+            old = (
+                "        elif self.criterion_type == \"charbonnier\":\n"
+                "            self.criterion = charbonnier_loss"
+            )
+            new = (
+                "        elif self.criterion_type == \"charbonnier\":\n"
+                "            self.criterion = charbonnier_loss\n"
+                "        elif self.criterion_type == \"huber\":\n"
+                "            self.criterion = torch.nn.HuberLoss()\n"
+                "        else:\n"
+                "            raise ValueError(\n"
+                "                f\"LDLLoss: unsupported criterion '{criterion}'. \"\n"
+                "                \"Use 'l1', 'l2', 'charbonnier', or 'huber'.\"\n"
+                "            )"
+            )
+            if old not in src:
+                log_callback("[WARN] ldl_loss.py: marqueur non trouvé, patch huber ignoré.\n")
+                return
+            src = src.replace(old, new, 1)
+            with open(target, "w", encoding="utf-8") as f:
+                f.write(src)
+            log_callback("[PATCH] ldl_loss.py — support criterion 'huber' ajouté.\n")
+        except Exception as e:
+            log_callback(f"[WARN] Impossible de patcher ldl_loss.py : {e}\n")
+
+    @staticmethod
+    def _patch_sr_model_val_multiscale(script_path: str, log_callback) -> None:
+        """Auto-patch traiNNer/models/sr_model.py validation loop for multi-scale GT mismatch.
+
+        When eval_base_scale=2 but val pairs are same-resolution (deband: LQ=GT size),
+        output is 2x LQ while GT is 1x → calculate_psnr/ssim crash on shape mismatch.
+        Patch resizes output to GT size before metrics computation.
+        """
+        engine_dir = os.path.dirname(script_path)
+        target = os.path.join(engine_dir, "traiNNer", "models", "sr_model.py")
+        if not os.path.isfile(target):
+            return
+        try:
+            with open(target, "r", encoding="utf-8") as f:
+                src = f.read()
+            if "# [USS] SpanC multi-scale: output may be 2x when val GT is 1x" in src:
+                return  # already patched
+            old = (
+                "                metric_data[gt_key] = gt_img\n"
+                "                self.gt = None"
+            )
+            new = (
+                "                metric_data[gt_key] = gt_img\n"
+                "                self.gt = None\n"
+                "                # [USS] SpanC multi-scale: output may be 2x when val GT is 1x (deband pairs)\n"
+                "                # Resize output to GT size so PSNR/SSIM can compare same-size images\n"
+                "                if metric_data[\"img\"].shape[:2] != gt_img.shape[:2]:\n"
+                "                    h, w = gt_img.shape[:2]\n"
+                "                    metric_data[\"img\"] = cv2.resize(\n"
+                "                        metric_data[\"img\"], (w, h), interpolation=cv2.INTER_CUBIC\n"
+                "                    )"
+            )
+            if old not in src:
+                log_callback("[WARN] sr_model.py: marqueur validation non trouvé, patch val multi-scale ignoré.\n")
+                return
+            src = src.replace(old, new, 1)
+            with open(target, "w", encoding="utf-8") as f:
+                f.write(src)
+            log_callback("[PATCH] sr_model.py — resize validation output pour multi-scale (PSNR/SSIM) appliqué.\n")
+        except Exception as e:
+            log_callback(f"[WARN] Impossible de patcher sr_model.py (val) : {e}\n")
 
     @staticmethod
     def _patch_check_dependencies(script_path: str, log_callback) -> None:
@@ -88,6 +279,9 @@ class TrainingRunner:
         _wd_lower = script_path.replace("\\", "/").lower()
         if "trainner" in _wd_lower or "redux" in _wd_lower:
             self._patch_check_dependencies(script_path, log_callback)
+            self._patch_sr_model_multiscale(script_path, log_callback)
+            self._patch_sr_model_val_multiscale(script_path, log_callback)
+            self._patch_ldl_loss_huber(script_path, log_callback)
 
         # Réinitialisation absolue des flags
         self.stop_requested = False
@@ -237,6 +431,8 @@ class TrainingRunner:
         # Si l'utilisateur clique une 2ème fois, on force le KILL
         if self.stop_requested:
             log_callback("\n[KILL] Arrêt forcé immédiat !\n")
+            try: kill_process_tree(self.process.pid)
+            except Exception: pass
             try: self.process.kill()
             except Exception: pass
             self.kill_monitoring_tools()
@@ -300,5 +496,7 @@ class TrainingRunner:
         
         if self.is_running:
             log_callback("\n[TIMEOUT] Le script est trop long à sauvegarder -> Kill.\n")
+            try: kill_process_tree(self.process.pid)
+            except Exception: pass
             try: self.process.kill()
             except Exception: pass

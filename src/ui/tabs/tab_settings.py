@@ -1675,7 +1675,7 @@ except ImportError:
 
         tk.Label(content_tk, text="Universal SR Studio", font=("Roboto", 24, "bold"),
                  fg="#3498db", bg="#1a1a2e").pack(pady=(5, 2))
-        tk.Label(content_tk, text="v2.5.0 -- Super-Resolution Training Suite",
+        tk.Label(content_tk, text="v2.5.5 -- Super-Resolution Training Suite",
                  fg="#AAAAAA", bg="#1a1a2e", font=("Roboto", 12)).pack()
 
         sep = tk.Frame(content_tk, height=2, bg="#3498db")

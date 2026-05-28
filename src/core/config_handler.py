@@ -369,6 +369,12 @@ class ConfigHandler:
                     flat["loss_percep"] = "true"
                     flat["weight_loss_percep"] = lw
                     flat["percep_criterion"] = loss.get("criterion", "charbonnier")
+                    # Restore per-layer VGG weights from Redux losses list
+                    _lw_redux = loss.get("layer_weights", {})
+                    if _lw_redux:
+                        _VGG_ALL_LOAD = ["conv1_2","conv2_2","conv3_2","conv3_4","conv4_2","conv4_4","conv5_2","conv5_4"]
+                        for _vl in _VGG_ALL_LOAD:
+                            flat[f"percep_vgg_{_vl}"] = _lw_redux.get(_vl, 0.0)
                 elif "hsluv" in lt:
                     flat["loss_hsluv"] = "true"
                     flat["weight_loss_hsluv"] = lw
@@ -579,7 +585,11 @@ class ConfigHandler:
 
             if is_otf:
                 _is_bicubic_mode = _ds_mode == "bicubic"
-                config["high_order_degradation"] = not _is_bicubic_mode
+                # Toujours True pour tout mode OTF (realesrgandataset) — SRModel ne peut pas
+                # gérer les batches realesrgandataset (pas de clé 'lq'). RealESRGANModel
+                # génère 'lq' depuis les kernels. Le mode "bicubic" est obtenu via des
+                # params de dégradation minimaux (blur=0, noise=0), pas via ce flag.
+                config["high_order_degradation"] = True
                 config["high_order_degradations_debug"] = False
                 config["lq_usm"] = False
                 # First degradation
@@ -721,12 +731,15 @@ class ConfigHandler:
 
             # Network — dyn_ keys are arch params EXCEPT these UI-only ones:
             _DYN_NOT_NET = {"gan_weight"}
-            # Bug fix: TraiNNer-Redux spanplus_arch expects abbreviated upsampler names
+            # Abbreviated upsampler names — only for archs that use them.
+            # gfisrv2, smosr, neosr-based archs expect the full name (e.g. "pixelshuffledirect").
+            # spanplus, spanc, spanf use the short form ("ps", "dys", "conv").
             _UPSAMPLER_ALIASES = {
                 "dysample": "dys", "dysample++": "dys",
                 "pixelshuffle": "ps", "pixel_shuffle": "ps",
                 "convolution": "conv",
             }
+            _UPSAMPLER_ALIAS_ARCHS = {"spanplus", "spanc", "spanf", "span", "spanpp"}
             # UI display name → traiNNer ARCH_REGISTRY key (lowercase class name)
             _ARCH_DISPLAY_TO_REGISTRY = {
                 "spanpp": "spanc",  # repo=spanpp, class=SpanC, registry="spanc"
@@ -738,7 +751,7 @@ class ConfigHandler:
                     field = k[4:]
                     if field in _DYN_NOT_NET:
                         continue
-                    if field == "upsampler":
+                    if field == "upsampler" and arch_type.lower() in _UPSAMPLER_ALIAS_ARCHS:
                         v = _UPSAMPLER_ALIASES.get(str(v).lower().strip(), v)
                     # Parse list/tuple notation: "(2, 4)", "[2, 4]", "2, 4" → [2, 4]
                     # SpanPP uses tuple notation (2, 4) for scale_list
@@ -759,12 +772,21 @@ class ConfigHandler:
                                 continue
                             except Exception:
                                 pass
+                    # Convertir "true"/"false" string → bool Python
+                    # (ex: champ Rep de smosr vient d'un combobox string)
+                    if isinstance(v, str) and v.strip().lower() in ("true", "false"):
+                        net_g[field] = (v.strip().lower() == "true")
+                        continue
                     try:
                         f = float(v)
                         net_g[field] = int(f) if f.is_integer() else f
                     except (ValueError, TypeError):
                         net_g[field] = v
             config["network_g"] = net_g
+
+            # SpanC multi-scale: auto-set top-level scale = max(scale_list) si plusieurs échelles
+            if arch_type == "spanc" and isinstance(net_g.get("scale_list"), (list, tuple)) and len(net_g["scale_list"]) > 1:
+                config["scale"] = int(max(net_g["scale_list"]))
 
             use_gan = safe_bool("use_gan", False)
             if use_gan:
@@ -846,10 +868,16 @@ class ConfigHandler:
                 crit = data.get("percep_criterion", "charbonnier")
                 if crit not in _VALID_PERCEP_CRIT:
                     crit = "l1"
-                losses.append({"type": "perceptualloss", "criterion": crit,
-                               "loss_weight": safe_num("weight_loss_percep", 0.01, float)})
+                _VGG_ALL_SAVE = ["conv1_2","conv2_2","conv3_2","conv3_4","conv4_2","conv4_4","conv5_2","conv5_4"]
+                _vgg_lw_save = {_l: safe_num(f"percep_vgg_{_l}", 0.0, float) for _l in _VGG_ALL_SAVE}
+                _vgg_lw_active = {k: v for k, v in _vgg_lw_save.items() if v != 0.0}
+                _percep_entry = {"type": "perceptualloss", "criterion": crit,
+                                 "loss_weight": safe_num("weight_loss_percep", 0.01, float)}
+                if _vgg_lw_active:
+                    _percep_entry["layer_weights"] = _vgg_lw_active
+                losses.append(_percep_entry)
             if safe_bool("loss_ldl", False):
-                losses.append({"type": "ldlloss", "loss_weight": safe_num("weight_loss_ldl", 1.0, float), "criterion": data.get("ldl_criterion", "l1"), "ksize": safe_num("ldl_ksize", 7, int)})
+                losses.append({"type": "ldlloss", "loss_weight": safe_num("weight_loss_ldl", 1.0, float), "criterion": data.get("ldl_criterion", "l1")})
             if safe_bool("loss_dists", False):
                 losses.append({"type": "distsloss", "loss_weight": safe_num("weight_loss_dists", 0.3, float)})
             if safe_bool("loss_ff", False):
@@ -867,7 +895,13 @@ class ConfigHandler:
             if safe_bool("loss_contextual", False):
                 losses.append({"type": "contextualloss", "loss_weight": safe_num("weight_loss_contextual", 1.0, float), "distance_type": data.get("ctx_distance_type", "cosine"), "band_width": safe_num("ctx_band_width", 0.5, float)})
             if safe_bool("loss_spark", False):
-                _spark_entry = {"type": "SparkLoss", "loss_weight": safe_num("weight_loss_spark", 1.0, float), "criterion": data.get("spark_criterion", "fd")}
+                # SparkLoss uses a VGG-like backbone with 5 max-pools (÷32 total).
+                # Minimum lq_size: 4 × 32 = 128 (to fit the internal 4×4 conv kernel).
+                # Anything below 128 crashes with "kernel size > input size".
+                if lq_size < 128:
+                    lq_size = 128
+                    train_ds["lq_size"] = lq_size
+                _spark_entry = {"type": "SparkLoss", "loss_weight": safe_num("weight_loss_spark", 0.2, float), "criterion": data.get("spark_criterion", "fd")}
                 _spark_path = (data.get("spark_path") or "").strip()
                 if _spark_path:
                     _spark_entry["path"] = _spark_path
@@ -1006,7 +1040,8 @@ class ConfigHandler:
         if safe_bool("aug_cutblur", False): augs.append("cutblur"); probs.append(round(safe_num("prob_aug_cutblur", 0.15, float), 2))
 
         dataset_mode = data.get("dataset_mode", "otf")
-        model_type = "otf" if dataset_mode == "otf" else "image"
+        # NeoSR n'a pas de type "bicubic" — c'est un alias pour "otf" avec dégradations légères
+        model_type = "otf" if dataset_mode in ("otf", "bicubic") else "image"
 
         config = {
             "name": data.get("name", "experiment").strip(),
@@ -1092,7 +1127,7 @@ class ConfigHandler:
             },
             "datasets": {
                 "train": {
-                    "type": dataset_mode, "name": "TrainSet", "dataroot_gt": data.get("dataroot_gt", ""),
+                    "type": ("otf" if dataset_mode == "bicubic" else dataset_mode), "name": "TrainSet", "dataroot_gt": data.get("dataroot_gt", ""),
                     "num_worker_per_gpu": safe_num("num_worker_per_gpu", 4, int), "prefetch_mode": data.get("prefetch_mode", "cuda"),
                     "batch_size": safe_num("batch_size", 4, int), 
                     "accumulate": safe_num("accumulate", 1, int),
@@ -1128,7 +1163,9 @@ class ConfigHandler:
             config["path"]["results_root"] = data.get("custom_exp_path").replace("\\", "/")
 
         # Gestion du dossier LQ (seulement si Paired et chemin rempli)
-        if data.get("dataroot_lq"):
+        # NeoSR otf reject dataroot_lq — ne pas l'ajouter en mode otf ou bicubic
+        _neosr_ds_type = config["datasets"]["train"].get("type", "")
+        if data.get("dataroot_lq") and _neosr_ds_type not in ("otf",):
             config["datasets"]["train"]["dataroot_lq"] = data.get("dataroot_lq").replace("\\", "/")
 
         # --- FIX: GESTION DE SCHEDULE_FREE ---
@@ -1150,7 +1187,12 @@ class ConfigHandler:
 
         if safe_bool("loss_fdl", False): config["train"]["fdl_opt"] = {"type": "fdl_loss", "loss_weight": safe_num("weight_loss_fdl", 1.0, float), "model": data.get("fdl_model", "vgg")}
         if safe_bool("loss_ff", False): config["train"]["ff_opt"] = {"type": "ff_loss", "loss_weight": safe_num("weight_loss_ff", 0.2, float), "alpha": safe_num("ff_alpha", 1.0, float)}
-        if safe_bool("loss_ldl", False): config["train"]["ldl_opt"] = {"type": "ldl_loss", "loss_weight": safe_num("weight_loss_ldl", 1.0, float), "criterion": data.get("ldl_criterion", "l1"), "ksize": safe_num("ldl_ksize", 7, int)}
+        if safe_bool("loss_ldl", False):
+            # NeoSR ldl_loss only supports: l1, l2, huber, chc — not charbonnier
+            _ldl_crit = data.get("ldl_criterion", "l1")
+            if _ldl_crit not in ("l1", "l2", "huber", "chc"):
+                _ldl_crit = "l1"
+            config["train"]["ldl_opt"] = {"type": "ldl_loss", "loss_weight": safe_num("weight_loss_ldl", 1.0, float), "criterion": _ldl_crit, "ksize": safe_num("ldl_ksize", 7, int)}
         if safe_bool("loss_consistency", False): config["train"]["consistency_opt"] = {"type": "consistency_loss", "loss_weight": safe_num("weight_loss_consistency", 1.0, float), "use_blur": safe_bool("consistency_blur", True), "use_cosim": safe_bool("consistency_cosim", True), "use_saturation": safe_bool("consistency_saturation", True), "use_brightness": safe_bool("consistency_brightness", True)}
         if safe_bool("loss_edge", False): config["train"]["edge_opt"] = {"type": "EdgeLoss", "loss_weight": safe_num("weight_loss_edge", 0.05, float), "criterion": data.get("edge_criterion", "l1"), "corner": safe_bool("edge_corner", False)}
 

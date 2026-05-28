@@ -363,15 +363,47 @@ class ToolsTab(ctk.CTkFrame):
         if desc:
             ctk.CTkLabel(f, text=desc, font=("Arial", 12), text_color="gray", anchor="w").pack(fill="x")
 
-    def add_path_row(self, parent, label, var_name, is_file=False):
+    def gen_slider_val(self, parent, key, default, min_v, max_v, step, tip=None):
+        """Slider compact + entry pour une valeur d'intensité de dégradation.
+        StringVar trace → slider se sync sur tout changement entry (user ou programmatique)."""
+        _is_int = isinstance(step, int) or (step == int(step))
+        n_steps = max(1, round((max_v - min_v) / step))
+        sl = ctk.CTkSlider(parent, from_=min_v, to=max_v, number_of_steps=n_steps, width=85)
+        sl.pack(side="left", padx=(2, 0))
+        _fmt = (lambda v: str(int(round(v)))) if _is_int else (lambda v: f"{round(v, 3):.3g}")
+        var = ctk.StringVar(value=_fmt(float(default)))
+        e = ctk.CTkEntry(parent, width=42, textvariable=var)
+        e.pack(side="left", padx=(2, 3))
+        sl.set(float(default))
+        def _sl_cb(v):
+            var.set(_fmt(round(float(v) / step) * step))
+        def _sync_slider(*_):
+            try: sl.set(max(float(min_v), min(float(max_v), float(var.get()))))
+            except (ValueError, TypeError): pass
+        sl.configure(command=_sl_cb)
+        var.trace_add("write", _sync_slider)
+        if tip: ToolTip(e, tip)
+        self.widgets[key] = e
+
+    def add_path_row(self, parent, label, var_name, is_file=False, save_key=None, initialdir=None):
         f = ctk.CTkFrame(parent, fg_color="transparent")
         f.pack(fill="x", pady=5)
         ctk.CTkLabel(f, text=label, width=150, anchor="w").pack(side="left")
         e = ctk.CTkEntry(f)
         e.pack(side="left", fill="x", expand=True, padx=5)
         self.widgets[var_name] = e
-        cmd = (lambda _e=e, _f=is_file: self._browse_file(_e) if _f else self._browse_dir(_e))
-        ctk.CTkButton(f, text="...", width=30, command=cmd).pack(side="left")
+        def _browse(_e=e, _f=is_file, _sk=save_key, _d=initialdir):
+            _init = _d or (_e.get().strip() or None)
+            if _init and not os.path.isdir(_init):
+                _init = os.path.dirname(_init)
+            if _f:
+                d = filedialog.askopenfilename(initialdir=_init)
+            else:
+                d = filedialog.askdirectory(initialdir=_init)
+            if d:
+                _e.delete(0, "end"); _e.insert(0, d)
+                if _sk: self.settings.set(_sk, d)
+        ctk.CTkButton(f, text="...", width=30, command=_browse).pack(side="left")
 
     def _browse_dir(self, e):
         d = filedialog.askdirectory()
@@ -573,6 +605,17 @@ class ToolsTab(ctk.CTkFrame):
                 self._ups_serialize_start.configure(state=state)
             except Exception:
                 pass
+
+    def _ups_on_dandere_toggle(self):
+        """Active/désactive les contrôles Skip frames selon la checkbox."""
+        enabled = "ups_dandere" in self.widgets and bool(self.widgets["ups_dandere"].get())
+        state = "normal" if enabled else "disabled"
+        for key in ("ups_dandere_threshold", "ups_dandere_block_size"):
+            if key in self.widgets:
+                try:
+                    self.widgets[key].configure(state=state)
+                except Exception:
+                    pass
 
     def _ups_on_colorfix_method_change(self, method: str):
         """Sauvegarde méthode et rafraîchit le popup si ouvert."""
@@ -1019,15 +1062,21 @@ class ToolsTab(ctk.CTkFrame):
 
         ctk.CTkLabel(opts, text=_t("Méthode :", "Method:")).pack(side="left", padx=(8, 4))
         self.widgets["ups_colorfix_method"] = ctk.CTkOptionMenu(
-            opts, values=["wavelet", "average"], width=95,
+            opts, values=["wavelet", "average", "lab", "hist", "colormap"], width=105,
             command=self._ups_on_colorfix_method_change)
         self.widgets["ups_colorfix_method"].pack(side="left")
         self.widgets["ups_colorfix_method"].set(self.settings.get("ups_colorfix_method", "wavelet"))
         ToolTip(self.widgets["ups_colorfix_method"], _t(
             "wavelet ★ RECOMMANDÉ : ATWT multi-niveaux, préserve détails SR, corrige teinte/saturation.\n"
-            "average : correction globale R/G/B, ~10× plus rapide.",
+            "average : correction globale R/G/B, ~10× plus rapide.\n"
+            "lab (v2.0) : corrige chroma (a*/b*) en espace LAB, préserve luminance SR.\n"
+            "hist (v2.0) : histogram matching complet par canal.\n"
+            "colormap (v2.0) : LUT quantile 64 points — rapide, léger, correction globale.",
             "wavelet ★ RECOMMENDED: multi-level ATWT, preserves SR detail, corrects hue/saturation.\n"
-            "average: global R/G/B correction, ~10× faster."))
+            "average: global R/G/B correction, ~10× faster.\n"
+            "lab (v2.0): correct chroma (a*/b*) in LAB space, preserves SR luminance.\n"
+            "hist (v2.0): full per-channel histogram matching.\n"
+            "colormap (v2.0): 64-point quantile LUT — fast, lightweight, global correction."))
 
         self.widgets["ups_colorfix_settings_btn"] = ctk.CTkButton(
             opts, text=_t("⚙ Réglages", "⚙ Settings"), width=95,
@@ -1073,6 +1122,90 @@ class ToolsTab(ctk.CTkFrame):
         }
         self._ups_on_colorfix_toggle()
 
+        # ── v2.5.5 : Persistent batch + Dandere2x ────────────────────────────────
+        v255_row = ctk.CTkFrame(f, height=34)
+        v255_row.pack_propagate(False)
+        v255_row.pack(fill="x", pady=(2, 0))
+
+        # Left spacer — balances right spacer to center content
+        _sp_left_v255 = ctk.CTkFrame(v255_row, fg_color="transparent", width=1, height=1)
+        _sp_left_v255.pack_propagate(False)
+        _sp_left_v255.pack(side="left", fill="x", expand=True)
+
+        self.widgets["ups_persistent"] = ctk.CTkCheckBox(
+            v255_row,
+            text=_t("Subprocess persistant", "Persistent subprocess"),
+            width=175)
+        self.widgets["ups_persistent"].pack(side="left", padx=(8, 6))
+        if self.settings.get("ups_persistent", False):
+            self.widgets["ups_persistent"].select()
+        ToolTip(self.widgets["ups_persistent"], _t(
+            "Charge le modèle une seule fois en VRAM pour tout le batch.\n"
+            "Économise 2-5s par image sur les archs subprocess (SPANPlus, SMoSR…).\n"
+            "Gain typique : 16-25h sur 30 000 frames.",
+            "Load model once in VRAM for the entire batch.\n"
+            "Saves 2-5s/image for subprocess archs (SPANPlus, SMoSR…).\n"
+            "Typical gain: 16-25h on 30 000 frames."))
+
+        ctk.CTkFrame(v255_row, width=1, fg_color="gray40").pack(
+            side="left", fill="y", padx=(8, 10), pady=4)
+
+        self.widgets["ups_dandere"] = ctk.CTkCheckBox(
+            v255_row,
+            text=_t("Skip frames", "Skip frames"),
+            width=105,
+            command=self._ups_on_dandere_toggle)
+        self.widgets["ups_dandere"].pack(side="left")
+        if self.settings.get("ups_dandere", False):
+            self.widgets["ups_dandere"].select()
+        ToolTip(self.widgets["ups_dandere"], _t(
+            "Skip frames : saute les frames identiques ou quasi-identiques à la précédente\n"
+            "(selon l'intensité du seuil réglé).\n"
+            "Compare par blocs (taille = champ Blocs) — plus le bloc est petit, plus la détection est fine.\n"
+            "Si tous les blocs sont sous le seuil → frame sautée, SR précédent réutilisé.\n"
+            "Économise du GPU sur les scènes statiques ou peu animées.",
+            "Skip frames: skips frames that are identical or nearly identical to the previous one\n"
+            "(depending on the threshold intensity).\n"
+            "Compares block by block (size = Blocks field) — smaller blocks = finer detection.\n"
+            "If all blocks are below threshold → frame skipped, previous SR reused.\n"
+            "Saves GPU on static or low-motion scenes."))
+
+        ctk.CTkLabel(v255_row, text=_t("Seuil :", "Threshold:")).pack(side="left", padx=(8, 4))
+        self.widgets["ups_dandere_threshold"] = ctk.CTkEntry(
+            v255_row, width=55, placeholder_text="0.010")
+        self.widgets["ups_dandere_threshold"].pack(side="left")
+        _dt = str(self.settings.get("ups_dandere_threshold", "0.010"))
+        self.widgets["ups_dandere_threshold"].insert(0, _dt)
+        ToolTip(self.widgets["ups_dandere_threshold"], _t(
+            "Seuil de différence (MAE par pixel, 0-1).\n"
+            "0.010 = défaut — skip frames statiques, conserve micro-mouvements.\n"
+            "0.005 = très strict (skip seulement frames parfaitement identiques).\n"
+            "0.030+ = permissif (attention aux faux skip sur scènes dynamiques).",
+            "Difference threshold (MAE per pixel, 0-1).\n"
+            "0.010 = default — skips static frames, keeps micro-movements.\n"
+            "0.005 = very strict (skip only perfectly identical frames).\n"
+            "0.030+ = permissive (risk of false skip on dynamic scenes)."))
+
+        ctk.CTkLabel(v255_row, text=_t("Blocs :", "Blocks:")).pack(side="left", padx=(8, 4))
+        self.widgets["ups_dandere_block_size"] = ctk.CTkEntry(
+            v255_row, width=45, placeholder_text="14")
+        self.widgets["ups_dandere_block_size"].pack(side="left")
+        _dbs = str(self.settings.get("ups_dandere_block_size", "14"))
+        self.widgets["ups_dandere_block_size"].insert(0, _dbs)
+        ToolTip(self.widgets["ups_dandere_block_size"], _t(
+            "Taille des blocs en espace LQ (pixels).\n"
+            "16 = standard (bon équilibre précision/vitesse).\n"
+            "8 = plus précis, plus lent. 32 = plus rapide, moins précis.",
+            "Block size in LQ space (pixels).\n"
+            "16 = standard (good precision/speed balance).\n"
+            "8 = more precise, slower. 32 = faster, less precise."))
+
+        _sp_v255 = ctk.CTkFrame(v255_row, fg_color="transparent", width=1, height=1)
+        _sp_v255.pack_propagate(False)
+        _sp_v255.pack(side="left", fill="x", expand=True)
+
+        self._ups_on_dandere_toggle()  # état initial
+
         # --- Run / Stop / progress / log ---
         run_row = ctk.CTkFrame(f, fg_color="transparent")
         run_row.pack(fill="x", pady=(12, 3))
@@ -1094,7 +1227,7 @@ class ToolsTab(ctk.CTkFrame):
         timing_row.pack(fill="x", pady=(1, 0))
         self.widgets["ups_timing"] = ctk.CTkLabel(
             timing_row, text="", font=("Consolas", 11),
-            text_color="#888", anchor="w")
+            text_color="#9B59B6", anchor="w")
         self.widgets["ups_timing"].pack(side="left", padx=2)
         # --- Resizable split: log (top) / preview (bottom) ---
         from tkinter import PanedWindow as _PanedWindow
@@ -1210,6 +1343,25 @@ class ToolsTab(ctk.CTkFrame):
         self.settings.set("ups_colorfix_method",  color_fix)
         self.settings.set("ups_colorfix_strength", str(color_fix_strength))
 
+        # Persistent batch + Skip frames (v2.5.5)
+        use_persistent = bool(self.widgets.get("ups_persistent", type("_D", (), {"get": lambda s: False})()).get())
+        use_dandere    = bool(self.widgets.get("ups_dandere",    type("_D", (), {"get": lambda s: False})()).get())
+        dandere_full_skip = use_dandere  # toujours mode Skip frames
+        _dt_entry = self.widgets.get("ups_dandere_threshold", None)
+        try:
+            dandere_threshold = float(_dt_entry.get().strip() if _dt_entry else "0.010")
+        except (ValueError, AttributeError):
+            dandere_threshold = 0.010
+        _dbs_entry = self.widgets.get("ups_dandere_block_size", None)
+        try:
+            dandere_block_size = max(4, int(_dbs_entry.get().strip() if _dbs_entry else "14"))
+        except (ValueError, AttributeError):
+            dandere_block_size = 14
+        self.settings.set("ups_persistent",         use_persistent)
+        self.settings.set("ups_dandere",            use_dandere)
+        self.settings.set("ups_dandere_threshold",  str(dandere_threshold))
+        self.settings.set("ups_dandere_block_size", str(dandere_block_size))
+
         # Format / bit depth / quality
         out_format = self.widgets["ups_format"].get()          # "PNG", "JPEG", etc.
         bit_depth = 16 if self.widgets["ups_bitdepth"].get() == "16 bits" else 8
@@ -1313,6 +1465,9 @@ class ToolsTab(ctk.CTkFrame):
                     _batch_start = _time.monotonic()
                     _img_times = []  # per-image durations for fps rolling average
 
+                    # Stats dandere (dict mutable pour closure)
+                    _dandere_stats = {"skipped": 0, "blocks_copied": 0}
+
                     def _update_timing(done, total_imgs, img_dur_s):
                         """Compute and push elapsed / ETA / fps to the timing label."""
                         _img_times.append(img_dur_s)
@@ -1330,57 +1485,160 @@ class ToolsTab(ctk.CTkFrame):
                             return (f"{h}h{m:02d}m{sec:02d}s" if h
                                     else f"{m}m{sec:02d}s" if m
                                     else f"{sec}s")
+                        # Dandere stats suffix (skip applies to both modes now)
+                        _dsuffix = ""
+                        if use_dandere and _dandere_stats["skipped"] > 0:
+                            _dsuffix = f"   {_dandere_stats['skipped']} skip↩"
                         txt = (f"{_t('Écoulé', 'Elapsed')} : {_fmt(elapsed_s)}   "
                                f"ETA : {_fmt(eta_s)}   "
-                               f"{_t('Vitesse', 'Speed')} : {fps:.2f} img/s   "
+                               f"{_t('Vitesse', 'Speed')} : {fps:.2f} img/s{_dsuffix}   "
                                f"[{done}/{total_imgs}]")
                         self._ui_update(self.widgets["ups_timing"].configure, text=txt)
 
                     # Clear timing label at start
                     self._ui_update(self.widgets["ups_timing"].configure, text="")
 
-                    for i, fname in enumerate(files):
-                        if self._ups_stop_flag.is_set():
-                            callback(_t("Arrêt demandé par l'utilisateur.", "Stop requested by user."))
-                            break
-                        in_path = os.path.join(inp, fname)
-                        base_name = os.path.splitext(fname)[0]
-                        if use_serialize:
-                            out_path = os.path.join(actual_out,
-                                                     f"{serialize_start + i:0{_pad_width}d}{out_ext}")
-                        else:
-                            out_path = os.path.join(actual_out, f"{base_name}{out_suffix}{out_ext}")
-                        callback(f"[{i + 1}/{total}] {fname}")
-                        # Per-image progress: map 0-1 within the slice for this image
-                        img_start = i / total
-                        img_end = (i + 1) / total
-                        def _sub_progress(v, s=img_start, e=img_end):
-                            set_progress(s + v * (e - s))
-                        _t0 = _time.monotonic()
-                        ok, msg = upscale_image(model, in_path, out_path, scale=scale,
-                                                tile_size=tile, tile_pad=tile_pad,
-                                                use_amp=use_amp, callback=callback,
-                                                progress_callback=_sub_progress,
-                                                out_format=out_format, bit_depth=bit_depth,
-                                                quality=quality,
-                                                stop_event=self._ups_stop_flag,
-                                                color_fix=color_fix,
-                                                color_fix_wavelets=color_fix_wavelets,
-                                                color_fix_radius=color_fix_radius,
-                                                color_fix_fast=color_fix_fast,
-                                                color_fix_strength=color_fix_strength,
-                                                color_fix_planes=color_fix_planes,
-                                                color_fix_device=color_fix_device,
-                                                color_fix_ref=color_fix_ref)
-                        _img_dur = _time.monotonic() - _t0
-                        if ok:
-                            success += 1
-                            self._ups_update_preview(in_path, out_path)
-                        else:
-                            errors.append(f"{fname}: {msg}")
-                            self._play_sound("warning", "sound_warning_enabled")
-                        set_progress(img_end)
-                        _update_timing(i + 1, total, _img_dur)
+                    # ── v2.5.5: Persistent batch session ─────────────────────────
+                    from src.core.quick_upscale import (
+                        PersistentBatchSession, _TRAINNER_VENV_PY,
+                        dandere_should_skip,
+                        _pil_to_float, _float_to_pil,
+                    )
+
+                    _session = None
+                    if use_persistent:
+                        _session = PersistentBatchSession(
+                            venv_py=_TRAINNER_VENV_PY,
+                            model_path=model,
+                            tile_size=tile,
+                            tile_pad=tile_pad,
+                            use_amp=use_amp,
+                            log=callback,
+                        )
+                        if not _session.start():
+                            callback(_t("[Persistent] Démarrage échoué — mode normal utilisé",
+                                       "[Persistent] Start failed — fallback to normal mode"))
+                            _session = None
+
+                    # ── v2.5.5: Skip frames state ─────────────────────────────────
+                    _prev_lq_arr   = None
+                    _prev_sr_arr   = None
+                    _prev_in_path  = None   # path of previous LQ input
+                    _prev_out_path = None   # path of previous SR output
+
+                    try:
+                        for i, fname in enumerate(files):
+                            if self._ups_stop_flag.is_set():
+                                callback(_t("Arrêt demandé par l'utilisateur.", "Stop requested by user."))
+                                break
+                            in_path = os.path.join(inp, fname)
+                            base_name = os.path.splitext(fname)[0]
+                            if use_serialize:
+                                out_path = os.path.join(actual_out,
+                                                         f"{serialize_start + i:0{_pad_width}d}{out_ext}")
+                            else:
+                                out_path = os.path.join(actual_out, f"{base_name}{out_suffix}{out_ext}")
+                            callback(f"[{i + 1}/{total}] {fname}")
+
+                            # ── Skip frames: load current LQ ─────────────────────
+                            _curr_lq_arr = None
+                            if use_dandere:
+                                try:
+                                    from PIL import Image as _PILImg
+                                    _curr_lq_arr = _pil_to_float(_PILImg.open(in_path))
+                                except Exception:
+                                    pass
+
+                            # ── Skip frames: full-frame skip ──────────────────────
+                            # Block-level check: ANY block exceeding threshold
+                            # → don't skip (catches head turns, local motion).
+                            _skipped_this = False
+                            if (use_dandere and dandere_full_skip and
+                                    _prev_lq_arr is not None and _curr_lq_arr is not None and
+                                    _prev_sr_arr is not None):
+                                _safe_to_skip = dandere_should_skip(
+                                    _prev_lq_arr, _curr_lq_arr,
+                                    block_size=dandere_block_size,
+                                    threshold=dandere_threshold,
+                                )
+                                if _safe_to_skip:
+                                    callback(f"  [Skip frames] tous blocs < {dandere_threshold:.4f}")
+                                    try:
+                                        _float_to_pil(_prev_sr_arr).save(out_path)
+                                    except Exception:
+                                        pass
+                                    _dandere_stats["skipped"] += 1
+                                    _skipped_this = True
+                                    success += 1
+                                    _prev_lq_arr = _curr_lq_arr
+
+                            if _skipped_this:
+                                set_progress((i + 1) / total)
+                                _update_timing(i + 1, total, 0.05)
+                                continue
+
+                            # ── Normal upscale ────────────────────────────────────
+                            img_start = i / total
+                            img_end = (i + 1) / total
+                            def _sub_progress(v, s=img_start, e=img_end):
+                                set_progress(s + v * (e - s))
+
+                            _t0 = _time.monotonic()
+                            ok, msg = False, ""   # initialisation sécurisée
+
+                            # ── SR normal (persistent ou one-shot) ───────────────
+                            if _session is not None and _session.is_ready:
+                                ok, msg, _ = _session.infer(in_path, out_path)
+                            else:
+                                ok, msg = upscale_image(model, in_path, out_path, scale=scale,
+                                                        tile_size=tile, tile_pad=tile_pad,
+                                                        use_amp=use_amp, callback=callback,
+                                                        progress_callback=_sub_progress,
+                                                        out_format=out_format, bit_depth=bit_depth,
+                                                        quality=quality,
+                                                        stop_event=self._ups_stop_flag,
+                                                        color_fix=color_fix,
+                                                        color_fix_wavelets=color_fix_wavelets,
+                                                        color_fix_radius=color_fix_radius,
+                                                        color_fix_fast=color_fix_fast,
+                                                        color_fix_strength=color_fix_strength,
+                                                        color_fix_planes=color_fix_planes,
+                                                        color_fix_device=color_fix_device,
+                                                        color_fix_ref=color_fix_ref)
+                            _img_dur = _time.monotonic() - _t0
+
+                            if ok:
+                                success += 1
+                                self._ups_update_preview(in_path, out_path)
+
+                                # ── Skip frames: mise à jour du cache prev ─────────
+                                if use_dandere:
+                                    _prev_in_path  = in_path
+                                    _prev_out_path = out_path
+                                    try:
+                                        from PIL import Image as _PILImg
+                                        _curr_sr_arr = _pil_to_float(_PILImg.open(out_path))
+                                        _prev_sr_arr = _curr_sr_arr
+                                    except Exception as _de:
+                                        callback(f"  [Skip frames] Erreur cache : {_de}")
+                            else:
+                                errors.append(f"{fname}: {msg}")
+                                self._play_sound("warning", "sound_warning_enabled")
+
+                            if use_dandere:
+                                _prev_lq_arr = _curr_lq_arr
+
+                            set_progress(img_end)
+                            _update_timing(i + 1, total, _img_dur)
+                    finally:
+                        if _session is not None:
+                            _session.stop()
+
+                    # Skip frames — résumé final dans le log
+                    if use_dandere:
+                        _skip_n = _dandere_stats["skipped"]
+                        _pct_sk = _skip_n / total * 100 if total > 0 else 0
+                        callback(f"[Skip frames] {_skip_n}/{total} frames ({_pct_sk:.0f}% GPU économisé)")
 
                     # Final elapsed
                     _total_elapsed = _time.monotonic() - _batch_start
@@ -1390,8 +1648,11 @@ class ToolsTab(ctk.CTkFrame):
                                else f"{_elapsed_m}m{_elapsed_s2:02d}s" if _elapsed_m
                                else f"{_elapsed_s2}s")
                     _fps_final = success / _total_elapsed if _total_elapsed > 0 else 0
+                    _final_dsuffix = ""
+                    if use_dandere and _dandere_stats["skipped"] > 0:
+                        _final_dsuffix = f"   {_dandere_stats['skipped']} skip"
                     self._ui_update(self.widgets["ups_timing"].configure,
-                                    text=f"{_t('Terminé', 'Done')} — {_el_str} total, {_fps_final:.2f} img/s {_t('moy.', 'avg.')}")
+                                    text=f"{_t('Terminé', 'Done')} — {_el_str} total, {_fps_final:.2f} img/s {_t('moy.', 'avg.')}{_final_dsuffix}")
 
                     summary = f"{_t('Termine', 'Done')} : {success}/{total} {_t('images traitees.', 'images processed.')}"
                     callback(summary)
@@ -1434,14 +1695,18 @@ class ToolsTab(ctk.CTkFrame):
         _ensure_pil()
         f = ctk.CTkFrame(self.right_panel, fg_color="transparent")
         self.add_header(f, _t("Générateur Dataset (LQ)", "Dataset Generator (LQ)"), _t("Créez des données basse qualité avec dégradations optionnelles.", "Create low-quality data with optional degradations."))
-        self.add_path_row(f, _t("Source (HQ) :", "Source (HQ):"), "gen_hq")
-        self.add_path_row(f, _t("Destination (LQ) :", "Destination (LQ):"), "gen_lq")
+        self.add_path_row(f, _t("Source (HQ) :", "Source (HQ):"), "gen_hq", save_key="gen_hq")
+        self.add_path_row(f, _t("Destination (LQ) :", "Destination (LQ):"), "gen_lq", save_key="gen_lq")
+        # Charger les chemins mémorisés
+        for _k in ("gen_hq", "gen_lq"):
+            _v = self.settings.get(_k, "")
+            if _v: self.widgets[_k].insert(0, _v)
 
         # Scale + méthode de resize
         p = ctk.CTkFrame(f, fg_color="transparent")
         p.pack(fill="x", pady=5)
         ctk.CTkLabel(p, text="Scale :").pack(side="left")
-        self.widgets["gen_scale"] = ctk.CTkOptionMenu(p, values=["2", "3", "4", "6", "8"], width=60)
+        self.widgets["gen_scale"] = ctk.CTkOptionMenu(p, values=["1", "2", "3", "4", "6", "8"], width=60)
         self.widgets["gen_scale"].pack(side="left", padx=5)
         self.widgets["gen_scale"].set("4")
 
@@ -1457,28 +1722,22 @@ class ToolsTab(ctk.CTkFrame):
         deg = ctk.CTkFrame(f, fg_color="transparent")
         deg.pack(fill="x", pady=5)
 
-        self.widgets["gen_blur"] = ctk.CTkCheckBox(deg, text=_t("Flou gaussien", "Gaussian Blur"))
+        self.widgets["gen_blur"] = ctk.CTkCheckBox(deg, text=_t("Flou gaussien", "Gaussian Blur"), width=130)
         self.widgets["gen_blur"].pack(side="left", padx=5)
         ctk.CTkLabel(deg, text="σ:").pack(side="left")
-        self.widgets["gen_blur_sigma"] = ctk.CTkEntry(deg, width=40)
-        self.widgets["gen_blur_sigma"].pack(side="left", padx=3)
-        self.widgets["gen_blur_sigma"].insert(0, "1.0")
+        self.gen_slider_val(deg, "gen_blur_sigma", 1.0, 0.1, 5.0, 0.1)
 
-        self.widgets["gen_noise"] = ctk.CTkCheckBox(deg, text=_t("Bruit gaussien", "Gaussian Noise"))
-        self.widgets["gen_noise"].pack(side="left", padx=(15, 5))
+        self.widgets["gen_noise"] = ctk.CTkCheckBox(deg, text=_t("Bruit gaussien", "Gaussian Noise"), width=130)
+        self.widgets["gen_noise"].pack(side="left", padx=(10, 5))
         ctk.CTkLabel(deg, text="σ:").pack(side="left")
-        self.widgets["gen_noise_sigma"] = ctk.CTkEntry(deg, width=40)
-        self.widgets["gen_noise_sigma"].pack(side="left", padx=3)
-        self.widgets["gen_noise_sigma"].insert(0, "10")
+        self.gen_slider_val(deg, "gen_noise_sigma", 10, 1, 50, 1)
 
         deg2 = ctk.CTkFrame(f, fg_color="transparent")
         deg2.pack(fill="x", pady=5)
-        self.widgets["gen_jpeg"] = ctk.CTkCheckBox(deg2, text="Compression JPEG")
+        self.widgets["gen_jpeg"] = ctk.CTkCheckBox(deg2, text="Compression JPEG", width=130)
         self.widgets["gen_jpeg"].pack(side="left", padx=5)
         ctk.CTkLabel(deg2, text=_t("Qualité:", "Quality:")).pack(side="left")
-        self.widgets["gen_jpeg_q"] = ctk.CTkEntry(deg2, width=40)
-        self.widgets["gen_jpeg_q"].pack(side="left", padx=3)
-        self.widgets["gen_jpeg_q"].insert(0, "50")
+        self.gen_slider_val(deg2, "gen_jpeg_q", 50, 1, 99, 1)
 
         self.widgets["gen_color_jitter"] = ctk.CTkCheckBox(deg2, text="Color Jitter (±)")
         self.widgets["gen_color_jitter"].pack(side="left", padx=(15, 5))
@@ -1487,12 +1746,10 @@ class ToolsTab(ctk.CTkFrame):
         deg3 = ctk.CTkFrame(f, fg_color="transparent")
         deg3.pack(fill="x", pady=5)
 
-        self.widgets["gen_posterize"] = ctk.CTkCheckBox(deg3, text=_t("Posterisation", "Posterization"))
+        self.widgets["gen_posterize"] = ctk.CTkCheckBox(deg3, text=_t("Posterisation", "Posterization"), width=130)
         self.widgets["gen_posterize"].pack(side="left", padx=5)
         ctk.CTkLabel(deg3, text="bits:").pack(side="left")
-        self.widgets["gen_posterize_bits"] = ctk.CTkEntry(deg3, width=40)
-        self.widgets["gen_posterize_bits"].pack(side="left", padx=3)
-        self.widgets["gen_posterize_bits"].insert(0, "4")
+        self.gen_slider_val(deg3, "gen_posterize_bits", 4, 2, 8, 1)
         ToolTip(self.widgets["gen_posterize"],
             _t("Reduit la profondeur de bits par canal (1-8).\n"
                "8 = aucun effet, 6 = leger, 4 = visible, 2 = severe.\n"
@@ -1516,12 +1773,10 @@ class ToolsTab(ctk.CTkFrame):
                "  3 = severe (8 levels)\n"
                "  2 = extreme (4 levels)"))
 
-        self.widgets["gen_banding"] = ctk.CTkCheckBox(deg3, text="Banding")
-        self.widgets["gen_banding"].pack(side="left", padx=(15, 5))
+        self.widgets["gen_banding"] = ctk.CTkCheckBox(deg3, text="Banding", width=100)
+        self.widgets["gen_banding"].pack(side="left", padx=(10, 5))
         ctk.CTkLabel(deg3, text=_t("niveaux:", "levels:")).pack(side="left")
-        self.widgets["gen_banding_levels"] = ctk.CTkEntry(deg3, width=40)
-        self.widgets["gen_banding_levels"].pack(side="left", padx=3)
-        self.widgets["gen_banding_levels"].insert(0, "32")
+        self.gen_slider_val(deg3, "gen_banding_levels", 32, 8, 256, 8)
         ToolTip(self.widgets["gen_banding"],
             _t("Quantification couleur via dithering reduit.\n"
                "Cree des bandes visibles dans les degrades (ciels, ombres).\n"
@@ -1548,7 +1803,9 @@ class ToolsTab(ctk.CTkFrame):
         # Custom degradations with intensity controls
         def _deg_row(parent, chk_key, chk_text, chk_tip,
                      params):
-            """Helper: checkbox + N labeled entry pairs on one row."""
+            """Helper: checkbox + N labeled entry/slider pairs on one row.
+            params items: (lbl, key, default, tip) for plain entry
+                       or (lbl, key, default, tip, min_v, max_v, step) for slider."""
             row = ctk.CTkFrame(parent, fg_color="transparent")
             row.pack(fill="x", pady=3)
             chk = ctk.CTkCheckBox(row, text=chk_text, width=130)
@@ -1556,54 +1813,69 @@ class ToolsTab(ctk.CTkFrame):
             if chk_tip:
                 ToolTip(chk, chk_tip)
             self.widgets[chk_key] = chk
-            for lbl, key, default, tip in params:
+            for item in params:
+                lbl, key, default, tip = item[0], item[1], item[2], item[3]
                 ctk.CTkLabel(row, text=lbl, width=30, anchor="e").pack(side="left", padx=(8, 0))
-                e = ctk.CTkEntry(row, width=48)
-                e.insert(0, default)
-                e.pack(side="left", padx=(2, 0))
-                self.widgets[key] = e
-                if tip:
-                    ToolTip(e, tip)
+                if len(item) == 7:
+                    # Slider + entry compact
+                    min_v, max_v, step = item[4], item[5], item[6]
+                    self.gen_slider_val(row, key, default, min_v, max_v, step, tip)
+                else:
+                    e = ctk.CTkEntry(row, width=48)
+                    e.insert(0, default)
+                    e.pack(side="left", padx=(2, 0))
+                    self.widgets[key] = e
+                    if tip:
+                        ToolTip(e, tip)
             return row
 
         _deg_row(f, "gen_aliasing", "Aliasing",
                  _t("Nearest-neighbor downscale+upscale → artefacts escalier sur les bords diagonaux.", "Nearest-neighbor downscale+upscale → staircase artifacts on diagonal edges."),
                  [(_t("force:", "strength:"), "gen_aliasing_str", "0.75",
-                   _t("Force 0.0-1.0 (0.65=léger, 0.85=fort)", "Strength 0.0-1.0 (0.65=light, 0.85=strong)"))])
+                   _t("Force 0.0-1.0 (0.65=léger, 0.85=fort)", "Strength 0.0-1.0 (0.65=light, 0.85=strong)"),
+                   0.1, 1.0, 0.05)])
 
         _deg_row(f, "gen_interlace_weave", "Interlace weave",
                  _t("Entrelacement weave : dents de peigne sur les bords (artefact VHS/DVD).", "Weave interlacing: comb teeth on edges (VHS/DVD artifact)."),
                  [(_t("force:", "strength:"), "gen_weave_str", "0.8",
-                   _t("Force 0.0-1.0 (0.6=léger, 1.0=fort)", "Strength 0.0-1.0 (0.6=light, 1.0=strong)"))])
+                   _t("Force 0.0-1.0 (0.6=léger, 1.0=fort)", "Strength 0.0-1.0 (0.6=light, 1.0=strong)"),
+                   0.1, 1.0, 0.05)])
 
         _deg_row(f, "gen_interlace_flicker", "Flicker",
                  _t("Flicker de champ : lignes paires/impaires à luminosité alternée (CRT).", "Field flicker: alternating brightness on even/odd lines (CRT)."),
                  [(_t("amp:", "amp:"), "gen_flicker_amp", "0.22",
-                   _t("Amplitude 0.0-0.5 (0.1=subtil, 0.35=visible)", "Amplitude 0.0-0.5 (0.1=subtle, 0.35=visible)"))])
+                   _t("Amplitude 0.0-0.5 (0.1=subtil, 0.35=visible)", "Amplitude 0.0-0.5 (0.1=subtle, 0.35=visible)"),
+                   0.01, 0.5, 0.01)])
 
         _deg_row(f, "gen_interlace_blend", "Field blend",
                  _t("Ghosting entre champs : flou de mouvement par mélange de fields interlacés.", "Field ghosting: motion blur by blending interlaced fields."),
                  [(_t("mix:", "mix:"), "gen_blend_mix", "0.55",
-                   _t("Mélange 0.0-1.0 (0.3=léger, 0.8=fort)", "Mix 0.0-1.0 (0.3=light, 0.8=strong)"))])
+                   _t("Mélange 0.0-1.0 (0.3=léger, 0.8=fort)", "Mix 0.0-1.0 (0.3=light, 0.8=strong)"),
+                   0.1, 1.0, 0.05)])
 
         _deg_row(f, "gen_film_grain", "Film Grain",
                  _t("Grain cinéma luminance-dépendant (fort sur tons moyens, faible sur hautes lumières).", "Luminance-dependent film grain (strong on midtones, weak on highlights)."),
                  [("σ:", "gen_grain_sigma", "0.08",
-                   _t("Écart-type 0.02-0.20 (0.04=subtil, 0.12=fort)", "Std dev 0.02-0.20 (0.04=subtle, 0.12=strong)")),
+                   _t("Écart-type 0.02-0.20 (0.04=subtil, 0.12=fort)", "Std dev 0.02-0.20 (0.04=subtle, 0.12=strong)"),
+                   0.01, 0.3, 0.01),
                   (_t("sz:", "sz:"), "gen_grain_size", "1",
-                   _t("Taille grain 1-3 (1=fin, 2=moyen, 3=grossier)", "Grain size 1-3 (1=fine, 2=medium, 3=coarse)"))])
+                   _t("Taille grain 1-3 (1=fin, 2=moyen, 3=grossier)", "Grain size 1-3 (1=fine, 2=medium, 3=coarse)"),
+                   1, 3, 1)])
 
         _deg_row(f, "gen_oversharp", "Oversharpening",
                  _t("Halos USM (sur-netteté), artefact typique des caméras consommateur / vidéo compressée.", "USM halos (oversharpening), typical artifact of consumer cameras / compressed video."),
                  [(_t("force:", "amount:"), "gen_oversharp_amt", "1.4",
-                   _t("Facteur USM 0.5-3.0 (0.8=léger, 2.0=fort)", "USM factor 0.5-3.0 (0.8=light, 2.0=strong)"))])
+                   _t("Facteur USM 0.5-3.0 (0.8=léger, 2.0=fort)", "USM factor 0.5-3.0 (0.8=light, 2.0=strong)"),
+                   0.5, 3.0, 0.1)])
 
         _deg_row(f, "gen_scanlines", "Scanlines CRT",
                  _t("Lignes sombres CRT : assombrit une ligne sur 2-4 (retro games, émulateurs, captures TV).", "Dark CRT scanlines: darkens every 2-4 lines (retro games, emulators, TV captures)."),
                  [(_t("pér:", "per:"), "gen_scanlines_period", "3",
-                   _t("Période 2-8 (2=dense, 4=espacé)", "Period 2-8 (2=dense, 4=sparse)")),
+                   _t("Période 2-8 (2=dense, 4=espacé)", "Period 2-8 (2=dense, 4=sparse)"),
+                   2, 8, 1),
                   (_t("norc:", "dark:"), "gen_scanlines_dark", "0.35",
-                   _t("Assombrissement 0.1-0.6 (0.25=subtil, 0.45=fort)", "Darkness 0.1-0.6 (0.25=subtle, 0.45=strong)"))])
+                   _t("Assombrissement 0.1-0.6 (0.25=subtil, 0.45=fort)", "Darkness 0.1-0.6 (0.25=subtle, 0.45=strong)"),
+                   0.1, 0.6, 0.05)])
 
         ctk.CTkButton(f, text=_t("Lancer Génération", "Run Generation"), fg_color="#E67E22", command=self.run_gen).pack(fill="x", pady=15)
         self.widgets["prog_gen"] = ctk.CTkProgressBar(f)
@@ -1619,6 +1891,9 @@ class ToolsTab(ctk.CTkFrame):
         if not hq or not lq:
             messagebox.showerror(_t("Erreur", "Error"), _t("Dossiers requis.", "Folders required."))
             return
+        # Persister les chemins pour la prochaine session
+        self.settings.set("gen_hq", hq)
+        self.settings.set("gen_lq", lq)
         scale = int(self.widgets["gen_scale"].get())
         method_name = self.widgets["gen_method"].get()
         method_map = {

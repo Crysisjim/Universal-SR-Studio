@@ -1551,7 +1551,7 @@ REDUX_LOSS_INFO = {
     "kldivloss": {"loss_weight": 1.0},
     "consistent_loss": {"loss_weight": 1.0, "criterion": "l1"},
     "palette_matching_loss": {"loss_weight": 1.0},
-    "sparkloss": {"loss_weight": 1.0, "criterion": "fd", "path": "null", "phase_weight": 1.0},
+    "sparkloss": {"loss_weight": 0.2, "criterion": "fd", "path": "null", "phase_weight": 1.0},
 }
 
 # --- LISTE COMPLETE ARCHITECTURES REDUX ---
