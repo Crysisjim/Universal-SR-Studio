@@ -264,35 +264,8 @@ def cmd_init(payload: dict) -> None:
             _emit({"status": "error", "msg": f"GFISRV2 load failed: {_e}"})
             return  # ne pas tomber sur SPAN avec des poids incompatibles
 
-    # 2) Spandrel (universel — pour tout ce qui n'est pas GFISRV2)
-    try:
-        import spandrel
-        model_desc = spandrel.ModelLoader(device=_device).load_from_file(model_path)
-        _model = model_desc.model.eval().to(_device)
-        _scale = getattr(model_desc, "scale", _scale)
-        _arch  = type(_model).__name__
-        _emit({"status": "ready", "arch": _arch, "scale": _scale, "backend": "spandrel"})
-        return
-    except Exception:
-        pass
-
-    # 3) SPANPlus manual (DySample ou conv upsampler)
-    try:
-        from traiNNer.archs.spanplus_arch import SpanPlus
-        _fc_w = sd.get("feats.0.eval_conv.weight", sd.get("feats.0.sk.weight", None))
-        _fc   = int(_fc_w.shape[0]) if _fc_w is not None else 48
-        _up   = "dys" if "upsampler.offset.weight" in sd else "conv"
-        _model = SpanPlus(feature_channels=_fc, upscale=_scale, upsampler=_up).eval()
-        _model.load_state_dict(sd, strict=False)
-        _model = _model.to(_device)
-        _arch  = "SPANPlus"
-        _emit({"status": "ready", "arch": _arch, "scale": _scale, "backend": "spanplus-fallback"})
-        return
-    except Exception:
-        pass
-
-    # 4) SpanPP manual (blocs SPAB c1_r/c2_r/c3_r + IGConv Fourier upsampler)
-    # Distinct de SPANPlus (feats.*) et SpanC-NeoSR (conv_a). Exclusif traiNNer-redux.
+    # 2) SpanPP manual — AVANT spandrel : spandrel chargerait SpanPP comme SPAN (scale fixe),
+    #    ce qui ignore scale_hint. On intercepte ici pour respecter le scale choisi par l'user.
     if "block_1.c1_r.conv3.eval_conv.weight" in sd and "upsampler.amplitude" in sd:
         try:
             import math as _math
@@ -314,9 +287,9 @@ def cmd_init(payload: dict) -> None:
                 _ig_k = max(1, int(round(_math.sqrt(_k2))))
             else:
                 _ig_k = 3
-            # Prefer user-selected scale if valid, otherwise auto-detect
-            _requested = _scale_hint if _scale_hint > 0 else _scale
-            _eval_scale = max(1, _requested) if _requested in _scale_list else min(_scale_list)
+            # Prefer user-selected scale if valid, else auto (max trained scale)
+            _requested = _scale_hint if _scale_hint > 0 else max(_scale_list)
+            _eval_scale = _requested if _requested in _scale_list else min(_scale_list)
             _model = SpanC(feature_channels=_fc, scale_list=_scale_list,
                            eval_base_scale=_eval_scale,
                            ig_kernel_size=_ig_k,
@@ -331,6 +304,33 @@ def cmd_init(payload: dict) -> None:
         except Exception as _e:
             _emit({"status": "error", "msg": f"SpanPP load failed: {_e}"})
             return
+
+    # 3) Spandrel (universel — pour tout ce qui n'est pas GFISRV2/SpanPP)
+    try:
+        import spandrel
+        model_desc = spandrel.ModelLoader(device=_device).load_from_file(model_path)
+        _model = model_desc.model.eval().to(_device)
+        _scale = getattr(model_desc, "scale", _scale)
+        _arch  = type(_model).__name__
+        _emit({"status": "ready", "arch": _arch, "scale": _scale, "backend": "spandrel"})
+        return
+    except Exception:
+        pass
+
+    # 4) SPANPlus manual (DySample ou conv upsampler)
+    try:
+        from traiNNer.archs.spanplus_arch import SpanPlus
+        _fc_w = sd.get("feats.0.eval_conv.weight", sd.get("feats.0.sk.weight", None))
+        _fc   = int(_fc_w.shape[0]) if _fc_w is not None else 48
+        _up   = "dys" if "upsampler.offset.weight" in sd else "conv"
+        _model = SpanPlus(feature_channels=_fc, upscale=_scale, upsampler=_up).eval()
+        _model.load_state_dict(sd, strict=False)
+        _model = _model.to(_device)
+        _arch  = "SPANPlus"
+        _emit({"status": "ready", "arch": _arch, "scale": _scale, "backend": "spanplus-fallback"})
+        return
+    except Exception:
+        pass
 
     # ── Block NeoSR-only architectures BEFORE the SPAN fallback ──────────────
     # These archs exist only in the NeoSR engine (different venv from traiNNer).
