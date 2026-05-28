@@ -3,7 +3,7 @@
   <h1>Universal SR Studio</h1>
   <p>Graphical interface for training super-resolution AI models<br>with <strong>NeoSR</strong> and <strong>traiNNer-Redux</strong> engines.</p>
 
-  <a href="https://github.com/Crysisjim/Universal-SR-Studio/releases"><img src="https://img.shields.io/badge/Version-2.5.0-blue" alt="Version"/></a>
+  <a href="https://github.com/Crysisjim/Universal-SR-Studio/releases"><img src="https://img.shields.io/badge/Version-2.5.5-blue" alt="Version"/></a>
   <a href="https://github.com/Crysisjim/Universal-SR-Studio/wiki"><img src="https://img.shields.io/badge/📖_Wiki-Documentation-informational" alt="Wiki"/></a>
   <img src="https://img.shields.io/badge/Platform-Windows-lightgrey" alt="Platform"/>
   <img src="https://img.shields.io/badge/License-MIT-green" alt="License"/>
@@ -22,6 +22,19 @@
 A graphical interface for training and managing super-resolution AI models with **NeoSR** and **traiNNer-Redux** engines.
 
 [![📖 Wiki — Full Documentation](https://img.shields.io/badge/📖_Wiki-Full_Documentation-blue?style=for-the-badge)](https://github.com/Crysisjim/Universal-SR-Studio/wiki)
+
+### What's new in v2.5.5
+
+- **SpanC multi-scale training** — multi-scale `[1,2]` or `[1,2,4]` fully working (3 crashes resolved: GT resize, LDL EMA align, LDL huber criterion)
+- **Quick Upscale — persistent batch subprocess** — model stays loaded in VRAM across frames, no reload per image (2.8× faster on 30k-frame batches)
+- **Quick Upscale — skip frames** — duplicate/near-identical frame detection via block MAE, 0 GPU cost and 0 artifacts
+- **Training — 6 new architectures** — CATANet (NeoSR), SMoSR, SpanF, SpanC, SpanPP, GFISRv2 (traiNNer-Redux) fully supported, tested end-to-end
+- **NeoSR training fixes** — LDL criterion compatibility (charbonnier remapped), bicubic dataset type mapped to otf, dataroot_lq excluded for OTF mode
+- **Training bugfixes** — SMoSR `rep` bool crash, SparkLoss minimum lq_size=128, `high_order_degradation` always True for OTF, SparkLoss default weight 1.0→0.2
+- **UI sliders** — batch size, accumulate, patch size get compact slider+entry with live VRAM estimation update; patch size snaps to arch-specific step
+- **LQ Generator sliders** — 14 degradation effects now have inline slider+entry (blur, noise, JPEG, aliasing, grain, scanlines, …)
+- **VRAM estimation corrected** — calibrated against `torch.cuda.memory_reserved()` for 6 new archs
+- **Browse shortcuts** — config dialog opens at `~/IA_Engine/Option Custom`, dataset dialog opens at `~/IA_Engine/datasets`
 
 ### What's new in v2.5.0
 
@@ -50,7 +63,7 @@ A graphical interface for training and managing super-resolution AI models with 
 
 ### Quick Start — Portable (recommended)
 
-1. Download `Universal_SR_Studio_v2.5.0_portable.zip` from [Releases](https://github.com/Crysisjim/Universal-SR-Studio/releases)
+1. Download `Universal_SR_Studio_v2.5.5_portable.zip` from [Releases](https://github.com/Crysisjim/Universal-SR-Studio/releases)
 2. Extract anywhere
 3. Run `Universal_SR_Studio.exe`
 4. On first launch, choose your language (FR/EN), then go to **⚙️ Settings** → the built-in installer handles everything else
@@ -130,15 +143,14 @@ python src/core/benchmark_runner.py --engine neosr --type feature
 python src/core/benchmark_runner.py --list
 ```
 
-### Roadmap — v2.5.5
+### Roadmap — v2.6.0
 
 | Feature | Description |
 |---------|-------------|
-| **Persistent batch subprocess** | Keep the model loaded in VRAM across all frames — no reload per image. Eliminates ~17-25h overhead on 30k-frame batches. |
 | **Temporal SR training** | Enter a video as GT reference, extract frame sequences, train TSPAN/TSPANv2 with sliding window input `[B, N, C, H, W]`. Full temporal consistency pipeline. |
 | **Temporal SR inference** | Sliding window N-frame inference with TSPAN/TSPANv2 and frame reassembly. |
+| **VOSR / OSEDiff** | Diffusion-based SR engine (CVPR 2026) as a third inference backend. |
 | **NVIDIA NIM provider** | `build.nvidia.com` as a new AI assistant provider — OpenAI-compatible API, free model credits (Llama, Mistral, Phi…). |
-| **VOSR** | Third inference engine (CVPR 2026, diffusion-based SR). |
 
 ### Contributing
 
@@ -161,6 +173,19 @@ Pull requests welcome. For major changes, open an issue first.
 Interface graphique pour l'entraînement et la gestion de modèles d'IA super-résolution avec les moteurs **NeoSR** et **traiNNer-Redux**.
 
 [![📖 Wiki — Documentation complète](https://img.shields.io/badge/📖_Wiki-Documentation_complète-blue?style=for-the-badge)](https://github.com/Crysisjim/Universal-SR-Studio/wiki)
+
+### Nouveautés v2.5.5
+
+- **Entraînement SpanC multi-scale** — `[1,2]` ou `[1,2,4]` entièrement fonctionnel (3 crashs résolus : GT resize, LDL EMA align, critère huber)
+- **Quick Upscale — subprocess batch persistant** — modèle chargé en VRAM sur toute la durée du batch, plus de rechargement par image (×2.8 sur 30k frames)
+- **Quick Upscale — skip frames** — détection frames dupliquées/quasi-identiques par blocs MAE, 0 coût GPU et 0 artefact
+- **Entraînement — 6 nouvelles architectures** — CATANet (NeoSR), SMoSR, SpanF, SpanC, SpanPP, GFISRv2 (traiNNer-Redux) supportées et testées
+- **Fixes NeoSR** — critère LDL charbonnier remappé, type dataset bicubic→otf, dataroot_lq exclu en mode OTF
+- **Bugfixes training** — crash SMoSR `rep` bool, minimum lq_size=128 SparkLoss, `high_order_degradation` toujours True pour OTF, poids SparkLoss 1.0→0.2
+- **Sliders UI** — batch size, accumulate, patch size : slider+entry avec mise à jour VRAM live ; snap de step selon l'arch
+- **Sliders LQ Generator** — 14 effets de dégradation ont maintenant un slider+entry inline (flou, bruit, JPEG, aliasing, grain, scanlines, …)
+- **Estimation VRAM corrigée** — calibrée sur `torch.cuda.memory_reserved()` pour les 6 nouvelles archs
+- **Raccourcis browse** — dialog config ouvre `~/IA_Engine/Option Custom`, dialog dataset ouvre `~/IA_Engine/datasets`
 
 ### Nouveautés v2.5.0
 
@@ -189,7 +214,7 @@ Interface graphique pour l'entraînement et la gestion de modèles d'IA super-r�
 
 ### Démarrage rapide — Portable (recommandé)
 
-1. Télécharger `Universal_SR_Studio_v2.5.0_portable.zip` depuis les [Releases](https://github.com/Crysisjim/Universal-SR-Studio/releases)
+1. Télécharger `Universal_SR_Studio_v2.5.5_portable.zip` depuis les [Releases](https://github.com/Crysisjim/Universal-SR-Studio/releases)
 2. Extraire n'importe où
 3. Lancer `Universal_SR_Studio.exe`
 4. Au premier lancement, choisir la langue (FR/EN), puis aller dans **⚙️ Paramètres** → l'installeur intégré gère le reste
@@ -256,15 +281,14 @@ Puis utiliser l'onglet **⚙️ Paramètres** pour installer les moteurs d'entra
 | 🌐 Distribué | Entraînement multi-machines (expérimental) |
 | 📖 Wiki | Ouvre la documentation wiki GitHub dans le navigateur |
 
-### Roadmap — v2.5.5
+### Roadmap — v2.6.0
 
 | Feature | Description |
 |---------|-------------|
-| **Subprocess persistant (batch)** | Modèle chargé en VRAM sur toute la durée du batch — plus de rechargement par image. Élimine 17-25h de surcoût sur 30k frames. |
 | **Entraînement Temporal SR** | Vidéo GT en entrée → extraction séquences frames → entraînement TSPAN/TSPANv2 avec fenêtre glissante `[B, N, C, H, W]`. Pipeline temporel complet. |
 | **Inférence Temporal SR** | Inférence N frames en fenêtre glissante avec TSPAN/TSPANv2 + réassemblage. |
+| **VOSR / OSEDiff** | Troisième moteur d'inférence SR basé sur la diffusion (CVPR 2026). |
 | **Provider NVIDIA NIM** | `build.nvidia.com` comme nouveau provider IA — API compatible OpenAI, crédits gratuits (Llama, Mistral, Phi…). |
-| **VOSR** | Troisième moteur d'inférence (CVPR 2026, SR diffusion). |
 
 ### Contribuer
 
