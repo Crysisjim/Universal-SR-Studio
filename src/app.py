@@ -290,6 +290,9 @@ class App(ctk.CTk):
             self.destroy()
         except Exception:
             pass
+        # Force-quit : kill all non-daemon threads (gallery server, monitors, etc.)
+        # without this, the exe stays in memory after window close
+        os._exit(0)
 
 
 if __name__ == "__main__":

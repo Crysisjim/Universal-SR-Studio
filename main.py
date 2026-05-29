@@ -216,3 +216,5 @@ if __name__ == "__main__":
         pass
 
     app.mainloop()
+    # Fallback: if mainloop exits without WM_DELETE_WINDOW (e.g. Alt+F4 bypass)
+    sys.exit(0)
