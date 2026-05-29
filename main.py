@@ -3,6 +3,15 @@ import os
 import traceback
 import datetime
 
+# Force UTF-8 stdout/stderr — évite crash cp1252 sur Windows (emoji dans print)
+try:
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    if hasattr(sys.stderr, 'reconfigure'):
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+except Exception:
+    pass
+
 # ─── PyInstaller bundle path resolution ───────────────────────────────────────
 # PyInstaller 6+ places bundled files in _internal/ (= sys._MEIPASS).
 # The exe itself sits one level up (os.path.dirname(sys.executable)).
@@ -72,7 +81,7 @@ def check_first_launch():
         os.path.join(os.path.expanduser("~"), "IA_Engine", "traiNNer-redux"),
     ]
     if not any(os.path.isdir(p) for p in engine_paths):
-        warnings.append("Aucun moteur IA detecte (NeoSR / TraiNNer-Redux)")
+        warnings.append("Aucun moteur IA détecté (NeoSR / TraiNNer-Redux)\nNo AI engine detected (NeoSR / TraiNNer-Redux)")
     try:
         import subprocess
         r = subprocess.run(["nvidia-smi"], capture_output=True, timeout=5)
