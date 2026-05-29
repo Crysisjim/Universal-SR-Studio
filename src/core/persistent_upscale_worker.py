@@ -317,6 +317,39 @@ def cmd_init(payload: dict) -> None:
     except Exception:
         pass
 
+    # 3b) RCAN manual — spandrel mis-detects n_feats for scale-1 (deband) RCAN
+    # because it reads n_feats from the absent pixelshuffle tail.0 → size mismatch.
+    if ("body.0.body.0.body.3.conv_du.0.weight" in sd
+            and "tail.1.weight" in sd
+            and ("head.0.weight" in sd or "head.1.weight" in sd)):
+        try:
+            from spandrel.architectures.RCAN.__arch.rcan_arch import RCAN
+            from spandrel.util import get_seq_len
+            _hi = 0 if "head.0.weight" in sd else 1
+            _nf = int(sd[f"head.{_hi}.weight"].shape[0])
+            _nc = int(sd["tail.1.weight"].shape[0])
+            _ks = int(sd[f"head.{_hi}.weight"].shape[-1])
+            _nrg = get_seq_len(sd, "body") - 1
+            _nrb = get_seq_len(sd, "body.0.body") - 1
+            _red = _nf // int(sd["body.0.body.0.body.3.conv_du.0.weight"].shape[0])
+            # Scale from upsampler presence: no tail.0.* keys → 1x (deband, no pixelshuffle).
+            # _detect_scale() mis-reports because scale-1 RCAN has no upscale keys.
+            _has_up = any(k.startswith("tail.0.") for k in sd)
+            _rcan_scale = (_scale if _scale and _scale > 0 else 2) if _has_up else 1
+            _model = RCAN(scale=_rcan_scale, n_resgroups=_nrg, n_resblocks=_nrb,
+                          n_colors=_nc, rgb_range=255, norm=("sub_mean.weight" in sd),
+                          kernel_size=_ks, n_feats=_nf, reduction=_red, res_scale=1,
+                          act_mode="relu", unshuffle_mod=(_hi == 1)).eval()
+            _model.load_state_dict(sd, strict=True)
+            _model = _model.to(_device)
+            _scale = _rcan_scale
+            _arch = "RCAN"
+            _emit({"status": "ready", "arch": _arch, "scale": _scale, "backend": "rcan-manual"})
+            return
+        except Exception as _e:
+            _emit({"status": "error", "msg": f"RCAN load failed: {_e}"})
+            return
+
     # 4) SPANPlus manual (DySample ou conv upsampler) — guard: need feats.* keys
     _fc_w = sd.get("feats.0.eval_conv.weight", sd.get("feats.0.sk.weight", None))
     if _fc_w is not None:

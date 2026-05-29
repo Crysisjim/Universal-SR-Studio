@@ -57,17 +57,36 @@ def run(model_path: str, input_path: str, output_path: str,
     model = None
     scale = 1
 
-    # ── 1. Try spandrel (handles SPAN, ESRGAN, RealPLKSR, SwinIR, HAT, …) ──
+    # ── 0. Peek keys: RCAN scale-1 (deband) → spandrel mis-detects n_feats from the
+    #    absent pixelshuffle tail.0 → noisy size-mismatch dump. Skip spandrel for it. ──
+    skip_spandrel = False
     try:
-        import spandrel
-        print(f"[Runner] Chargement via spandrel : {os.path.basename(model_path)}", flush=True)
-        loader = spandrel.ModelLoader(device=device)
-        descriptor = loader.load_from_file(model_path)
-        model = descriptor.model
-        scale = descriptor.scale
-        print(f"[Runner] spandrel OK : {type(descriptor).__name__}, scale={scale}x", flush=True)
-    except Exception as e:
-        print(f"[Runner] spandrel echec ({e}), tentative manuelle...", flush=True)
+        if model_path.endswith(".safetensors"):
+            from safetensors import safe_open
+            with safe_open(model_path, framework="pt") as _f:
+                _peek = set(_f.keys())
+        else:
+            _peek = set(_load_state_dict(model_path).keys())
+        if ("body.0.body.0.body.3.conv_du.0.weight" in _peek
+                and "tail.1.weight" in _peek
+                and not any(k.startswith("tail.0.") for k in _peek)):
+            skip_spandrel = True
+            print("[Runner] RCAN 1x détecté — spandrel ignoré (construction manuelle).", flush=True)
+    except Exception:
+        pass
+
+    # ── 1. Try spandrel (handles SPAN, ESRGAN, RealPLKSR, SwinIR, HAT, …) ──
+    if not skip_spandrel:
+        try:
+            import spandrel
+            print(f"[Runner] Chargement via spandrel : {os.path.basename(model_path)}", flush=True)
+            loader = spandrel.ModelLoader(device=device)
+            descriptor = loader.load_from_file(model_path)
+            model = descriptor.model
+            scale = descriptor.scale
+            print(f"[Runner] spandrel OK : {type(descriptor).__name__}, scale={scale}x", flush=True)
+        except Exception as e:
+            print(f"[Runner] spandrel echec ({e}), tentative manuelle...", flush=True)
 
     # ── 2. Fallback: manual traiNNer-redux exotic archs (not yet in spandrel) ──
     if model is None:
@@ -90,6 +109,12 @@ def run(model_path: str, input_path: str, output_path: str,
                 detected = "spanf"
             elif "feats.0.eval_conv.weight" in state_dict or "feats.0.sk.weight" in state_dict:
                 detected = "spanplus"  # SPANPlus sans DySample (1x conv upsampler)
+            elif ("body.0.body.0.body.3.conv_du.0.weight" in state_dict
+                  and "tail.1.weight" in state_dict
+                  and ("head.0.weight" in state_dict or "head.1.weight" in state_dict)):
+                # RCAN — spandrel mis-detects n_feats for scale-1 (deband) models
+                # because it reads n_feats from the absent pixelshuffle tail.0.
+                detected = "rcan"
 
             if detected == "spanplus":
                 from traiNNer.archs.spanplus_arch import SpanPlus
@@ -179,6 +204,28 @@ def run(model_path: str, input_path: str, output_path: str,
                 model = spanf(feature_channels=fc, scale=max(1, scale))
                 model.load_state_dict(state_dict, strict=False)
                 print(f"[Runner] SpanF manuel : fc={fc}, scale={scale}x", flush=True)
+
+            elif detected == "rcan":
+                from spandrel.architectures.RCAN.__arch.rcan_arch import RCAN
+                from spandrel.util import get_seq_len
+                head_idx = 0 if "head.0.weight" in state_dict else 1
+                n_feats = state_dict[f"head.{head_idx}.weight"].shape[0]
+                n_colors = state_dict["tail.1.weight"].shape[0]
+                kernel_size = state_dict[f"head.{head_idx}.weight"].shape[-1]
+                n_resgroups = get_seq_len(state_dict, "body") - 1
+                n_resblocks = get_seq_len(state_dict, "body.0.body") - 1
+                reduction = n_feats // state_dict["body.0.body.0.body.3.conv_du.0.weight"].shape[0]
+                unshuffle_mod = head_idx == 1
+                rcan_scale = scale_hint if scale_hint > 0 else 1
+                model = RCAN(scale=rcan_scale, n_resgroups=n_resgroups, n_resblocks=n_resblocks,
+                             n_colors=n_colors, rgb_range=255,
+                             norm=("sub_mean.weight" in state_dict), kernel_size=kernel_size,
+                             n_feats=n_feats, reduction=reduction, res_scale=1,
+                             act_mode="relu", unshuffle_mod=unshuffle_mod)
+                model.load_state_dict(state_dict, strict=True)
+                scale = rcan_scale
+                print(f"[Runner] RCAN manuel : n_feats={n_feats}, nrg={n_resgroups}, "
+                      f"nrb={n_resblocks}, red={reduction}, scale={scale}x", flush=True)
 
         except Exception as e:
             print(f"[Runner] Fallback traiNNer manuel echec : {e}", flush=True)
