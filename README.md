@@ -75,6 +75,7 @@ A graphical interface for training and managing super-resolution AI models with 
 - **Windows 10/11**
 - **NVIDIA GPU** with CUDA support (8 GB+ VRAM recommended)
 - **Internet connection** for the first setup (engine download)
+- **~11 GB free disk space** for a full install (both engines + PyTorch CUDA + dependencies)
 
 That's it. Universal SR Studio handles the rest automatically via the **⚙️ Settings** tab.
 
@@ -226,6 +227,7 @@ Interface graphique pour l'entraînement et la gestion de modèles d'IA super-r�
 - **Windows 10/11**
 - **GPU NVIDIA** avec support CUDA (8 Go+ VRAM recommandé)
 - **Connexion internet** pour le premier setup (téléchargement des moteurs)
+- **~11 Go d'espace disque libre** pour une installation complète (les deux moteurs + PyTorch CUDA + dépendances)
 
 C'est tout. Universal SR Studio gère le reste automatiquement via l'onglet **⚙️ Paramètres**.
 
