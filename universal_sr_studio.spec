@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-# PyInstaller spec — Universal SR Studio
+# PyInstaller spec — Universal SR Studio v2.5.5
 # Build: pyinstaller universal_sr_studio.spec
 # Output: dist/Universal_SR_Studio/Universal_SR_Studio.exe
 #
@@ -18,7 +18,9 @@ a = Analysis(
     pathex=['.'],
     binaries=[],
     datas=ctk_datas + [
-        ('assets', 'assets'),   # App assets: icons, sounds, themes
+        ('assets', 'assets'),                                    # App assets: icons, sounds, themes
+        ('src/core/persistent_upscale_worker.py', 'src/core/'), # v2.5.5: persistent batch worker
+        ('src/core/universal_runner.py', 'src/core/'),          # v2.5.6: standalone subprocess runner (RCAN 1x fix) — run by external venv, must be a loose .py
     ],
     hiddenimports=[
         # ── App modules (dynamic try/except imports) ──────────────────────────
@@ -95,6 +97,7 @@ a = Analysis(
         'PIL.ImageOps',
         'PIL.ImageDraw',
         'PIL.ImageFont',
+        'PIL.ImageCms',         # v2.5.5: color fix LAB method
         'PIL.PngImagePlugin',
         'PIL.JpegImagePlugin',
         'PIL.BmpImagePlugin',
