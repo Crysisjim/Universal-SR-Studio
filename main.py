@@ -94,6 +94,7 @@ def check_first_launch():
             import tkinter as tk
             from tkinter import messagebox
             root = tk.Tk(); root.withdraw()
+            root.attributes('-topmost', True)
             messagebox.showerror("Dépendances manquantes / Missing dependencies",
                 f"Packages requis absents / Required packages missing:\n\n"
                 f"{chr(10).join('  - ' + m for m in missing)}\n\n"
@@ -109,6 +110,7 @@ def check_first_launch():
                 import tkinter as tk
                 from tkinter import messagebox
                 root = tk.Tk(); root.withdraw()
+                root.attributes('-topmost', True)  # ensure dialog appears in front
                 messagebox.showwarning("Premier lancement / First launch",
                     f"Bienvenue dans Universal SR Studio !\n"
                     f"Welcome to Universal SR Studio!\n\n"
@@ -133,14 +135,20 @@ def _ask_language_first_launch():
         import tkinter as tk
         result = {'lang': 'fr'}
         root = tk.Tk()
+        root.withdraw()  # hide until positioned
         root.title("Universal SR Studio")
-        root.geometry("360x190")
         root.resizable(False, False)
         root.configure(bg="#1a1a2e")
         root.update_idletasks()
-        x = (root.winfo_screenwidth()  - 360) // 2
-        y = (root.winfo_screenheight() - 190) // 2
-        root.geometry(f"360x190+{x}+{y}")
+        w, h = 360, 190
+        x = (root.winfo_screenwidth()  - w) // 2
+        y = (root.winfo_screenheight() - h) // 2
+        root.geometry(f"{w}x{h}+{x}+{y}")
+        root.deiconify()  # show centered
+        root.update()
+        root.lift()
+        root.attributes('-topmost', True)
+        root.focus_force()
         tk.Label(root, text="Universal SR Studio",
                  font=("Arial", 14, "bold"), fg="white", bg="#1a1a2e").pack(pady=(22, 4))
         tk.Label(root, text="Choose your language / Choisissez votre langue",

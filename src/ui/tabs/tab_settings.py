@@ -56,46 +56,113 @@ class ConsolePopup(ctk.CTkToplevel):
         self.textbox.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
         self.textbox.insert("0.0", f"--- SEQUENCE D'OPERATION ---\n> Cible : {cwd}\n> Action : {title}\n\n")
         
-        self.btn_close = ctk.CTkButton(self, text=_t("En cours...", "Running..."), state="disabled", command=self.close_and_refresh, fg_color="#555")
+        self.btn_close = ctk.CTkButton(self, text=_t("En cours... 00:00", "Running... 00:00"), state="disabled", command=self.close_and_refresh, fg_color="#555")
         self.btn_close.grid(row=1, column=0, pady=10)
 
         self.command = command
         self.cwd = cwd
-        
+        self._start_time = time.time()
+        self._running = True
+
         self.after(100, lambda: self.focus_force())
+        self.after(1000, self._tick_elapsed)
         threading.Thread(target=self.run_process, daemon=True).start()
+
+    def _tick_elapsed(self):
+        """Update elapsed time in button every second while running."""
+        if self._running:
+            elapsed = int(time.time() - self._start_time)
+            m, s = divmod(elapsed, 60)
+            try:
+                self.btn_close.configure(text=_t(f"En cours... {m:02d}:{s:02d}", f"Running... {m:02d}:{s:02d}"))
+            except Exception:
+                pass
+            self.after(1000, self._tick_elapsed)
 
     def run_process(self):
         try:
             if not os.path.exists(self.cwd): os.makedirs(self.cwd, exist_ok=True)
-            
-            # Utilisation de shell=True pour Windows pour gérer les chemins complexes
+
+            env = os.environ.copy()
+            env.update({'PYTHONUNBUFFERED': '1', 'PYTHONIOENCODING': 'utf-8'})
+
             process = subprocess.Popen(
-                self.command, 
-                cwd=self.cwd, 
-                stdout=subprocess.PIPE, 
-                stderr=subprocess.STDOUT, 
-                text=True,
+                self.command,
+                cwd=self.cwd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
                 shell=True,
+                env=env,
                 creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
             )
 
-            for line in process.stdout:
-                self.textbox.insert("end", line)
-                self.textbox.see("end")
-            
+            # Read byte-by-byte to handle \r (pip progress bar uses \r not \n)
+            buf = ""
+            while True:
+                b = process.stdout.read(1)
+                if not b:
+                    if buf:
+                        self._console_write(buf)
+                    break
+                try:
+                    ch = b.decode('utf-8', errors='replace')
+                except Exception:
+                    continue
+                if ch == '\r':
+                    # Peek next byte: \r\n = normal newline, bare \r = overwrite line
+                    next_b = process.stdout.read(1)
+                    if next_b == b'\n':
+                        self._console_write(buf + '\n')
+                        buf = ""
+                    else:
+                        self._console_replace_last_line(buf)
+                        buf = ""
+                        if next_b:
+                            try:
+                                buf = next_b.decode('utf-8', errors='replace')
+                            except Exception:
+                                pass
+                elif ch == '\n':
+                    self._console_write(buf + '\n')
+                    buf = ""
+                else:
+                    buf += ch
+
             process.wait()
-            
+            self._running = False
+
+            elapsed = int(time.time() - self._start_time)
+            m, s = divmod(elapsed, 60)
+            elapsed_str = f" ({m:02d}:{s:02d})"
+
             if process.returncode == 0:
-                self.textbox.insert("end", _t("\n\n[SUCCES] Operation terminee.\n", "\n\n[SUCCESS] Operation completed.\n"))
+                self._console_write(_t("\n\n[SUCCES] Operation terminee.\n", "\n\n[SUCCESS] Operation completed.\n"))
                 self.btn_close.configure(state="normal", text=_t("Fermer & Actualiser", "Close & Refresh"), fg_color="green")
             else:
-                self.textbox.insert("end", _t(f"\n\n[ERREUR] Une etape a echoue (Code {process.returncode}).\n", f"\n\n[ERROR] A step failed (Code {process.returncode}).\n"))
+                self._console_write(_t(f"\n\n[ERREUR] Une etape a echoue (Code {process.returncode}).\n", f"\n\n[ERROR] A step failed (Code {process.returncode}).\n"))
                 self.btn_close.configure(state="normal", text=_t("Fermer", "Close"), fg_color="#e74c3c")
 
         except Exception as e:
-            self.textbox.insert("end", _t(f"\n\n[CRASH CRITIQUE] {str(e)}\n", f"\n\n[CRITICAL CRASH] {str(e)}\n"))
+            self._running = False
+            self._console_write(_t(f"\n\n[CRASH CRITIQUE] {str(e)}\n", f"\n\n[CRITICAL CRASH] {str(e)}\n"))
             self.btn_close.configure(state="normal", text=_t("Fermer (Crash)", "Close (Crash)"), fg_color="#e74c3c")
+
+    def _console_write(self, text):
+        """Append text to console textbox."""
+        self.textbox.insert("end", text)
+        self.textbox.see("end")
+
+    def _console_replace_last_line(self, text):
+        """Replace last line in textbox — handles \\r carriage-return progress bars."""
+        try:
+            end_idx = self.textbox.index("end-1c")
+            line_start = self.textbox.index(f"{end_idx} linestart")
+            self.textbox.delete(line_start, end_idx)
+            if text:
+                self.textbox.insert(line_start, text)
+            self.textbox.see("end")
+        except Exception:
+            pass
 
     def close_and_refresh(self):
         self.destroy()
@@ -401,7 +468,7 @@ if not os.path.exists(VENV_DIR):
 pip = os.path.join(VENV_DIR, "Scripts", "pip.exe") if sys.platform == "win32" else os.path.join(VENV_DIR, "bin", "pip")
 log("Update PIP...")
 subprocess.call([pip, "install", "--upgrade", "pip", "wheel"], cwd=TARGET)
-log("Install Torch {_cuda_label}...")
+log("Install Torch {_cuda_label} (~2.8 GB) — patience, pip telecharge en silence...")
 subprocess.call([pip, "uninstall", "-y", "torch", "torchvision"], cwd=TARGET)
 subprocess.call([pip, "install", "{_torch_pkg}", "{_tv_pkg}", "--index-url", "{_whl_url}", "--no-cache-dir"], cwd=TARGET)
 log("Install Deps...")
