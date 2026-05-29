@@ -317,20 +317,21 @@ def cmd_init(payload: dict) -> None:
     except Exception:
         pass
 
-    # 4) SPANPlus manual (DySample ou conv upsampler)
-    try:
-        from traiNNer.archs.spanplus_arch import SpanPlus
-        _fc_w = sd.get("feats.0.eval_conv.weight", sd.get("feats.0.sk.weight", None))
-        _fc   = int(_fc_w.shape[0]) if _fc_w is not None else 48
-        _up   = "dys" if "upsampler.offset.weight" in sd else "conv"
-        _model = SpanPlus(feature_channels=_fc, upscale=_scale, upsampler=_up).eval()
-        _model.load_state_dict(sd, strict=False)
-        _model = _model.to(_device)
-        _arch  = "SPANPlus"
-        _emit({"status": "ready", "arch": _arch, "scale": _scale, "backend": "spanplus-fallback"})
-        return
-    except Exception:
-        pass
+    # 4) SPANPlus manual (DySample ou conv upsampler) — guard: need feats.* keys
+    _fc_w = sd.get("feats.0.eval_conv.weight", sd.get("feats.0.sk.weight", None))
+    if _fc_w is not None:
+        try:
+            from traiNNer.archs.spanplus_arch import SpanPlus
+            _fc  = int(_fc_w.shape[0])
+            _up  = "dys" if "upsampler.offset.weight" in sd else "conv"
+            _model = SpanPlus(feature_channels=_fc, upscale=_scale, upsampler=_up).eval()
+            _model.load_state_dict(sd, strict=False)
+            _model = _model.to(_device)
+            _arch  = "SPANPlus"
+            _emit({"status": "ready", "arch": _arch, "scale": _scale, "backend": "spanplus-fallback"})
+            return
+        except Exception:
+            pass
 
     # ── Block NeoSR-only architectures BEFORE the SPAN fallback ──────────────
     # These archs exist only in the NeoSR engine (different venv from traiNNer).
@@ -354,7 +355,19 @@ def cmd_init(payload: dict) -> None:
             })
             return
 
-    # 3) SPAN generic fallback
+    # 5) SPAN generic fallback — ONLY if model has SPAN-signature keys.
+    # Without this guard, non-SPAN archs (RCAN, HAT, SwinIR…) silently load into SPAN
+    # via strict=False → wrong output (black/red images, wrong scale).
+    _has_span_keys = "feats.0.sk.weight" in sd or "feats.0.eval_conv.weight" in sd
+    if not _has_span_keys:
+        _emit({
+            "status": "error",
+            "msg": (
+                "Arch non reconnue dans le subprocess persistant (venv traiNNer). "
+                "Décochez 'Subprocess persistant' pour ce modèle."
+            ),
+        })
+        return
     try:
         from traiNNer.archs.span_arch import SPAN
         _fc_w = sd.get("feats.0.sk.weight", None)

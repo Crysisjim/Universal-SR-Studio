@@ -1361,6 +1361,15 @@ def upscale_image(
         return _onnx_upscale(model_path, input_path, output_path, log, progress_callback,
                              out_format=out_format, bit_depth=bit_depth, quality=quality)
 
+    # Lazy torch retry — module-level TORCH_AVAILABLE may be False in PyInstaller portable
+    # if quick_upscale is imported before PyInstaller finishes bootstrapping torch in thread.
+    global TORCH_AVAILABLE
+    if not TORCH_AVAILABLE:
+        try:
+            import torch as _t; import torch.nn.functional as _F  # noqa: F401,E401
+            TORCH_AVAILABLE = True
+        except ImportError:
+            pass
     if not TORCH_AVAILABLE:
         return False, "PyTorch non installé"
     if not IMAGING_AVAILABLE:
