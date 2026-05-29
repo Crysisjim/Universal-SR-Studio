@@ -94,10 +94,10 @@ def check_first_launch():
             import tkinter as tk
             from tkinter import messagebox
             root = tk.Tk(); root.withdraw()
-            messagebox.showerror("Dependances manquantes",
-                f"Packages requis absents:\n\n"
+            messagebox.showerror("Dépendances manquantes / Missing dependencies",
+                f"Packages requis absents / Required packages missing:\n\n"
                 f"{chr(10).join('  - ' + m for m in missing)}\n\n"
-                f"Installez avec:\n  pip install {' '.join(m.lower() for m in missing)}")
+                f"Installez avec / Install with:\n  pip install {' '.join(m.lower() for m in missing)}")
             root.destroy()
         except Exception:
             print(f"ERREUR: Packages manquants: {', '.join(missing)}")
@@ -109,11 +109,13 @@ def check_first_launch():
                 import tkinter as tk
                 from tkinter import messagebox
                 root = tk.Tk(); root.withdraw()
-                messagebox.showwarning("Premier lancement",
-                    f"Bienvenue dans Universal SR Studio !\n\n"
-                    f"Avertissements:\n\n"
+                messagebox.showwarning("Premier lancement / First launch",
+                    f"Bienvenue dans Universal SR Studio !\n"
+                    f"Welcome to Universal SR Studio!\n\n"
+                    f"Avertissements / Warnings:\n\n"
                     f"{chr(10).join('  - ' + w for w in warnings)}\n\n"
-                    f"Ces elements sont optionnels mais recommandes.")
+                    f"Ces éléments sont optionnels mais recommandés.\n"
+                    f"These elements are optional but recommended.")
                 root.destroy()
                 with open(marker, "w") as f:
                     f.write(datetime.datetime.now().isoformat())

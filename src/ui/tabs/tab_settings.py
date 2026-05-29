@@ -229,7 +229,22 @@ class SettingsTab(ctk.CTkFrame):
         if os.path.exists(py_path): return py_path
         return None
 
-    def install_portable_python(self):
+    def _get_python_exe(self, prefer_portable=True):
+        """Return a usable Python exe. In frozen builds sys.executable is the .exe, NOT Python."""
+        if not getattr(sys, 'frozen', False):
+            return sys.executable  # dev mode: sys.executable IS python
+        if prefer_portable:
+            py = self.get_portable_python_path()
+            if py:
+                return py
+        # Fall back to system Python on PATH
+        for name in ["python", "python3", "py"]:
+            p = shutil.which(name)
+            if p:
+                return p
+        return None
+
+    def install_portable_python(self, on_done=None):
         target_dir = os.path.join(self.runtimes_path, "python-3.11.9")
         if not os.path.exists(self.base_engine_path): os.makedirs(self.base_engine_path, exist_ok=True)
         installer_script_path = os.path.join(self.base_engine_path, "install_runtime.py")
@@ -268,12 +283,25 @@ log('Install PIP + Virtualenv...')
 os.system(f'{{py}} {{gp}}')
 os.system(f'{{py}} -m pip install virtualenv --no-warn-script-location')
 log('[OK] TERMINE !')
+try: import os as _os; _os.remove(__file__)
+except Exception: pass
 """
         try:
             with open(installer_script_path, "w", encoding="utf-8") as f: f.write(script_content)
         except Exception: return messagebox.showerror(_t("Erreur", "Error"), _t("Impossible d'ecrire le script.", "Cannot write the script."))
-        cmd = [sys.executable, installer_script_path]
-        self.launch_console("Installation Runtime", cmd, self.base_engine_path)
+        py = self._get_python_exe(prefer_portable=False)  # bootstrap: no portable yet
+        if not py:
+            return messagebox.showerror(
+                _t("Python introuvable", "Python not found"),
+                _t("Python n'est pas installé sur ce système.\nInstaller Python 3.11 depuis python.org puis relancer.",
+                   "Python is not installed on this system.\nInstall Python 3.11 from python.org then restart.")
+            )
+        cmd = [py, installer_script_path]
+        def _after_python():
+            self.refresh_ui()
+            if on_done:
+                on_done()
+        self.launch_console("Installation Runtime", cmd, self.base_engine_path, on_close_callback=_after_python)
 
     # --- MISE A JOUR DES DEPENDANCES (VERSION FINALE) ---
     def install_missing_deps_only(self, engine_name, cwd, py_venv):
@@ -281,11 +309,12 @@ log('[OK] TERMINE !')
         Installe msgspec et les autres dépendances manquantes via un script piloté.
         """
         # Liste complète mise à jour pour Redux
-        pkgs = ["numpy<2.0.0", "opencv-python", "scipy", "pyyaml", "toml", "tqdm", 
-                "tensorboard", "rich", "PyWavelets", "pillow", "einops", "lmdb", "msgspec"]
-        
+        pkgs = ["numpy<2.0.0", "opencv-python", "scipy", "pyyaml", "toml", "tqdm",
+                "tensorboard", "rich", "PyWavelets", "pillow", "einops", "lmdb", "msgspec",
+                "ema-pytorch", "torchvision"]
+
         if "Redux" in engine_name:
-            pkgs.extend(["albumentations", "ema-pytorch"])
+            pkgs.extend(["albumentations"])
             
         pkgs_str = " ".join(pkgs)
         script_path = os.path.join(cwd, "update_deps_temp.py")
@@ -313,6 +342,8 @@ try:
 except Exception as e:
     print(f">> [ERREUR] {{e}}")
     sys.exit(1)
+try: import os as _os; _os.remove(__file__)
+except Exception: pass
 """
         try:
             with open(script_path, "w", encoding="utf-8") as f: f.write(script_content)
@@ -320,7 +351,10 @@ except Exception as e:
             messagebox.showerror(_t("Erreur", "Error"), _t(f"Échec création script: {e}", f"Script creation failed: {e}"))
             return
 
-        cmd = [sys.executable, script_path]
+        py = self._get_python_exe()
+        if not py:
+            return messagebox.showerror(_t("Erreur", "Error"), _t("Python introuvable.", "Python not found."))
+        cmd = [py, script_path]
         self.launch_console(_t("Mise à jour (Deps + msgspec)", "Update (Deps + msgspec)"), cmd, cwd)
 
 
@@ -341,9 +375,9 @@ except Exception as e:
         _whl_url    = _rec["whl_url"]
         _cuda_label = f"{_rec['torch_version']} CUDA {_rec['cuda_tag']}"
 
-        reqs = "numpy<2.0.0\nopencv-python\nscipy\npyyaml\ntoml\ntqdm\ntensorboard\nrich\nPyWavelets\npillow\neinops\nlmdb\n"
+        reqs = "numpy<2.0.0\nopencv-python\nscipy\npyyaml\ntoml\ntqdm\ntensorboard\nrich\nPyWavelets\npillow\neinops\nlmdb\nema-pytorch\n"
         if "Redux" in engine_name:
-            reqs += "albumentations\nema-pytorch\n"
+            reqs += "albumentations\n"
 
         script_content = f"""
 import os, sys, subprocess
@@ -374,11 +408,14 @@ log("Install Deps...")
 subprocess.call([pip, "install", "-r", "requirements.txt"], cwd=TARGET)
 subprocess.call([pip, "install", "tensorboard", "rich"], cwd=TARGET)
 log("[OK] TERMINE !")
+try: import os as _os; _os.remove(__file__)
+except Exception: pass
 """
         try:
             with open(installer_path, "w", encoding="utf-8") as f: f.write(script_content)
         except Exception: return messagebox.showerror("Erreur", "Script error.")
-        cmd = [sys.executable, installer_path]
+        # portable_py is the param already passed — use it to run the install script
+        cmd = [portable_py, installer_path]
         if not os.path.exists(target_path): os.makedirs(target_path)
         self.launch_console(f"Install {engine_name}", cmd, target_path)
 
@@ -418,7 +455,10 @@ log("[OK] TERMINE !")
             venv_versions[eng_name] = self._get_venv_torch_version(venv_py)
 
         rec["_venv_versions"] = venv_versions
-        self.after(0, lambda: self._render_gpu_advisory(rec))
+        try:
+            self.after(0, lambda: self._render_gpu_advisory(rec))
+        except RuntimeError:
+            pass  # widget destroyed or main loop not running — safe to ignore
 
     @staticmethod
     def _get_venv_torch_version(py_venv: str) -> str:
@@ -593,6 +633,8 @@ log("[OK] TERMINE !")
             "cmd = [py, '-m', 'pip', 'install'] + pkgs + ['--index-url', whl, '--no-cache-dir']",
             "r = subprocess.call(cmd)",
             "print('>> [OK] Termine !' if r == 0 else f'>> [ERREUR] code={r}')",
+            "try: import os as _os; _os.remove(__file__)",
+            "except Exception: pass",
         ]
         script = "\n".join(script_lines)
         tmp = os.path.join(cwd, "_install_pytorch_rec.py")
@@ -602,7 +644,10 @@ log("[OK] TERMINE !")
         except Exception as e:
             messagebox.showerror(_t("Erreur", "Error"), _t(f"Impossible d'écrire le script : {e}", f"Cannot write the script: {e}"))
             return
-        self.launch_console(f"PyTorch → {engine_name}", [sys.executable, tmp], cwd)
+        py = self._get_python_exe()
+        if not py:
+            return messagebox.showerror(_t("Erreur", "Error"), _t("Python introuvable.", "Python not found."))
+        self.launch_console(f"PyTorch → {engine_name}", [py, tmp], cwd)
 
     def create_engine_block(self, parent, title, repo_url, install_path):
         f = ctk.CTkFrame(parent, border_width=1, border_color="#333")
@@ -635,16 +680,24 @@ log("[OK] TERMINE !")
 
         py = self.get_portable_python_path()
         if not py:
-            if messagebox.askyesno(_t("Requis", "Required"), _t("Python 3.11 Portable requis. Télécharger ?", "Python 3.11 Portable required. Download?")): self.install_portable_python()
+            if messagebox.askyesno(_t("Requis", "Required"), _t("Python 3.11 Portable requis. Télécharger ?", "Python 3.11 Portable required. Download?")):
+                # Chain: after Python installs, auto-launch engine install
+                _url, _path, _name = url, path, engine_name
+                def _continue_after_python():
+                    py2 = self.get_portable_python_path()
+                    if py2:
+                        self.launch_engine_install_script(_url, _path, _name, py2)
+                self.install_portable_python(on_done=_continue_after_python)
             return
         self.launch_engine_install_script(url, path, engine_name, py)
 
     def wipe_and_full_install(self, url, path, engine_name):
         if messagebox.askyesno(_t("Confirm", "Confirm"), _t("Tout supprimer ?", "Delete everything?")): self.check_and_launch_install(url, path, engine_name, wipe=True)
 
-    def launch_console(self, title, command, cwd):
+    def launch_console(self, title, command, cwd, on_close_callback=None):
         if not shutil.which("git"): return messagebox.showerror("Err", "Git not found")
-        ConsolePopup(self.winfo_toplevel(), title, command, cwd, on_close_callback=self.refresh_ui)
+        cb = on_close_callback if on_close_callback is not None else self.refresh_ui
+        ConsolePopup(self.winfo_toplevel(), title, command, cwd, on_close_callback=cb)
 
     def refresh_ui(self):
         self.setup_engines_tab(); self.setup_system_tab()
