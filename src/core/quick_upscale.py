@@ -81,10 +81,29 @@ _VIDEO_ARCHS     = {"tvt", "dam_vsr"}            # besoin entrée multi-frames
 
 
 def detect_arch_from_state(state_dict: dict) -> Optional[str]:
-    """Attempt to detect architecture from state_dict key patterns."""
-    keys_str = " ".join(state_dict.keys())
+    """Attempt to detect architecture from state_dict key patterns.
+
+    Signatures ending in '.weight' or '.bias' require an EXACT key match
+    (prevents false positives, e.g. RCAN's 'body.0.body.0.body.0.weight'
+    matching compact's 'body.0.weight' as a substring).
+    All other signatures (prefix/module-name patterns) use substring match.
+    """
+    keys     = set(state_dict.keys())
+    keys_str = " ".join(keys)
     for arch, signatures in ARCH_SIGNATURES.items():
-        if all(sig in keys_str for sig in signatures):
+        match = True
+        for sig in signatures:
+            if sig.endswith(".weight") or sig.endswith(".bias"):
+                # Full parameter name → must be an exact key
+                if sig not in keys:
+                    match = False
+                    break
+            else:
+                # Partial pattern (module prefix, class name, buffer) → substring ok
+                if sig not in keys_str:
+                    match = False
+                    break
+        if match:
             return arch
     return None
 
