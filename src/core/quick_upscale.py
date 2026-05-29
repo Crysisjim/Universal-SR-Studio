@@ -1555,7 +1555,8 @@ def upscale_image(
                             log(f"CATANet instancié (dim={dim}, scale={scale}x)")
                         finally:
                             _cat_au.net_opt = _saved_net_opt
-                except ImportError:
+                except Exception:
+                    # NeoSR can raise ValueError (parse_options), not just ImportError
                     pass
 
             # Try traiNNer-redux imports
@@ -1580,7 +1581,15 @@ def upscale_image(
                         model = OmniSR(upscale=scale)
                     elif detected_arch == "compact":
                         from traiNNer.archs.srvgg_arch import SRVGGNetCompact
-                        model = SRVGGNetCompact(upscale=scale)
+                        # Auto-detect num_feat + num_conv from checkpoint
+                        # body.0.weight: [num_feat, in_ch, 3, 3]  → out_ch = num_feat
+                        # body weight keys total = num_conv + 1 (input + intermediates + output)
+                        _cw0 = state_dict.get("body.0.weight")
+                        _c_nf = int(_cw0.shape[0]) if _cw0 is not None else 64
+                        _c_bw = [k for k in state_dict if k.startswith("body.") and k.endswith(".weight")]
+                        _c_nc = max(1, len(_c_bw) - 1) if _c_bw else 16
+                        model = SRVGGNetCompact(num_feat=_c_nf, num_conv=_c_nc, upscale=scale)
+                        log(f"SRVGGNetCompact instancié (num_feat={_c_nf}, num_conv={_c_nc}, scale={scale}x)")
                     elif detected_arch == "smosr":
                         from traiNNer.archs.smosr_arch import SMoSR
                         w = state_dict.get("blocks_1.0.body.0.W")
