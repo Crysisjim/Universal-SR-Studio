@@ -163,8 +163,9 @@ python src/core/benchmark_runner.py --list
 |---------|-------------|
 | **Temporal SR training** | Enter a video as GT reference, extract frame sequences, train TSPAN/TSPANv2 with sliding window input `[B, N, C, H, W]`. Full temporal consistency pipeline. |
 | **Temporal SR inference** | Sliding window N-frame inference with TSPAN/TSPANv2 and frame reassembly. |
-| **VOSR / OSEDiff** | Diffusion-based SR engine (CVPR 2026) as a third inference backend. |
 | **NVIDIA NIM provider** | `build.nvidia.com` as a new AI assistant provider — OpenAI-compatible API, free model credits (Llama, Mistral, Phi…). |
+
+> ⏸ **VOSR / OSEDiff** (diffusion-based SR, CVPR 2026) — integration paused indefinitely. Interest is limited due to very high VRAM requirements, making them impractical for most consumer GPUs.
 
 ### Contributing
 
@@ -315,8 +316,9 @@ Puis utiliser l'onglet **⚙️ Paramètres** pour installer les moteurs d'entra
 |---------|-------------|
 | **Entraînement Temporal SR** | Vidéo GT en entrée → extraction séquences frames → entraînement TSPAN/TSPANv2 avec fenêtre glissante `[B, N, C, H, W]`. Pipeline temporel complet. |
 | **Inférence Temporal SR** | Inférence N frames en fenêtre glissante avec TSPAN/TSPANv2 + réassemblage. |
-| **VOSR / OSEDiff** | Troisième moteur d'inférence SR basé sur la diffusion (CVPR 2026). |
 | **Provider NVIDIA NIM** | `build.nvidia.com` comme nouveau provider IA — API compatible OpenAI, crédits gratuits (Llama, Mistral, Phi…). |
+
+> ⏸ **VOSR / OSEDiff** (SR par diffusion, CVPR 2026) — intégration en pause indéfinie. Intérêt limité en raison d'une consommation VRAM très élevée, peu pratique sur la majorité des GPU grand public.
 
 ### Contribuer
 
