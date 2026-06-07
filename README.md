@@ -3,7 +3,7 @@
   <h1>Universal SR Studio</h1>
   <p>Graphical interface for training super-resolution AI models<br>with <strong>NeoSR</strong> and <strong>traiNNer-Redux</strong> engines.</p>
 
-  <a href="https://github.com/Crysisjim/Universal-SR-Studio/releases"><img src="https://img.shields.io/badge/Version-2.5.5-blue" alt="Version"/></a>
+  <a href="https://github.com/Crysisjim/Universal-SR-Studio/releases"><img src="https://img.shields.io/badge/Version-2.5.6-blue" alt="Version"/></a>
   <a href="https://github.com/Crysisjim/Universal-SR-Studio/wiki"><img src="https://img.shields.io/badge/📖_Wiki-Documentation-informational" alt="Wiki"/></a>
   <img src="https://img.shields.io/badge/Platform-Windows-lightgrey" alt="Platform"/>
   <img src="https://img.shields.io/badge/License-MIT-green" alt="License"/>
@@ -22,6 +22,19 @@
 A graphical interface for training and managing super-resolution AI models with **NeoSR** and **traiNNer-Redux** engines.
 
 [![📖 Wiki — Full Documentation](https://img.shields.io/badge/📖_Wiki-Full_Documentation-blue?style=for-the-badge)](https://github.com/Crysisjim/Universal-SR-Studio/wiki)
+
+### What's new in v2.5.6
+
+- **GAN Phase 2 training — Adaptive D** — native traiNNer-redux anti-collapse: discriminator automatically pauses when overpowering the generator (`adaptive_d` checkbox in Training tab)
+- **PerceptualAnimeLoss** — anime-specific perceptual loss (ResNet50 APISR port) added to Redux losses column
+- **SparkLoss (FD) browse button** — file picker for `epoch290.pth` directly in the UI
+- **Redux losses column wider** — 430→510px, all labels fully readable
+- **GAN weight persistence fix** — `loss_weight` value was lost on reload (key mismatch `dyn_gan_weight`/`gan_loss_weight` in reader+writer)
+- **Loss D graph fix** — parser was finding 0 points (regex `l_d_real` → `(?:l_)?d_real` to match traiNNer-redux log format)
+- **Monitoring persistence fix** — `auto_tensorboard`/`auto_ngrok` checkboxes not saved to YAML
+- **Custom architectures** — ParagonSR, ParagonSR2, FIGSR, GFISRv2, SMOSR, SPANpp injected into engine at training launch
+- **Custom engine losses** — SparkLoss (Fourier Domain) + InceptionNext backbone injected into traiNNer-redux
+- **ONNX runner** — new subprocess for ONNX inference in dedicated venv
 
 ### What's new in v2.5.5
 
@@ -63,7 +76,7 @@ A graphical interface for training and managing super-resolution AI models with 
 
 ### Quick Start — Portable (recommended)
 
-1. Download `Universal_SR_Studio_v2.5.5_portable.zip` from [Releases](https://github.com/Crysisjim/Universal-SR-Studio/releases)
+1. Download `Universal_SR_Studio_v2.5.6_portable.zip` from [Releases](https://github.com/Crysisjim/Universal-SR-Studio/releases)
 2. Extract anywhere
 3. Run `Universal_SR_Studio.exe`
 4. On first launch, choose your language (FR/EN), then go to **⚙️ Settings** → the built-in installer handles everything else
@@ -175,6 +188,19 @@ Interface graphique pour l'entraînement et la gestion de modèles d'IA super-r�
 
 [![📖 Wiki — Documentation complète](https://img.shields.io/badge/📖_Wiki-Documentation_complète-blue?style=for-the-badge)](https://github.com/Crysisjim/Universal-SR-Studio/wiki)
 
+### Nouveautés v2.5.6
+
+- **Entraînement GAN Phase 2 — Adaptive D** — anti-collapse natif traiNNer-redux : le discriminateur se met en pause automatiquement quand il écrase le générateur (checkbox `Adaptive D` dans l'onglet Entraînement)
+- **PerceptualAnimeLoss** — loss perceptuelle anime (ResNet50 APISR) ajoutée dans la colonne Redux
+- **SparkLoss (FD) bouton browse** — sélecteur de fichier `epoch290.pth` directement dans l'UI
+- **Colonne Redux élargie** — 430→510px, tous les labels entièrement lisibles
+- **Fix persistance GAN weight** — la valeur `loss_weight` était perdue au rechargement (clé incorrecte `dyn_gan_weight`/`gan_loss_weight` dans reader+writer)
+- **Fix graphe Loss D** — le parser ne trouvait aucun point (regex `l_d_real` → `(?:l_)?d_real` pour correspondre au format log traiNNer-redux)
+- **Fix persistance Monitoring** — cases `auto_tensorboard`/`auto_ngrok` non sauvegardées dans le YAML
+- **Architectures custom** — ParagonSR, ParagonSR2, FIGSR, GFISRv2, SMOSR, SPANpp injectées dans le moteur au lancement
+- **Losses moteur custom** — SparkLoss (Fourier Domain) + backbone InceptionNext injectés dans traiNNer-redux
+- **ONNX runner** — nouveau subprocess pour l'inférence ONNX dans un venv dédié
+
 ### Nouveautés v2.5.5
 
 - **Entraînement SpanC multi-scale** — `[1,2]` ou `[1,2,4]` entièrement fonctionnel (3 crashs résolus : GT resize, LDL EMA align, critère huber)
@@ -215,7 +241,7 @@ Interface graphique pour l'entraînement et la gestion de modèles d'IA super-r�
 
 ### Démarrage rapide — Portable (recommandé)
 
-1. Télécharger `Universal_SR_Studio_v2.5.5_portable.zip` depuis les [Releases](https://github.com/Crysisjim/Universal-SR-Studio/releases)
+1. Télécharger `Universal_SR_Studio_v2.5.6_portable.zip` depuis les [Releases](https://github.com/Crysisjim/Universal-SR-Studio/releases)
 2. Extraire n'importe où
 3. Lancer `Universal_SR_Studio.exe`
 4. Au premier lancement, choisir la langue (FR/EN), puis aller dans **⚙️ Paramètres** → l'installeur intégré gère le reste
