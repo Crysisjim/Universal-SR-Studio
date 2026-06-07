@@ -25,16 +25,13 @@ A graphical interface for training and managing super-resolution AI models with 
 
 ### What's new in v2.5.6
 
-- **GAN Phase 2 training — Adaptive D** — native traiNNer-redux anti-collapse: discriminator automatically pauses when overpowering the generator (`adaptive_d` checkbox in Training tab)
-- **PerceptualAnimeLoss** — anime-specific perceptual loss (ResNet50 APISR port) added to Redux losses column
-- **SparkLoss (FD) browse button** — file picker for `epoch290.pth` directly in the UI
-- **Redux losses column wider** — 430→510px, all labels fully readable
-- **GAN weight persistence fix** — `loss_weight` value was lost on reload (key mismatch `dyn_gan_weight`/`gan_loss_weight` in reader+writer)
-- **Loss D graph fix** — parser was finding 0 points (regex `l_d_real` → `(?:l_)?d_real` to match traiNNer-redux log format)
-- **Monitoring persistence fix** — `auto_tensorboard`/`auto_ngrok` checkboxes not saved to YAML
-- **Custom architectures** — ParagonSR, ParagonSR2, FIGSR, GFISRv2, SMOSR, SPANpp injected into engine at training launch
-- **Custom engine losses** — SparkLoss (Fourier Domain) + InceptionNext backbone injected into traiNNer-redux
-- **ONNX runner** — new subprocess for ONNX inference in dedicated venv
+- **Shared venv** — single `runtimes/.venv` replaces dual neosr+traiNNer venvs; Python 3.12.9, numpy ≥2, traiNNer-redux `dev` branch; saves ~3 GB disk
+- **New architectures** — custom-bundled and auto-injected: **ParagonSR** (nano/tiny/xs/s/m/l/xl/anime), **ParagonSR2** (photo/pro/realtime/stream/ultimate/ultimate_v2), **AetherNet** (NeoSR, mobile→extreme), FIGSR, GFISRv2, SMoSR, SPANpp; native in traiNNer-redux dev: srformer/v2, fdat, tfdat, spanf, spanplus, moesr/mosr/mosrv2, temporal_span_v2
+- **GAN Phase 2 training** — `RealESRGANModel` + `UNetDiscriminatorSN` pipeline; Adaptive D checkbox (auto-pauses discriminator to prevent collapse); SparkLoss FD + PerceptualAnimeLoss in Redux config; GAN weight persistence fix
+- **Custom degradations** — Custom 3+4 groups now correctly applied to training (were wired in UI but missing from sidecar writer); 3 new effects (disc_blur, vignette, quantize_depth); 2 new coupled clusters; severity preset button; 68 total keys (was 29)
+- **RCAN 1× fix** — bypass spandrel bug (wrong n_feats for 1× models); construction from state_dict directly
+- **Crash fixes** — Thumbs.db auto-clean before validation; TensorBoard path in frozen exe; UnicodeEncodeError on Windows stdout; zombie process on close; double-launch guard
+- **VRAM estimation** — calibrated for all ParagonSR, ParagonSR2 and AetherNet variants against real `torch.cuda.memory_reserved()` measurements
 
 ### What's new in v2.5.5
 
@@ -191,16 +188,13 @@ Interface graphique pour l'entraînement et la gestion de modèles d'IA super-r�
 
 ### Nouveautés v2.5.6
 
-- **Entraînement GAN Phase 2 — Adaptive D** — anti-collapse natif traiNNer-redux : le discriminateur se met en pause automatiquement quand il écrase le générateur (checkbox `Adaptive D` dans l'onglet Entraînement)
-- **PerceptualAnimeLoss** — loss perceptuelle anime (ResNet50 APISR) ajoutée dans la colonne Redux
-- **SparkLoss (FD) bouton browse** — sélecteur de fichier `epoch290.pth` directement dans l'UI
-- **Colonne Redux élargie** — 430→510px, tous les labels entièrement lisibles
-- **Fix persistance GAN weight** — la valeur `loss_weight` était perdue au rechargement (clé incorrecte `dyn_gan_weight`/`gan_loss_weight` dans reader+writer)
-- **Fix graphe Loss D** — le parser ne trouvait aucun point (regex `l_d_real` → `(?:l_)?d_real` pour correspondre au format log traiNNer-redux)
-- **Fix persistance Monitoring** — cases `auto_tensorboard`/`auto_ngrok` non sauvegardées dans le YAML
-- **Architectures custom** — ParagonSR, ParagonSR2, FIGSR, GFISRv2, SMOSR, SPANpp injectées dans le moteur au lancement
-- **Losses moteur custom** — SparkLoss (Fourier Domain) + backbone InceptionNext injectés dans traiNNer-redux
-- **ONNX runner** — nouveau subprocess pour l'inférence ONNX dans un venv dédié
+- **Venv partagé** — un seul `runtimes/.venv` remplace les deux venvs neosr+traiNNer ; Python 3.12.9, numpy ≥2, branche `dev` traiNNer-redux ; économise ~3 Go
+- **Nouvelles architectures** — custom bundlées et auto-injectées : **ParagonSR** (nano/tiny/xs/s/m/l/xl/anime), **ParagonSR2** (photo/pro/realtime/stream/ultimate/ultimate_v2), **AetherNet** (NeoSR, mobile→extreme), FIGSR, GFISRv2, SMoSR, SPANpp ; natives dans traiNNer-redux dev : srformer/v2, fdat, tfdat, spanf, spanplus, moesr/mosr/mosrv2, temporal_span_v2
+- **Entraînement GAN Phase 2** — pipeline `RealESRGANModel` + `UNetDiscriminatorSN` ; checkbox Adaptive D (met le discriminateur en pause pour éviter l'effondrement) ; SparkLoss FD + PerceptualAnimeLoss dans la config Redux ; fix persistance du poids GAN
+- **Dégradations custom** — groupes Custom 3+4 maintenant correctement appliqués à l'entraînement (câblés dans l'UI mais absents du sidecar) ; 3 nouveaux effets (disc_blur, vignette, quantize_depth) ; 2 clusters couplés ; bouton preset de sévérité ; 68 clés au total (était 29)
+- **Fix RCAN 1×** — contournement du bug spandrel (n_feats incorrect pour les modèles 1×) ; construction directe depuis le state_dict
+- **Fixes crashs** — nettoyage automatique Thumbs.db avant validation ; chemin TensorBoard dans l'exe portable ; UnicodeEncodeError sur stdout Windows ; processus zombie à la fermeture ; garde anti-double-lancement
+- **Estimation VRAM** — calibrée pour tous les variants ParagonSR, ParagonSR2 et AetherNet sur des mesures `torch.cuda.memory_reserved()` réelles
 
 ### Nouveautés v2.5.5
 
