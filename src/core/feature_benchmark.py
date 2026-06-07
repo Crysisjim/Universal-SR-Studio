@@ -33,8 +33,10 @@ from pathlib import Path
 from datetime import datetime
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
+_SHARED_VENV_PY = Path.home() / "IA_Engine" / "runtimes" / ".venv" / "Scripts" / "python.exe"
 NEOSR_PATH   = Path.home() / "IA_Engine" / "neosr"
-NEOSR_PYTHON = NEOSR_PATH / ".venv" / "Scripts" / "python.exe"
+# v2.5.6: prefer shared runtimes/.venv, fall back to legacy per-engine .venv.
+NEOSR_PYTHON = _SHARED_VENV_PY if _SHARED_VENV_PY.exists() else (NEOSR_PATH / ".venv" / "Scripts" / "python.exe")
 TRAIN_SCRIPT = NEOSR_PATH / "train.py"
 
 _THIS_DIR            = Path(__file__).parent

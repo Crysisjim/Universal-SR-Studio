@@ -58,6 +58,8 @@ def _find_python(engine: str) -> str:
         base = Path.home() / "IA_Engine" / "neosr"
 
     candidates = [
+        Path.home() / "IA_Engine" / "runtimes" / ".venv" / "Scripts" / "python.exe",  # v2.5.6 shared
+        Path.home() / "IA_Engine" / "runtimes" / ".venv" / "bin" / "python",          # Linux shared
         base / ".venv" / "Scripts" / "python.exe",   # Windows .venv
         base / "venv"  / "Scripts" / "python.exe",   # Windows venv
         base / ".venv" / "bin"     / "python",        # Linux .venv

@@ -38,12 +38,20 @@ import argparse
 from pathlib import Path
 from datetime import datetime
 
+_SHARED_VENV_PY = Path.home() / "IA_Engine" / "runtimes" / ".venv" / "Scripts" / "python.exe"
+
+def _engine_python(engine_root: Path) -> Path:
+    """v2.5.6: prefer shared runtimes/.venv, fall back to legacy per-engine .venv."""
+    if _SHARED_VENV_PY.exists():
+        return _SHARED_VENV_PY
+    return engine_root / ".venv" / "Scripts" / "python.exe"
+
 NEOSR_PATH     = Path.home() / "IA_Engine" / "neosr"
-NEOSR_PYTHON   = NEOSR_PATH / ".venv" / "Scripts" / "python.exe"
+NEOSR_PYTHON   = _engine_python(NEOSR_PATH)
 TRAIN_SCRIPT   = NEOSR_PATH / "train.py"
 
 TRAINNER_PATH   = Path.home() / "IA_Engine" / "traiNNer-redux"
-TRAINNER_PYTHON = TRAINNER_PATH / ".venv" / "Scripts" / "python.exe"
+TRAINNER_PYTHON = _engine_python(TRAINNER_PATH)
 
 _THIS_DIR = Path(__file__).parent
 NEOSR_RUNNER         = _THIS_DIR / "neosr_runner.py"

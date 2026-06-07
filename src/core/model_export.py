@@ -356,3 +356,17 @@ def format_model_info(info: dict) -> str:
                 lines.append(f"    - {n}: {s}")
 
     return "\n".join(lines)
+
+
+# ─── CLI entry — run in an engine venv (torch/safetensors) for the frozen portable build ───
+if __name__ == "__main__":
+    try:
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+    if len(sys.argv) >= 2:
+        _info = detect_model_format(sys.argv[1])
+        print(format_model_info(_info), flush=True)
+    else:
+        print("Usage: model_export.py <model_path>", flush=True)

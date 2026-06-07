@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-# PyInstaller spec — Universal SR Studio v2.5.5
+# PyInstaller spec — Universal SR Studio v2.5.6
 # Build: pyinstaller universal_sr_studio.spec
 # Output: dist/Universal_SR_Studio/Universal_SR_Studio.exe
 #
@@ -21,6 +21,22 @@ a = Analysis(
         ('assets', 'assets'),                                    # App assets: icons, sounds, themes
         ('src/core/persistent_upscale_worker.py', 'src/core/'), # v2.5.5: persistent batch worker
         ('src/core/universal_runner.py', 'src/core/'),          # v2.5.6: standalone subprocess runner (RCAN 1x fix) — run by external venv, must be a loose .py
+        ('src/core/custom_archs', 'src/core/custom_archs'),     # v2.5.5: custom arch .py injected into engine (gfisrv2, smosr, spanpp, figsr — absent from official repos)
+        ('src/core/custom_engine', 'src/core/custom_engine'),   # v2.5.6: custom TRAINING files injected into engine (spark_loss.py + inceptionnext_arch.py — SparkLoss backbone)
+        ('src/core/custom_neosr_archs', 'src/core/custom_neosr_archs'),  # v2.5.6: aethernet arch for neosr training
+        ('src/core/onnx_runner.py', 'src/core/'),               # v2.5.6: ONNX inference subprocess (onnxruntime in venv, not bundled in exe)
+        # v2.5.6: ALL subprocess scripts run by the engine venv must be loose .py on disk
+        ('src/core/neosr_runner.py', 'src/core/'),              # ESC inference (neosr venv)
+        ('src/core/neosr_general_runner.py', 'src/core/'),      # ninasr/lmlt/eimn/drct (neosr venv)
+        ('src/core/spanplus_runner.py', 'src/core/'),           # legacy SPANPlus runner
+        ('src/core/redux_inference_runner.py', 'src/core/'),    # redux inference helper
+        ('src/core/benchmark_runner.py', 'src/core/'),          # benchmark orchestrator
+        ('src/core/arch_benchmark.py', 'src/core/'),            # neosr arch benchmark
+        ('src/core/feature_benchmark.py', 'src/core/'),         # neosr feature benchmark
+        ('src/core/redux_arch_benchmark.py', 'src/core/'),      # redux arch benchmark
+        ('src/core/redux_feature_benchmark.py', 'src/core/'),   # redux feature benchmark
+        ('src/core/model_export.py', 'src/core/'),              # model info/convert CLI (torch/safetensors in venv)
+        ('src/core/tb_launcher.py', 'src/core/'),               # v2.5.6: TensorBoard subprocess launcher (venv python, must be loose .py on disk)
     ],
     hiddenimports=[
         # ── App modules (dynamic try/except imports) ──────────────────────────

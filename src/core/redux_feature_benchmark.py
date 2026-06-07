@@ -51,6 +51,7 @@ _DEFAULT_TEST_IMG = (
 def _find_venv_python(base: Path) -> Path:
     """Cherche python.exe dans les emplacements courants du venv (Windows + Linux)."""
     candidates = [
+        Path.home() / "IA_Engine" / "runtimes" / ".venv" / "Scripts" / "python.exe",  # v2.5.6 shared
         base / ".venv" / "Scripts" / "python.exe",   # Windows .venv (géré par Universal SR Studio)
         base / "venv"  / "Scripts" / "python.exe",   # Windows venv
         base / ".venv" / "bin"     / "python",        # Linux .venv

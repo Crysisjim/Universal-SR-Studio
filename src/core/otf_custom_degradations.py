@@ -186,6 +186,107 @@ def apply_scanlines(tensor: torch.Tensor, spacing: int, strength: float) -> torc
     return (tensor * mask).clamp(0.0, 1.0)
 
 
+# ─── Custom 3 — Torch implementations ────────────────────────────────────────
+
+def apply_screentone_t(tensor: torch.Tensor, dot_size: int) -> torch.Tensor:
+    """Halftone screentone: luma-based dot mask. dot_size = cell size in px."""
+    B, C, H, W = tensor.shape
+    ds = max(2, int(dot_size))
+    luma = (0.299 * tensor[:, 0:1] + 0.587 * tensor[:, 1:2] + 0.114 * tensor[:, 2:3])
+    cy = (torch.arange(H, device=tensor.device, dtype=tensor.dtype) % ds) / ds - 0.5
+    cx = (torch.arange(W, device=tensor.device, dtype=tensor.dtype) % ds) / ds - 0.5
+    dist = (cx.unsqueeze(0) ** 2 + cy.unsqueeze(1) ** 2).sqrt()  # (H, W)
+    radius = (1.0 - luma) * 0.46  # (B, 1, H, W)
+    mask = (dist.unsqueeze(0).unsqueeze(0) < radius).float()
+    return (tensor * (1.0 - mask)).clamp(0.0, 1.0)
+
+
+def apply_pixelate_t(tensor: torch.Tensor, block_size: int) -> torch.Tensor:
+    """Pixelation: avg_pool downsample then nearest upsample."""
+    B, C, H, W = tensor.shape
+    bs = max(2, int(block_size))
+    small = F.avg_pool2d(tensor, bs, stride=bs)
+    return F.interpolate(small, size=(H, W), mode="nearest")
+
+
+def apply_sinusoidal_t(tensor: torch.Tensor, period: float, alpha: float,
+                       bias: float, vertical: bool = False) -> torch.Tensor:
+    """Sinusoidal brightness ripple."""
+    B, C, H, W = tensor.shape
+    freq = 2.0 * 3.14159 / max(period, 1.0)
+    if vertical:
+        coord = torch.arange(H, device=tensor.device, dtype=tensor.dtype)
+        wave = torch.sin(freq * coord + bias).view(1, 1, H, 1)
+    else:
+        coord = torch.arange(W, device=tensor.device, dtype=tensor.dtype)
+        wave = torch.sin(freq * coord + bias).view(1, 1, 1, W)
+    return (tensor + wave * alpha * 0.5).clamp(0.0, 1.0)
+
+
+# ─── Custom 4 — Torch implementations ────────────────────────────────────────
+
+def apply_color_levels_t(tensor: torch.Tensor, out_high: float,
+                         out_low: float, gamma: float) -> torch.Tensor:
+    """Levels: gamma on [0,1] then remap to [out_low, out_high]."""
+    t = tensor.clamp(0.0, 1.0)
+    if abs(gamma - 1.0) > 1e-4:
+        t = t.pow(1.0 / max(gamma, 1e-6))
+    return (t * (out_high / 255.0 - out_low / 255.0) + out_low / 255.0).clamp(0.0, 1.0)
+
+
+def apply_wtp_halo_t(tensor: torch.Tensor, strength: float, radius: int) -> torch.Tensor:
+    """Ringing/halo: amplify high-frequency edges."""
+    k = max(3, int(radius) * 2 + 1)
+    kernel = torch.ones(1, 1, k, k, device=tensor.device, dtype=tensor.dtype) / (k * k)
+    kernel = kernel.expand(tensor.shape[1], 1, k, k)
+    blurred = F.conv2d(tensor, kernel, padding=k // 2, groups=tensor.shape[1])
+    return (tensor + (tensor - blurred) * strength).clamp(0.0, 1.0)
+
+
+def apply_saturation_t(tensor: torch.Tensor, factor: float) -> torch.Tensor:
+    """Saturation adjustment via luminance interpolation."""
+    luma = (0.299 * tensor[:, 0:1] + 0.587 * tensor[:, 1:2] + 0.114 * tensor[:, 2:3])
+    return ((tensor - luma) * factor + luma).clamp(0.0, 1.0)
+
+
+def apply_pixel_shift_t(tensor: torch.Tensor, shift: int, axis: str) -> torch.Tensor:
+    """Shift all pixels along horizontal/vertical axis (glitch)."""
+    if axis in ("horizontal", "both", "les deux"):
+        tensor = torch.roll(tensor, shift, dims=3)
+    if axis in ("vertical", "both", "les deux"):
+        tensor = torch.roll(tensor, shift, dims=2)
+    return tensor
+
+
+# ─── NEW (sr_degrade inspired) — Torch ───────────────────────────────────────
+
+def apply_disc_blur(tensor: torch.Tensor, radius: float) -> torch.Tensor:
+    """Bokeh/defocus blur: box kernel approximating a disk. Simulates lens out-of-focus."""
+    k = max(3, int(radius * 1.5) * 2 + 1)
+    kernel = torch.ones(1, 1, k, k, device=tensor.device, dtype=tensor.dtype) / (k * k)
+    kernel = kernel.expand(tensor.shape[1], 1, k, k)
+    return F.conv2d(tensor, kernel, padding=k // 2, groups=tensor.shape[1]).clamp(0.0, 1.0)
+
+
+def apply_vignette(tensor: torch.Tensor, strength: float, radius: float) -> torch.Tensor:
+    """Lens vignetting: darken edges. tensor [B, C, H, W] in [0, 1]."""
+    B, C, H, W = tensor.shape
+    cy, cx = H / 2.0, W / 2.0
+    max_dist = (cx ** 2 + cy ** 2) ** 0.5
+    ys = torch.arange(H, device=tensor.device, dtype=tensor.dtype).view(H, 1) - cy
+    xs = torch.arange(W, device=tensor.device, dtype=tensor.dtype).view(1, W) - cx
+    dist_norm = (xs ** 2 + ys ** 2).sqrt() / max_dist
+    falloff = ((dist_norm - radius) / max(1.0 - radius, 1e-6)).clamp(0.0, 1.0)
+    vignette = (1.0 - strength * falloff).view(1, 1, H, W)
+    return (tensor * vignette).clamp(0.0, 1.0)
+
+
+def apply_quantize_depth(tensor: torch.Tensor, bits: int) -> torch.Tensor:
+    """Uniform sub-8-bit depth quantization (even steps, not per-channel rounding)."""
+    levels = float(2 ** max(1, int(bits)))
+    return (torch.floor(tensor * levels) / levels).clamp(0.0, 1.0)
+
+
 def custom_degrade(lq_tensor: torch.Tensor, opt: dict) -> torch.Tensor:
     """Apply all active custom degradations to LQ tensor based on opt config."""
     def _p(key):
@@ -197,6 +298,7 @@ def custom_degrade(lq_tensor: torch.Tensor, opt: dict) -> torch.Tensor:
             return float(v[0]), float(v[1])
         return float(default[0]), float(default[1])
 
+    # ── Custom 1 ──────────────────────────────────────────────────────────────
     if _p("posterize_prob") > 0 and random.random() < _p("posterize_prob"):
         lo, hi = _rng("posterize_bits_range", [3, 6])
         lq_tensor = apply_posterize(lq_tensor, random.randint(int(lo), int(hi)))
@@ -224,6 +326,7 @@ def custom_degrade(lq_tensor: torch.Tensor, opt: dict) -> torch.Tensor:
         lo, hi = _rng("vhs_strength_range", [0.1, 0.5])
         lq_tensor = apply_vhs(lq_tensor, random.uniform(lo, hi))
 
+    # ── Custom 2 ──────────────────────────────────────────────────────────────
     if _p("aliasing_prob") > 0 and random.random() < _p("aliasing_prob"):
         lo, hi = _rng("aliasing_scale_range", [0.5, 0.85])
         lq_tensor = apply_aliasing(lq_tensor, random.uniform(lo, hi))
@@ -256,6 +359,96 @@ def custom_degrade(lq_tensor: torch.Tensor, opt: dict) -> torch.Tensor:
         lq_tensor = apply_scanlines(lq_tensor,
                                     random.randint(int(sp_lo), max(int(sp_lo), int(sp_hi))),
                                     random.uniform(st_lo, st_hi))
+
+    # ── Custom 3 ──────────────────────────────────────────────────────────────
+    if _p("screentone_prob") > 0 and random.random() < _p("screentone_prob"):
+        lo, hi = _rng("screentone_dot_size", [7, 15])
+        lq_tensor = apply_screentone_t(lq_tensor, random.randint(int(lo), int(hi)))
+
+    if _p("pixelate_prob") > 0 and random.random() < _p("pixelate_prob"):
+        lo, hi = _rng("pixelate_size", [2, 16])
+        lq_tensor = apply_pixelate_t(lq_tensor, random.randint(int(lo), int(hi)))
+
+    if _p("sin_prob") > 0 and random.random() < _p("sin_prob"):
+        lo_s, hi_s = _rng("sin_shape", [100, 600])
+        lo_a, hi_a = _rng("sin_alpha", [0.1, 0.4])
+        lo_b, hi_b = _rng("sin_bias", [0.8, 1.2])
+        orient = opt.get("sin_orientation", "aléatoire")
+        vert = orient == "vertical" or (orient in ("aléatoire", "random") and random.random() > 0.5)
+        lq_tensor = apply_sinusoidal_t(lq_tensor,
+                                       random.uniform(lo_s, hi_s),
+                                       random.uniform(lo_a, hi_a),
+                                       random.uniform(lo_b, hi_b) * 3.14159,
+                                       vert)
+
+    # dithering: complex sequential algo → skip GPU impl; preview-only via PIL.
+    # subsampling_wtp: covered by chroma_subsampling; skip duplicate torch impl.
+
+    # ── Custom 4 ──────────────────────────────────────────────────────────────
+    if _p("color_level_prob") > 0 and random.random() < _p("color_level_prob"):
+        lo_h, hi_h = _rng("color_level_high", [220, 255])
+        lo_l, hi_l = _rng("color_level_low", [0, 35])
+        lo_g, hi_g = _rng("color_level_gamma", [0.7, 1.5])
+        lq_tensor = apply_color_levels_t(lq_tensor,
+                                         random.uniform(lo_h, hi_h),
+                                         random.uniform(lo_l, hi_l),
+                                         random.uniform(lo_g, hi_g))
+
+    if _p("wtp_halo_prob") > 0 and random.random() < _p("wtp_halo_prob"):
+        lo_s, hi_s = _rng("wtp_halo_strength", [0.1, 0.5])
+        lo_r, hi_r = _rng("wtp_halo_radius", [3, 12])
+        lq_tensor = apply_wtp_halo_t(lq_tensor,
+                                     random.uniform(lo_s, hi_s),
+                                     int(random.uniform(lo_r, hi_r)))
+
+    if _p("saturation_prob") > 0 and random.random() < _p("saturation_prob"):
+        lo, hi = _rng("saturation_range", [0.3, 1.8])
+        lq_tensor = apply_saturation_t(lq_tensor, random.uniform(lo, hi))
+
+    if _p("shift_prob") > 0 and random.random() < _p("shift_prob"):
+        lo, hi = _rng("shift_range", [1, 8])
+        axis = opt.get("shift_axis", "aléatoire")
+        if axis in ("aléatoire", "random"):
+            axis = random.choice(["horizontal", "vertical", "both"])
+        lq_tensor = apply_pixel_shift_t(lq_tensor, random.randint(int(lo), int(hi)), axis)
+
+    # ── NEW: DiscBlur / Vignette / QuantizeDepth ──────────────────────────────
+    if _p("disc_blur_prob") > 0 and random.random() < _p("disc_blur_prob"):
+        lo, hi = _rng("disc_blur_radius_range", [2.0, 8.0])
+        lq_tensor = apply_disc_blur(lq_tensor, random.uniform(lo, hi))
+
+    if _p("vignette_prob") > 0 and random.random() < _p("vignette_prob"):
+        lo_s, hi_s = _rng("vignette_strength_range", [0.2, 0.6])
+        lo_r, hi_r = _rng("vignette_radius_range", [0.45, 0.75])
+        lq_tensor = apply_vignette(lq_tensor,
+                                   random.uniform(lo_s, hi_s),
+                                   random.uniform(lo_r, hi_r))
+
+    if _p("quantize_depth_prob") > 0 and random.random() < _p("quantize_depth_prob"):
+        lo, hi = _rng("quantize_depth_bits_range", [4, 7])
+        lq_tensor = apply_quantize_depth(lq_tensor, random.randint(int(lo), int(hi)))
+
+    # ── Coupled clusters (fire-together groups, sr_degrade concept) ───────────
+    if _p("coupled_optical_prob") > 0 and random.random() < _p("coupled_optical_prob"):
+        # Cheap-lens cluster: disc_blur + vignette + CA all fire together
+        lo_r, hi_r = _rng("disc_blur_radius_range", [2.0, 8.0])
+        lq_tensor = apply_disc_blur(lq_tensor, random.uniform(lo_r, hi_r))
+        lo_s, hi_s = _rng("vignette_strength_range", [0.2, 0.6])
+        lo_rv, hi_rv = _rng("vignette_radius_range", [0.45, 0.75])
+        lq_tensor = apply_vignette(lq_tensor, random.uniform(lo_s, hi_s), random.uniform(lo_rv, hi_rv))
+        lo_ca, hi_ca = _rng("ca_shift_range", [1, 5])
+        lq_tensor = apply_chromatic_aberration(lq_tensor, random.randint(int(lo_ca), int(hi_ca)))
+
+    if _p("coupled_vintage_prob") > 0 and random.random() < _p("coupled_vintage_prob"):
+        # Vintage cluster: VHS + banding + film_grain fire together
+        lo_v, hi_v = _rng("vhs_strength_range", [0.1, 0.5])
+        lq_tensor = apply_vhs(lq_tensor, random.uniform(lo_v, hi_v))
+        lo_b, hi_b = _rng("banding_levels_range", [16, 64])
+        lq_tensor = apply_banding(lq_tensor, random.randint(int(lo_b), int(hi_b)))
+        lo_fg, hi_fg = _rng("film_grain_strength_range", [0.03, 0.12])
+        gs_lo, gs_hi = _rng("film_grain_size_range", [1, 2])
+        lq_tensor = apply_film_grain(lq_tensor, random.uniform(lo_fg, hi_fg),
+                                     random.randint(int(gs_lo), max(int(gs_lo), int(gs_hi))))
 
     return lq_tensor
 '''
@@ -299,6 +492,25 @@ _ALL_CUSTOM_KEYS = [
     "film_grain_prob", "film_grain_strength_range", "film_grain_size_range",
     "oversharp_prob", "oversharp_strength_range",
     "scanlines_prob", "scanlines_strength_range", "scanlines_spacing_range",
+    # Custom 3
+    "screentone_prob", "screentone_dot_size", "screentone_angle",
+    "screentone_dot_type", "screentone_color_space",
+    "dithering_prob", "dithering_color_ch", "dithering_type",
+    "pixelate_prob", "pixelate_size",
+    "sin_prob", "sin_shape", "sin_alpha", "sin_bias", "sin_orientation",
+    "subsampling_prob", "subsampling_format", "subsampling_yuv",
+    # Custom 4
+    "color_level_prob", "color_level_high", "color_level_low", "color_level_gamma",
+    "wtp_halo_prob", "wtp_halo_strength", "wtp_halo_radius",
+    "saturation_prob", "saturation_range",
+    "shift_prob", "shift_range", "shift_axis",
+    # NEW: DiscBlur / Vignette / QuantizeDepth
+    "disc_blur_prob", "disc_blur_radius_range",
+    "vignette_prob", "vignette_strength_range", "vignette_radius_range",
+    "quantize_depth_prob", "quantize_depth_bits_range",
+    # Coupled clusters
+    "coupled_optical_prob",
+    "coupled_vintage_prob",
 ]
 
 
@@ -307,15 +519,20 @@ def install_patches(engine_dir: str, has_posterize: bool, has_banding: bool,
                     has_halation: bool = False, has_salt_pepper: bool = False,
                     has_vhs: bool = False, has_aliasing: bool = False,
                     has_interlace: bool = False, has_film_grain: bool = False,
-                    has_oversharp: bool = False, has_scanlines: bool = False) -> bool:
+                    has_oversharp: bool = False, has_scanlines: bool = False,
+                    has_extra: bool = False) -> bool:
     """
     Install the custom degradation patches into the engine's data/ directory.
+
+    has_extra covers Custom 3, Custom 4, DiscBlur, Vignette, QuantizeDepth,
+    Coupled groups — all handled by the generic sidecar mechanism.
 
     Returns True if patches were installed (or already up-to-date).
     """
     has_any = any([has_posterize, has_banding, has_chroma, has_ca,
                    has_halation, has_salt_pepper, has_vhs, has_aliasing,
-                   has_interlace, has_film_grain, has_oversharp, has_scanlines])
+                   has_interlace, has_film_grain, has_oversharp, has_scanlines,
+                   has_extra])
     if not has_any:
         return uninstall_patches(engine_dir)
 

@@ -11,6 +11,7 @@ import time
 import glob
 from src.core.settings import SettingsManager
 from src.core.compute_estimator import detect_gpu_name, get_pytorch_recommendation
+from src.core import engine_paths as _ep
 
 def _get_assets_dir() -> str:
     """Return assets base dir — works in dev mode and PyInstaller portable.
@@ -292,9 +293,9 @@ class SettingsTab(ctk.CTkFrame):
 
     # --- PYTHON PORTABLE ---
     def get_portable_python_path(self):
-        py_path = os.path.join(self.runtimes_path, "python-3.11.9", "python.exe")
-        if os.path.exists(py_path): return py_path
-        return None
+        # v2.5.6: portable CPython 3.12 (neosr requires >=3.12,<3.13).
+        # engine_paths.portable_python() also falls back to legacy 3.11.9.
+        return _ep.portable_python()
 
     def _get_python_exe(self, prefer_portable=True):
         """Return a usable Python exe. In frozen builds sys.executable is the .exe, NOT Python."""
@@ -312,7 +313,7 @@ class SettingsTab(ctk.CTkFrame):
         return None
 
     def install_portable_python(self, on_done=None):
-        target_dir = os.path.join(self.runtimes_path, "python-3.11.9")
+        target_dir = os.path.join(self.runtimes_path, _ep.PORTABLE_PY_DIRNAME)
         if not os.path.exists(self.base_engine_path): os.makedirs(self.base_engine_path, exist_ok=True)
         installer_script_path = os.path.join(self.base_engine_path, "install_runtime.py")
         
@@ -323,21 +324,21 @@ except Exception: pass
 def log(msg): print(f'>> {{msg}}', flush=True)
 target_dir = r'{target_dir}'
 runtimes_path = r'{self.runtimes_path}'
-zip_path = os.path.join(runtimes_path, "python311.zip")
+zip_path = os.path.join(runtimes_path, "python312.zip")
 if os.path.exists(target_dir):
     import shutil
     try: shutil.rmtree(target_dir, ignore_errors=True)
     except Exception: pass
 os.makedirs(runtimes_path, exist_ok=True)
 os.makedirs(target_dir, exist_ok=True)
-url = 'https://www.python.org/ftp/python/3.11.9/python-3.11.9-embed-amd64.zip'
-log('Download Python 3.11...')
+url = 'https://www.python.org/ftp/python/{_ep.PYTHON_PATCH}/python-{_ep.PYTHON_PATCH}-embed-amd64.zip'
+log('Download Python {_ep.PYTHON_PATCH}...')
 try: urllib.request.urlretrieve(url, zip_path)
 except Exception: sys.exit(1)
 log('Extraction...')
 with zipfile.ZipFile(zip_path, 'r') as z: z.extractall(target_dir)
 os.remove(zip_path)
-pth = os.path.join(target_dir, "python311._pth")
+pth = os.path.join(target_dir, "python312._pth")
 if os.path.exists(pth):
     with open(pth, 'r') as f: c = f.read()
     c = c.replace('#import site', 'import site')
@@ -360,8 +361,8 @@ except Exception: pass
         if not py:
             return messagebox.showerror(
                 _t("Python introuvable", "Python not found"),
-                _t("Python n'est pas installé sur ce système.\nInstaller Python 3.11 depuis python.org puis relancer.",
-                   "Python is not installed on this system.\nInstall Python 3.11 from python.org then restart.")
+                _t(f"Python n'est pas installé sur ce système.\nInstaller Python {_ep.PYTHON_MINOR} depuis python.org puis relancer.",
+                   f"Python is not installed on this system.\nInstall Python {_ep.PYTHON_MINOR} from python.org then restart.")
             )
         cmd = [py, installer_script_path]
         def _after_python():
@@ -376,16 +377,25 @@ except Exception: pass
         Installe msgspec et les autres dépendances manquantes via un script piloté.
         """
         # Liste complète mise à jour pour Redux
-        pkgs = ["numpy<2.0.0", "opencv-python", "scipy", "pyyaml", "toml", "tqdm",
+        pkgs = ["numpy>=2", "opencv-python", "scipy", "pyyaml", "toml", "tqdm",
                 "tensorboard", "rich", "PyWavelets", "pillow", "einops", "lmdb", "msgspec",
-                "ema-pytorch", "torchvision"]
+                "ema-pytorch", "torchvision", "safetensors", "spandrel", "spandrel-extra-arches",
+                "pyvips", "pyvips-binary", "requests", "timm", "antialiased_cnns", "pytorch-optimizer",
+                "onnxruntime-gpu", "onnx", "albumentations"]
 
-        if "Redux" in engine_name:
-            pkgs.extend(["albumentations"])
-            
+        # Recommended CUDA torch — reinstalled LAST so deps (ema-pytorch, timm…) that pull
+        # CPU torch don't leave the venv on a CPU build.
+        try:
+            _rec = get_pytorch_recommendation()
+            _torch_pkg = _rec["install_pkgs"][0]
+            _tv_pkg = _rec["install_pkgs"][1]
+            _whl_url = _rec["whl_url"]
+        except Exception:
+            _torch_pkg, _tv_pkg, _whl_url = "torch==2.7.0", "torchvision==0.22.0", "https://download.pytorch.org/whl/cu126"
+
         pkgs_str = " ".join(pkgs)
         script_path = os.path.join(cwd, "update_deps_temp.py")
-        
+
         script_content = f"""
 import subprocess
 import sys
@@ -405,6 +415,19 @@ try:
     subprocess.check_call([py_exe, "-m", "pip", "install", "--upgrade", "pip"])
     # Installation des dépendances
     subprocess.check_call(cmd)
+    # Réassertion CUDA torch EN DERNIER (les deps ont pu tirer un torch CPU)
+    _has_cuda = False
+    try:
+        import subprocess as _sp
+        _r = _sp.run(["nvidia-smi"], capture_output=True, timeout=8)
+        _has_cuda = _r.returncode == 0
+    except Exception:
+        pass
+    if _has_cuda:
+        print(">> Réassertion PyTorch CUDA (override torch CPU éventuel)...")
+        subprocess.call([py_exe, "-m", "pip", "uninstall", "-y", "torch", "torchvision", "torchaudio"])
+        subprocess.check_call([py_exe, "-m", "pip", "install", "{_torch_pkg}", "{_tv_pkg}",
+                               "--index-url", "{_whl_url}", "--no-cache-dir"])
     print(">> [SUCCES] Toutes les dépendances sont installées.")
 except Exception as e:
     print(f">> [ERREUR] {{e}}")
@@ -442,38 +465,69 @@ except Exception: pass
         _whl_url    = _rec["whl_url"]
         _cuda_label = f"{_rec['torch_version']} CUDA {_rec['cuda_tag']}"
 
-        reqs = "numpy<2.0.0\nopencv-python\nscipy\npyyaml\ntoml\ntqdm\ntensorboard\nrich\nPyWavelets\npillow\neinops\nlmdb\nema-pytorch\n"
-        if "Redux" in engine_name:
-            reqs += "albumentations\n"
+        # Full dependency list = UNION of traiNNer-redux (dev) pyproject + neosr needs.
+        # v2.5.6 shared-venv refactor: numpy>=2 (BOTH engines now require it; the old
+        # numpy<2 pin is what blocked the merge). torch/torchvision installed separately
+        # (CUDA build). opencv-python (full) covers neosr's opencv-python-headless symbols.
+        reqs = ("numpy>=2\nopencv-python\nscipy\npyyaml\ntoml\ntqdm\ntensorboard\n"
+                "rich\nPyWavelets\npillow\neinops\nlmdb\nema-pytorch\nsafetensors\n"
+                "spandrel\nspandrel-extra-arches\npyvips\npyvips-binary\nrequests\n"
+                "timm\nmsgspec\nantialiased_cnns\npytorch-optimizer\nonnxruntime-gpu\nonnx\n"
+                # albumentations needed by traiNNer-redux OTF; harmless for neosr.
+                "albumentations\n")
+
+        # v2.5.6: traiNNer-redux tracks the *dev* branch (native ECO, spanf3,
+        # srformerv2). neosr stays on default branch.
+        git_branch = _ep.REDUX_GIT_BRANCH if "Redux" in engine_name else _ep.NEOSR_GIT_BRANCH
+        # ONE shared venv for both engines, under runtimes/.venv.
+        shared_venv = _ep.shared_venv_dir()
 
         script_content = f"""
 import os, sys, subprocess
 def log(msg): print(f'>> {{msg}}', flush=True)
 TARGET = r'{target_path}'
 GIT_URL = '{git_url}'
+GIT_BRANCH = '{git_branch}'
 PORTABLE_PY = r'{portable_py}'
 REQ_FILE = os.path.join(TARGET, "requirements.txt")
-VENV_DIR = os.path.join(TARGET, ".venv")
+# SHARED venv (v2.5.6) — both engines install into the same env.
+VENV_DIR = r'{shared_venv}'
+os.makedirs(os.path.dirname(VENV_DIR), exist_ok=True)
 if not os.path.exists(os.path.join(TARGET, ".git")):
-    log("Git Clone...")
-    subprocess.call(['git', 'clone', GIT_URL, '.'], cwd=TARGET, shell=True)
+    log(f"Git Clone (branch {{GIT_BRANCH}})...")
+    subprocess.call(['git', 'clone', '-b', GIT_BRANCH, GIT_URL, '.'], cwd=TARGET, shell=True)
 else:
-    log("Git Pull...")
-    subprocess.call(['git', 'pull'], cwd=TARGET, shell=True)
+    log(f"Git Pull (branch {{GIT_BRANCH}})...")
+    subprocess.call(['git', 'checkout', GIT_BRANCH], cwd=TARGET, shell=True)
+    subprocess.call(['git', 'pull', 'origin', GIT_BRANCH], cwd=TARGET, shell=True)
 if not os.path.exists(REQ_FILE):
     with open(REQ_FILE, "w", encoding="utf-8") as f: f.write('''{reqs}''')
 if not os.path.exists(VENV_DIR):
-    log("Creation VENV...")
+    log("Creation VENV partage (runtimes/.venv)...")
     subprocess.call([PORTABLE_PY, "-m", "virtualenv", VENV_DIR], cwd=TARGET)
 pip = os.path.join(VENV_DIR, "Scripts", "pip.exe") if sys.platform == "win32" else os.path.join(VENV_DIR, "bin", "pip")
 log("Update PIP...")
 subprocess.call([pip, "install", "--upgrade", "pip", "wheel"], cwd=TARGET)
-log("Install Torch {_cuda_label} (~2.8 GB) — patience, pip telecharge en silence...")
-subprocess.call([pip, "uninstall", "-y", "torch", "torchvision"], cwd=TARGET)
-subprocess.call([pip, "install", "{_torch_pkg}", "{_tv_pkg}", "--index-url", "{_whl_url}", "--no-cache-dir"], cwd=TARGET)
-log("Install Deps...")
+log("Install Deps (sans torch pour l'instant)...")
 subprocess.call([pip, "install", "-r", "requirements.txt"], cwd=TARGET)
-subprocess.call([pip, "install", "tensorboard", "rich"], cwd=TARGET)
+subprocess.call([pip, "install", "tensorboard", "rich", "spandrel", "spandrel-extra-arches", "safetensors", "pyvips", "pyvips-binary", "requests", "timm", "antialiased_cnns", "pytorch-optimizer", "msgspec", "onnxruntime-gpu", "onnx"], cwd=TARGET)
+# Skip CUDA torch download if the shared venv already has the correct CUDA build installed.
+_installed_torch = ""
+try:
+    import subprocess as _sp2
+    _r = _sp2.run([os.path.join(VENV_DIR, "Scripts", "python.exe") if sys.platform == "win32" else os.path.join(VENV_DIR, "bin", "python"), "-c", "import torch; print(torch.__version__)"], capture_output=True, text=True, timeout=20)
+    if _r.returncode == 0: _installed_torch = _r.stdout.strip()
+except Exception: pass
+_want_pkg = "{_torch_pkg}"  # e.g. "torch==2.7.0"
+_want_ver  = _want_pkg.split("==")[1] if "==" in _want_pkg else ""
+_cuda_tag  = "{_rec['cuda_tag']}"  # e.g. "cu126"
+_already_ok = _want_ver and _cuda_tag in _installed_torch and _want_ver in _installed_torch
+if _already_ok:
+    log(f"Torch {{_installed_torch}} CUDA deja installe dans le venv partage — skip re-download.")
+else:
+    log("Install Torch {_cuda_label} (~2.8 GB) — override tout torch CPU installe par les deps...")
+    subprocess.call([pip, "uninstall", "-y", "torch", "torchvision", "torchaudio"], cwd=TARGET)
+    subprocess.call([pip, "install", "{_torch_pkg}", "{_tv_pkg}", "--index-url", "{_whl_url}", "--no-cache-dir"], cwd=TARGET)
 log("[OK] TERMINE !")
 try: import os as _os; _os.remove(__file__)
 except Exception: pass
@@ -518,7 +572,7 @@ except Exception: pass
         # Read installed torch version for each engine venv
         venv_versions = {}
         for eng_name, eng_path in [("NeoSR", self.neosr_path), ("TraiNNer-Redux", self.redux_path)]:
-            venv_py = os.path.join(eng_path, ".venv", "Scripts", "python.exe")
+            venv_py = _ep.resolve_engine_python(eng_path)
             venv_versions[eng_name] = self._get_venv_torch_version(venv_py)
 
         rec["_venv_versions"] = venv_versions
@@ -626,7 +680,7 @@ except Exception: pass
 
         any_engine_shown = False
         for eng_name, eng_path, btn_color in engines:
-            venv_py = os.path.join(eng_path, ".venv", "Scripts", "python.exe")
+            venv_py = _ep.resolve_engine_python(eng_path)
             if not os.path.exists(venv_py):
                 continue
             any_engine_shown = True
@@ -650,7 +704,20 @@ except Exception: pass
                 min_tuple  = self._parse_version(min_ver)
                 rec_tuple  = self._parse_version(rec_ver)
 
-                if inst_tuple < min_tuple:
+                # CPU torch on a machine with GPU → needs CUDA torch regardless of version number
+                _is_cpu_only = "+cpu" in installed.lower()
+                _has_gpu = rec.get("gpu_name", "?") not in ("?", "Erreur", "N/A", "")
+
+                if _is_cpu_only and _has_gpu:
+                    ctk.CTkButton(
+                        r_eng, text=f"⬆ Passer PyTorch CUDA {rec_ver} → {eng_name} (CPU détecté)",
+                        fg_color="#c0392b", height=28, font=("Arial", 11),
+                        command=lambda p=venv_py, ep=eng_path, pk=pkgs, w=whl, en=eng_name:
+                            self._install_pytorch_for_engine(p, ep, pk, w, en)
+                    ).pack(side="left", padx=(0, 8))
+                    ctk.CTkLabel(r_eng, text=f"({installed} — CPU seulement)", text_color="#e67e22",
+                                 font=("Arial", 10)).pack(side="left")
+                elif inst_tuple < min_tuple:
                     # Version trop ancienne → upgrade nécessaire
                     ctk.CTkButton(
                         r_eng, text=f"⬆ {_t('Mettre a jour', 'Update')} PyTorch {installed} → {rec_ver} ({eng_name})",
@@ -747,7 +814,7 @@ except Exception: pass
 
         py = self.get_portable_python_path()
         if not py:
-            if messagebox.askyesno(_t("Requis", "Required"), _t("Python 3.11 Portable requis. Télécharger ?", "Python 3.11 Portable required. Download?")):
+            if messagebox.askyesno(_t("Requis", "Required"), _t(f"Python {_ep.PYTHON_PATCH} Portable requis. Télécharger ?", f"Python {_ep.PYTHON_PATCH} Portable required. Download?")):
                 # Chain: after Python installs, auto-launch engine install
                 _url, _path, _name = url, path, engine_name
                 def _continue_after_python():
@@ -803,7 +870,8 @@ except Exception: pass
 
         row_py = ctk.CTkFrame(f_top, fg_color="transparent", height=30); row_py.pack(fill="x", padx=10, pady=(5, 10))
         py = self.get_portable_python_path()
-        st, col = (_t("✅ Python 3.11 Portable (Prêt)", "✅ Python 3.11 Portable (Ready)"), "#2ecc71") if py else (_t("❌ Python Portable manquant", "❌ Python Portable missing"), "#e74c3c")
+        _pyver = _ep.PYTHON_PATCH
+        st, col = (_t(f"✅ Python {_pyver} Portable (Prêt)", f"✅ Python {_pyver} Portable (Ready)"), "#2ecc71") if py else (_t("❌ Python Portable manquant", "❌ Python Portable missing"), "#e74c3c")
         ctk.CTkLabel(row_py, text=st, text_color=col, font=("Consolas", 12, "bold")).pack(side="left")
         if not py: ctk.CTkButton(row_py, text=_t("📥 Télécharger", "📥 Download"), height=24, fg_color="#8e44ad", command=self.install_portable_python).pack(side="right")
 
@@ -830,8 +898,9 @@ except Exception: pass
         f_st = ctk.CTkFrame(f, fg_color="transparent"); f_st.pack(fill="both", expand=True, padx=10)
         f_act = ctk.CTkFrame(f, fg_color="transparent", height=50); f_act.pack(fill="x", padx=10, pady=10)
 
-        venv = os.path.join(path, ".venv")
-        py_venv = os.path.join(venv, "Scripts", "python.exe") if sys.platform == "win32" else os.path.join(venv, "bin", "python")
+        # v2.5.6: prefer the shared runtimes/.venv, fall back to legacy per-engine .venv.
+        py_venv = _ep.resolve_engine_python(path)
+        venv = os.path.dirname(os.path.dirname(py_venv))
         
         if not os.path.exists(os.path.join(path, "train.py")):
             ctk.CTkLabel(f_st, text="⚠️ FICHIERS MANQUANTS", font=("Arial", 14, "bold"), text_color="orange").pack(pady=20)
@@ -1795,7 +1864,7 @@ except ImportError:
 
         tk.Label(content_tk, text="Universal SR Studio", font=("Roboto", 24, "bold"),
                  fg="#3498db", bg="#1a1a2e").pack(pady=(5, 2))
-        tk.Label(content_tk, text="v2.5.5 -- Super-Resolution Training Suite",
+        tk.Label(content_tk, text="v2.5.6 -- Super-Resolution Training Suite",
                  fg="#AAAAAA", bg="#1a1a2e", font=("Roboto", 12)).pack()
 
         sep = tk.Frame(content_tk, height=2, bg="#3498db")

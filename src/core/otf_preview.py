@@ -264,6 +264,43 @@ def apply_scanlines_pil(img, spacing_range=(2, 4), strength_range=(0.2, 0.5)):
     return Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8))
 
 
+# ─── NEW: DiscBlur / Vignette / QuantizeDepth (sr_degrade inspired) ──────────
+
+def apply_disc_blur_pil(img, radius_range=(2.0, 8.0)):
+    """Bokeh/defocus blur approximating a disk kernel (lens out-of-focus)."""
+    radius = random.uniform(*radius_range)
+    # Gaussian with large radius approximates disk blur for preview purposes
+    return img.filter(ImageFilter.GaussianBlur(radius=radius * 0.7))
+
+
+def apply_vignette_pil(img, strength_range=(0.2, 0.6), radius_range=(0.45, 0.75)):
+    """Darken edges to simulate lens vignetting."""
+    if not NUMPY_AVAILABLE:
+        return img
+    strength = random.uniform(*strength_range)
+    radius = random.uniform(*radius_range)
+    arr = np.array(img).astype(np.float32)
+    h, w = arr.shape[:2]
+    cy, cx = h / 2.0, w / 2.0
+    max_dist = max((cx ** 2 + cy ** 2) ** 0.5, 1.0)
+    ys, xs = np.mgrid[0:h, 0:w].astype(np.float32)
+    dist_norm = np.sqrt((xs - cx) ** 2 + (ys - cy) ** 2) / max_dist
+    falloff = np.clip((dist_norm - radius) / max(1.0 - radius, 1e-6), 0.0, 1.0)
+    vignette = (1.0 - strength * falloff)[..., np.newaxis]
+    return Image.fromarray(np.clip(arr * vignette, 0, 255).astype(np.uint8))
+
+
+def apply_quantize_depth_pil(img, bits_range=(4, 7)):
+    """Uniform sub-8-bit depth reduction (even steps, different from posterize)."""
+    if not NUMPY_AVAILABLE:
+        return img
+    bits = random.randint(int(bits_range[0]), int(bits_range[1]))
+    levels = 2 ** bits
+    arr = np.array(img).astype(np.float32)
+    arr = np.floor(arr / 256.0 * levels) * (256.0 / levels)
+    return Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8))
+
+
 # ─── Custom 3 degradations ────────────────────────────────────────────────────
 
 def apply_screentone(img, dot_size: int = 8, angle_deg: float = 45.0,
@@ -696,6 +733,46 @@ def apply_otf_pipeline(img, config: dict, scale: int = 4) -> Tuple:
         sh_axis  = str(deg.get("shift_axis", "aléatoire"))
         out = apply_pixel_shift(out, shift_range=sh_range, axis=sh_axis)
         log.append(f"PixelShift range~U{sh_range} axis={sh_axis}")
+
+    # ===== NEW: DiscBlur / Vignette / QuantizeDepth =====
+    if random.random() < float(deg.get("disc_blur_prob", 0.0)):
+        r_range = _parse_range(deg.get("disc_blur_radius_range", "[2, 8]"), (2.0, 8.0))
+        out = apply_disc_blur_pil(out, r_range)
+        log.append(f"DiscBlur r~U{r_range}")
+
+    if random.random() < float(deg.get("vignette_prob", 0.0)):
+        st_range = _parse_range(deg.get("vignette_strength_range", "[0.2, 0.6]"), (0.2, 0.6))
+        ra_range = _parse_range(deg.get("vignette_radius_range", "[0.45, 0.75]"), (0.45, 0.75))
+        out = apply_vignette_pil(out, st_range, ra_range)
+        log.append(f"Vignette str~U{st_range}")
+
+    if random.random() < float(deg.get("quantize_depth_prob", 0.0)):
+        b_range = _parse_range(deg.get("quantize_depth_bits_range", "[4, 7]"), (4, 7))
+        out = apply_quantize_depth_pil(out, b_range)
+        log.append(f"QuantizeDepth bits~U{b_range}")
+
+    # ===== Coupled clusters (fire-together groups) =====
+    if random.random() < float(deg.get("coupled_optical_prob", 0.0)):
+        # Cheap-lens: disc_blur + vignette + CA all fire together
+        r_range  = _parse_range(deg.get("disc_blur_radius_range", "[2, 8]"), (2.0, 8.0))
+        out = apply_disc_blur_pil(out, r_range)
+        st_range = _parse_range(deg.get("vignette_strength_range", "[0.2, 0.6]"), (0.2, 0.6))
+        ra_range = _parse_range(deg.get("vignette_radius_range", "[0.45, 0.75]"), (0.45, 0.75))
+        out = apply_vignette_pil(out, st_range, ra_range)
+        ca_range = _parse_range(deg.get("ca_shift_range", "[1, 5]"), (1, 5))
+        out = apply_chromatic_aberration(out, ca_range)
+        log.append("Coupled-Optical (disc_blur+vignette+CA)")
+
+    if random.random() < float(deg.get("coupled_vintage_prob", 0.0)):
+        # Vintage: VHS + banding + film_grain fire together
+        vhs_range = _parse_range(deg.get("vhs_strength_range", "[0.1, 0.5]"), (0.1, 0.5))
+        out = apply_vhs(out, vhs_range)
+        b_range = _parse_range(deg.get("banding_levels_range", "[16, 64]"), (16, 64))
+        out = apply_banding(out, b_range)
+        fg_range = _parse_range(deg.get("film_grain_strength_range", "[0.03, 0.12]"), (0.03, 0.12))
+        sz_range = _parse_range(deg.get("film_grain_size_range", "[1, 2]"), (1, 2))
+        out = apply_film_grain_pil(out, fg_range, sz_range)
+        log.append("Coupled-Vintage (VHS+banding+grain)")
 
     # ===== Final downscale to LR size =====
     if scale > 1:

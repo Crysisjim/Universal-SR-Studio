@@ -41,13 +41,15 @@ TRAIN_SCRIPT = REDUX_PATH / "train.py"
 
 _THIS_DIR              = Path(__file__).parent
 NEOSR_GENERAL_RUNNER   = _THIS_DIR / "neosr_general_runner.py"
-NEOSR_PYTHON           = Path.home() / "IA_Engine" / "neosr" / ".venv" / "Scripts" / "python.exe"
+_SHARED_VENV_PY        = Path.home() / "IA_Engine" / "runtimes" / ".venv" / "Scripts" / "python.exe"
+NEOSR_PYTHON           = _SHARED_VENV_PY if _SHARED_VENV_PY.exists() else (Path.home() / "IA_Engine" / "neosr" / ".venv" / "Scripts" / "python.exe")
 REDUX_INFERENCE_RUNNER = _THIS_DIR / "redux_inference_runner.py"
 
 
 def _find_venv_python(base: Path) -> Path:
     """Cherche python.exe dans les emplacements courants du venv (Windows + Linux)."""
     candidates = [
+        _SHARED_VENV_PY,                              # v2.5.6: shared runtimes/.venv first
         base / ".venv" / "Scripts" / "python.exe",   # Windows .venv (géré par Universal SR Studio)
         base / "venv"  / "Scripts" / "python.exe",   # Windows venv
         base / ".venv" / "bin"     / "python",        # Linux .venv

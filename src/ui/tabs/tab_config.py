@@ -393,7 +393,9 @@ class ConfigTab(ctk.CTkFrame):
             "loss_msswd", "weight_loss_msswd",
             "loss_consistency", "weight_loss_consistency",
             "consistency_blur", "consistency_cosim", "consistency_saturation", "consistency_brightness",
-            "loss_edge", "weight_loss_edge", "edge_criterion", "edge_corner",
+            # loss_edge / weight_loss_edge removed from NEOSR_ONLY — now compatible with Redux too
+            # (NeoSR → EdgeLoss, Redux → SobelEdgeLoss native dev). Only criterion/corner stay NeoSR-only.
+            "edge_criterion", "edge_corner",
             "loss_ncc", "weight_loss_ncc",
             "loss_kl", "weight_loss_kl",
             "loss_wavelet", "weight_loss_wavelet", "wavelet_init",
@@ -407,6 +409,11 @@ class ConfigTab(ctk.CTkFrame):
                 try: w.configure(state=state)
                 except Exception: pass
 
+        # Augmentations MoA (mixup/cutmix/resizemix/cutblur) — supportées pour les deux moteurs.
+        # Redux : train.use_moa / train.moa_augs / train.moa_probs (TrainOptions).
+        # NeoSR : augmentation / aug_prob dans datasets.train.
+        # Toutes actives — rien à griser.
+
         # Losses disponibles uniquement en mode Redux
         _REDUX_ONLY = [
             "loss_hsluv", "weight_loss_hsluv", "hsluv_hue_weight", "hsluv_sat_weight", "hsluv_lum_weight",
@@ -416,6 +423,7 @@ class ConfigTab(ctk.CTkFrame):
             "loss_luma",  "weight_loss_luma",  "luma_criterion",
             "loss_contextual", "weight_loss_contextual", "ctx_distance_type", "ctx_band_width",
             "loss_spark", "weight_loss_spark", "spark_criterion", "spark_path",
+            "loss_percep_anime", "weight_loss_percep_anime", "percep_anime_criterion",
             "eco_mode", "eco_pretrain_path",
         ]
         state_redux = "normal" if is_redux else "disabled"
@@ -524,6 +532,30 @@ class ConfigTab(ctk.CTkFrame):
             lbl_prob = ctk.CTkLabel(row, text=f"{default_prob:.2f}", width=40); lbl_prob.pack(side="left")
             self.aug_labels[f"prob_aug_{aug}"] = lbl_prob
             sl.configure(command=lambda v, l=lbl_prob: l.configure(text=f"{v:.2f}"))
+        # MoA Debug
+        row_moa_dbg = ctk.CTkFrame(f, fg_color="transparent"); row_moa_dbg.pack(fill="x", pady=4)
+        self.widgets["moa_debug"] = ctk.CTkCheckBox(
+            row_moa_dbg, text=_t("Aug. Debug", "Aug. Debug"),
+            width=110, onvalue="true", offvalue="false"
+        )
+        self.widgets["moa_debug"].pack(side="left")
+        ToolTip(self.widgets["moa_debug"], _t(
+            "Sauvegarde les images avant/après augmentation dans 'debug/moa/'.\n"
+            "Utile pour vérifier visuellement que les augmentations sont bien appliquées.\n"
+            "[!] Génère beaucoup de fichiers — désactiver après vérification.",
+            "Save images before/after augmentation in 'debug/moa/'.\n"
+            "Useful to visually verify augmentations are applied correctly.\n"
+            "[!] Generates many files — disable after verification."
+        ))
+        lbl_dbg_lim = ctk.CTkLabel(row_moa_dbg, text=_t("Limite :", "Limit:"), width=50)
+        lbl_dbg_lim.pack(side="left", padx=(15, 5))
+        self.widgets["moa_debug_limit"] = ctk.CTkEntry(row_moa_dbg, width=60)
+        self.widgets["moa_debug_limit"].insert(0, "100")
+        self.widgets["moa_debug_limit"].pack(side="left")
+        ToolTip(lbl_dbg_lim, _t(
+            "Nombre max d'itérations pour lesquelles les images debug sont sauvegardées.",
+            "Max iterations for which debug images are saved."
+        ))
         self.add_header(f, _t("Reprise / Pretrain", "Resume / Pretrain"))
         self.row_file_picker(f, _t("Resume State (.state) :", "Resume State (.state):"), "resume_state", is_file=True)
         self.row_file_picker(f, _t("Pretrain Model (.pth) :", "Pretrain Model (.pth):"), "pretrain_model", is_file=True)
@@ -593,6 +625,12 @@ class ConfigTab(ctk.CTkFrame):
         self.add_param_grid(f_grid, "Total Iter", "150000", "total_iter", 1, 0, "Nombre total de pas d'entraînement.\nPour un anime complet, 150k - 300k est recommandé.")
         self.add_param_grid(f_grid, "Warmup Iter", "-1", "warmup_iter", 1, 1, "warmup_iter")
         self.add_param_grid(f_grid, "Warmup Steps", "-1", "warmup_steps", 1, 2, "warmup_steps")
+        # Adaptive D — row 2 col 0 (via frame inline pour avoir checkbox dans la grille)
+        _f_adap = ctk.CTkFrame(f_grid, fg_color="transparent"); _f_adap.grid(row=2, column=0, padx=5, pady=5, sticky="ew")
+        ctk.CTkLabel(_f_adap, text=_t("Adaptive D (GAN)", "Adaptive D (GAN)"), font=("Roboto", 10)).pack(anchor="w")
+        _chk_adap = ctk.CTkCheckBox(_f_adap, text="", width=28, onvalue="true", offvalue="false"); _chk_adap.pack(anchor="w"); self.widgets["adaptive_d"] = _chk_adap
+        ToolTip(_chk_adap, _t("Met en pause le Discriminateur quand il est trop dominant (l_g_gan augmente).\nPrévient l'effondrement du G en laissant D souffler.\nRecommandé en GAN — anti-collapse natif traiNNer-redux.",
+                               "Pauses the Discriminator when it overpowers the Generator (l_g_gan increases).\nPrevents Generator collapse by letting G catch up.\nRecommended for GAN — native traiNNer-redux anti-collapse."))
         # ---- Ligne: Optimiseur G + Scheduler + Sched. Free sur une seule ligne ----
         f_opt = ctk.CTkFrame(f, fg_color="transparent"); f_opt.pack(fill="x", pady=(5, 3))
         self.add_label_tip(f_opt, _t("Optimiseur G :", "Optimizer G:"), "optim_g")
@@ -695,6 +733,17 @@ class ConfigTab(ctk.CTkFrame):
         ToolTip(self._chk_deg_vhs, _t("Si coché : le preset applique les dégradations VHS/analogiques.\nDécocher = remet VHS à zéro immédiatement.",
                                         "If checked: the preset applies VHS/analog degradations.\nUncheck = resets VHS to zero immediately."))
         self.lbl_deg_info = ctk.CTkLabel(f_pre, text="", text_color="gray"); self.lbl_deg_info.pack(side="left", padx=10)
+
+        # ── Severity presets — sur la même ligne que Preset (pas de conflit grid) ──
+        ctk.CTkLabel(f_pre, text="│", text_color="#555", font=("Arial", 14)).pack(side="left", padx=(6, 4))
+        ctk.CTkLabel(f_pre, text=_t("⚡ Sévérité custom :", "⚡ Custom Severity:"),
+                     font=("Arial", 10, "bold"), text_color="#9b59b6").pack(side="left", padx=(0, 4))
+        for _lbl, _key in [("none", "none"), ("mild", "mild"), ("med.", "medium"),
+                            ("heavy", "heavy"), ("max", "extreme")]:
+            ctk.CTkButton(
+                f_pre, text=_lbl, width=52, height=24, font=("Arial", 9),
+                command=lambda lvl=_key: self._apply_severity_preset(lvl)
+            ).pack(side="left", padx=1)
 
         def add_control(parent, label, key, default, type="entry", slider_max=1.0, step=0.01, pady=2):
             row = ctk.CTkFrame(parent, fg_color="transparent"); row.pack(fill="x", pady=pady)
@@ -827,6 +876,38 @@ class ConfigTab(ctk.CTkFrame):
         add_control(sc_right, "Halation Strength", "halation_strength_range",  "[0.05, 0.3]", "range",  pady=1)
         add_control(sc_right, "Salt&Pepper Prob",  "salt_pepper_prob",         0.0,           "slider", 1.0, pady=1)
         add_control(sc_right, "S&P Amount",        "salt_pepper_amount_range", "[0.001, 0.05]","range",  pady=1)
+
+        # ── NEW: DiscBlur + Vignette (left) / QuantizeDepth + Coupled (right) ──
+        self.add_header(sc_left, _t("Flou Bokeh / Défocus", "Bokeh / Defocus Blur"))
+        add_control(sc_left, _t("Disc Blur Prob", "Disc Blur Prob"), "disc_blur_prob",
+                    0.0, "slider", 1.0, pady=1)
+        add_control(sc_left, _t("Rayon (px)", "Radius (px)"), "disc_blur_radius_range",
+                    "[2, 8]", "range", pady=1)
+
+        self.add_header(sc_left, _t("Vignettage", "Vignette"))
+        add_control(sc_left, "Vignette Prob", "vignette_prob", 0.0, "slider", 1.0, pady=1)
+        add_control(sc_left, _t("Intensité", "Strength"),  "vignette_strength_range",
+                    "[0.2, 0.6]", "range", pady=1)
+        add_control(sc_left, _t("Rayon net", "Clear radius"), "vignette_radius_range",
+                    "[0.45, 0.75]", "range", pady=1)
+
+        self.add_header(sc_right, _t("Profondeur Bit (Quant.)", "Bit Depth (Quantize)"))
+        add_control(sc_right, _t("Quant. Depth Prob", "Quant. Depth Prob"), "quantize_depth_prob",
+                    0.0, "slider", 1.0, pady=1)
+        add_control(sc_right, _t("Bits (4–7)", "Bits (4–7)"), "quantize_depth_bits_range",
+                    "[4, 7]", "range", pady=1)
+
+        self.add_header(sc_right, _t("Clusters Couplés (sr_degrade)", "Coupled Clusters (sr_degrade)"))
+        add_control(sc_right, _t("Optique Prob", "Optical Cluster Prob"), "coupled_optical_prob",
+                    0.0, "slider", 1.0, pady=1)
+        ToolTip(self.widgets.get("coupled_optical_prob") or ctk.CTkFrame(sc_right),
+                _t("Disc Blur + Vignette + Aberration chr. tirent ensemble (un seul roll probabiliste).",
+                   "Disc Blur + Vignette + Chromatic Aberration all fire together (single prob roll)."))
+        add_control(sc_right, _t("Vintage Prob", "Vintage Cluster Prob"), "coupled_vintage_prob",
+                    0.0, "slider", 1.0, pady=1)
+        ToolTip(self.widgets.get("coupled_vintage_prob") or ctk.CTkFrame(sc_right),
+                _t("VHS + Banding + Film Grain tirent ensemble.",
+                   "VHS + Banding + Film Grain all fire together."))
 
         # --- Custom 2 : Aliasing + Interlace + Film Grain + OverSharp + Scanlines ---
         tc2.columnconfigure(0, weight=1)
@@ -986,6 +1067,8 @@ class ConfigTab(ctk.CTkFrame):
                     "• vertical : vertical glitch\n"
                     "• both : combined"))
 
+        # Severity presets intégrés dans f_pre (même ligne que Preset/checkboxes) — pas de grid séparé.
+
         # ─── Live preview (toujours visible sous les onglets) ───
         f.grid_propagate(False)             # empêche f de grandir quand la preview charge une image
         f.grid_rowconfigure(0, weight=0)
@@ -1081,7 +1164,7 @@ class ConfigTab(ctk.CTkFrame):
         f_loss_left = ctk.CTkFrame(_f_inner, fg_color="transparent")
         f_loss_left.pack(side="left", fill="y", padx=(0, 12))
         # Droite : Redux uniquement — largeur fixe 430px, fond légèrement plus clair
-        f_loss_right = ctk.CTkFrame(_f_inner, fg_color=("#DEDEDE", "#111827"), corner_radius=6, width=430)
+        f_loss_right = ctk.CTkFrame(_f_inner, fg_color=("#DEDEDE", "#111827"), corner_radius=6, width=510)
         f_loss_right.pack(side="left", fill="y")
         f_loss_right.pack_propagate(False)
         ctk.CTkLabel(f_loss_right, text=_t("⚡ Redux uniquement", "⚡ Redux only"), text_color="#3B8ED0",
@@ -1358,12 +1441,25 @@ class ConfigTab(ctk.CTkFrame):
         ctk.CTkLabel(f_ctx, text="W:", width=20).pack(side="left"); self.widgets["weight_loss_contextual"] = ctk.CTkEntry(f_ctx, width=42); self.widgets["weight_loss_contextual"].insert(0, "1.0"); self.widgets["weight_loss_contextual"].pack(side="left", padx=3)
         self.widgets["ctx_distance_type"] = ctk.CTkOptionMenu(f_ctx, values=["cosine", "l2"], width=82); self.widgets["ctx_distance_type"].pack(side="left", padx=3); self.widgets["ctx_distance_type"].set("cosine"); ToolTip(self.widgets["ctx_distance_type"], _t("Métrique de distance entre patches VGG.\ncosine : Angle entre vecteurs — plus robuste aux changements d'échelle. Recommandé.\nl2 : Distance euclidienne — plus sensible à la magnitude.", "Distance metric between VGG patches.\ncosine: Angle between vectors — more robust to scale changes. Recommended.\nl2: Euclidean distance — more sensitive to magnitude."))
         ctk.CTkLabel(f_ctx, text="BW:", width=28).pack(side="left"); self.widgets["ctx_band_width"] = ctk.CTkEntry(f_ctx, width=42); self.widgets["ctx_band_width"].insert(0, "0.5"); self.widgets["ctx_band_width"].pack(side="left", padx=3); ToolTip(self.widgets["ctx_band_width"], _t("Bandwidth (largeur de bande contextuelle).\nContrôle la tolérance aux décalages spatiaux entre patches.\nDéfaut : 0.5  |  Plus haut → plus de tolérance, pénalité plus douce.", "Bandwidth (contextual bandwidth).\nControls tolerance to spatial shifts between patches.\nDefault: 0.5  |  Higher → more tolerance, softer penalty."))
+        # Perceptual Anime Loss (ResNet50 — APISR, Redux only)
+        f_percep_anime = ctk.CTkFrame(f_loss_right, fg_color="transparent"); f_percep_anime.pack(fill="x", pady=2, padx=6)
+        chk_pa = ctk.CTkCheckBox(f_percep_anime, text="Percep. Anime", width=120, onvalue="true", offvalue="false"); chk_pa.pack(side="left"); self.widgets["loss_percep_anime"] = chk_pa; ToolTip(chk_pa, get_tooltip("loss_percep_anime"))
+        ctk.CTkLabel(f_percep_anime, text="W:", width=20).pack(side="left"); self.widgets["weight_loss_percep_anime"] = ctk.CTkEntry(f_percep_anime, width=42); self.widgets["weight_loss_percep_anime"].insert(0, "1.0"); self.widgets["weight_loss_percep_anime"].pack(side="left", padx=3)
+        self.widgets["percep_anime_criterion"] = ctk.CTkOptionMenu(f_percep_anime, values=["l1", "l2"], width=70); self.widgets["percep_anime_criterion"].pack(side="left", padx=3); self.widgets["percep_anime_criterion"].set("l1"); ToolTip(self.widgets["percep_anime_criterion"], _t("Critère Percep. Anime :\n- l1 : L1 loss (recommandé)\n- l2 : L2/MSE loss", "Percep. Anime criterion:\n- l1: L1 loss (recommended)\n- l2: L2/MSE loss"))
+
         # SparK Perceptual (Redux uniquement — InceptionNext features)
         f_spark = ctk.CTkFrame(f_loss_right, fg_color="transparent"); f_spark.pack(fill="x", pady=2, padx=6)
         chk_spark = ctk.CTkCheckBox(f_spark, text="SparK (Percep)", width=120, onvalue="true", offvalue="false"); chk_spark.pack(side="left"); self.widgets["loss_spark"] = chk_spark; ToolTip(chk_spark, get_tooltip("loss_spark"))
         ctk.CTkLabel(f_spark, text="W:", width=20).pack(side="left"); self.widgets["weight_loss_spark"] = ctk.CTkEntry(f_spark, width=42); self.widgets["weight_loss_spark"].insert(0, "0.2"); self.widgets["weight_loss_spark"].pack(side="left", padx=3)
         self.widgets["spark_criterion"] = ctk.CTkOptionMenu(f_spark, values=["fd", "charbonnier"], width=100); self.widgets["spark_criterion"].pack(side="left", padx=3); self.widgets["spark_criterion"].set("fd"); ToolTip(self.widgets["spark_criterion"], _t("Critère SparK :\n- fd : Fourier Domain (magnitude + phase, recommandé)\n- charbonnier : Charbonnier sur les features brutes", "SparK criterion:\n- fd: Fourier Domain (magnitude + phase, recommended)\n- charbonnier: Charbonnier on raw features"))
-        self.widgets["spark_path"] = ctk.CTkEntry(f_spark, width=130, placeholder_text=_t("epoch290.pth (opt)", "epoch290.pth (opt)")); self.widgets["spark_path"].pack(side="left", padx=3); ToolTip(self.widgets["spark_path"], _t("Chemin local vers les poids InceptionNext (epoch290.pth).\nLaissez vide pour téléchargement auto depuis GitHub.", "Local path to InceptionNext weights (epoch290.pth).\nLeave empty for automatic download from GitHub."))
+        self.widgets["spark_path"] = ctk.CTkEntry(f_spark, width=100, placeholder_text=_t("epoch290.pth (opt)", "epoch290.pth (opt)")); self.widgets["spark_path"].pack(side="left", padx=3); ToolTip(self.widgets["spark_path"], _t("Chemin local vers les poids InceptionNext (epoch290.pth).\nLaissez vide pour téléchargement auto depuis GitHub.", "Local path to InceptionNext weights (epoch290.pth).\nLeave empty for automatic download from GitHub."))
+        def _browse_spark_path():
+            import tkinter.filedialog as _fd
+            p = _fd.askopenfilename(title=_t("Sélectionner epoch290.pth", "Select epoch290.pth"), filetypes=[("PTH files","*.pth"),("All files","*.*")])
+            if p:
+                self.widgets["spark_path"].delete(0, "end")
+                self.widgets["spark_path"].insert(0, p)
+        ctk.CTkButton(f_spark, text="📂", width=28, command=_browse_spark_path).pack(side="left", padx=2)
 
         ctk.CTkLabel(f_loss_right, text="", height=4).pack()  # bottom padding
 
@@ -2581,16 +2677,19 @@ class ConfigTab(ctk.CTkFrame):
     def _collect_current_degradations(self) -> dict:
         """Read current values of all degradation widgets into a flat config dict."""
         keys = [
+            # Standard OTF
             "blur_prob", "blur_sigma", "gaussian_noise_prob", "noise_range", "gray_noise_prob",
             "jpeg_prob", "jpeg_range", "jpeg_range2",
             "second_blur_prob", "blur_sigma2", "gaussian_noise_prob2", "noise_range2", "gray_noise_prob2",
             "final_sinc_prob",
+            # Custom 1
             "posterize_prob", "posterize_bits_range", "banding_prob", "banding_levels_range",
             "chroma_prob",
             "ca_prob", "ca_shift_range",
             "halation_prob", "halation_strength_range",
             "salt_pepper_prob", "salt_pepper_amount_range",
             "vhs_prob", "vhs_strength_range",
+            # Custom 2
             "aliasing_prob", "aliasing_scale_range",
             "interlace_weave_prob", "interlace_weave_strength_range",
             "interlace_flicker_prob", "interlace_flicker_strength_range",
@@ -2598,6 +2697,24 @@ class ConfigTab(ctk.CTkFrame):
             "film_grain_prob", "film_grain_strength_range", "film_grain_size_range",
             "oversharp_prob", "oversharp_strength_range",
             "scanlines_prob", "scanlines_strength_range", "scanlines_spacing_range",
+            # Custom 3 — FIX: had UI widgets but were NOT collected → neither preview nor training saw them
+            "screentone_prob", "screentone_dot_size", "screentone_angle",
+            "screentone_dot_type", "screentone_color_space",
+            "dithering_prob", "dithering_color_ch", "dithering_type",
+            "pixelate_prob", "pixelate_size",
+            "sin_prob", "sin_shape", "sin_alpha", "sin_bias", "sin_orientation",
+            "subsampling_prob", "subsampling_format", "subsampling_yuv",
+            # Custom 4 — FIX: same, had UI but not collected
+            "color_level_prob", "color_level_high", "color_level_low", "color_level_gamma",
+            "wtp_halo_prob", "wtp_halo_strength", "wtp_halo_radius",
+            "saturation_prob", "saturation_range",
+            "shift_prob", "shift_range", "shift_axis",
+            # NEW: DiscBlur / Vignette / QuantizeDepth / Coupled clusters
+            "disc_blur_prob", "disc_blur_radius_range",
+            "vignette_prob", "vignette_strength_range", "vignette_radius_range",
+            "quantize_depth_prob", "quantize_depth_bits_range",
+            "coupled_optical_prob",
+            "coupled_vintage_prob",
         ]
         cfg = {}
         for k in keys:
@@ -2618,6 +2735,62 @@ class ConfigTab(ctk.CTkFrame):
             # Otherwise keep as string (e.g. "[0.2, 1.5]")
             cfg[k] = val
         return cfg
+
+    # ── Severity preset ────────────────────────────────────────────────────────
+    def _apply_severity_preset(self, level: str):
+        """Pre-fill all custom degradation probability sliders by severity level.
+
+        Inspired by sr_degrade's DegradationPipeline.from_profile() named-profile API.
+        Does NOT change range values (user keeps their param tuning), only probs.
+
+        Severity levels:  none=0  mild=0.1-0.2  medium=0.25-0.4  heavy=0.5  extreme=0.7-0.9
+        """
+        # Map: widget_key → {none, mild, medium, heavy, extreme}
+        _T = {
+            "posterize_prob":         (0, 0.1,  0.2,  0.4,  0.7),
+            "banding_prob":           (0, 0.1,  0.25, 0.4,  0.7),
+            "chroma_prob":            (0, 0.15, 0.3,  0.5,  0.8),
+            "ca_prob":                (0, 0.1,  0.2,  0.4,  0.6),
+            "halation_prob":          (0, 0.1,  0.15, 0.3,  0.5),
+            "salt_pepper_prob":       (0, 0.05, 0.15, 0.3,  0.5),
+            "vhs_prob":               (0, 0.0,  0.1,  0.3,  0.5),
+            "aliasing_prob":          (0, 0.0,  0.1,  0.25, 0.4),
+            "interlace_weave_prob":   (0, 0.0,  0.05, 0.2,  0.4),
+            "interlace_flicker_prob": (0, 0.0,  0.05, 0.15, 0.3),
+            "interlace_blend_prob":   (0, 0.0,  0.05, 0.15, 0.3),
+            "film_grain_prob":        (0, 0.2,  0.35, 0.5,  0.7),
+            "oversharp_prob":         (0, 0.1,  0.2,  0.35, 0.5),
+            "scanlines_prob":         (0, 0.0,  0.05, 0.2,  0.4),
+            "screentone_prob":        (0, 0.0,  0.05, 0.15, 0.3),
+            "dithering_prob":         (0, 0.0,  0.05, 0.15, 0.3),
+            "pixelate_prob":          (0, 0.0,  0.05, 0.1,  0.25),
+            "sin_prob":               (0, 0.0,  0.05, 0.1,  0.2),
+            "subsampling_prob":       (0, 0.1,  0.2,  0.35, 0.6),
+            "color_level_prob":       (0, 0.1,  0.2,  0.35, 0.5),
+            "wtp_halo_prob":          (0, 0.05, 0.15, 0.3,  0.5),
+            "saturation_prob":        (0, 0.1,  0.2,  0.35, 0.5),
+            "shift_prob":             (0, 0.0,  0.0,  0.1,  0.3),
+            "disc_blur_prob":         (0, 0.1,  0.2,  0.35, 0.5),
+            "vignette_prob":          (0, 0.15, 0.3,  0.45, 0.6),
+            "quantize_depth_prob":    (0, 0.0,  0.1,  0.25, 0.4),
+            "coupled_optical_prob":   (0, 0.0,  0.1,  0.2,  0.4),
+            "coupled_vintage_prob":   (0, 0.0,  0.0,  0.15, 0.3),
+        }
+        idx = {"none": 0, "mild": 1, "medium": 2, "heavy": 3, "extreme": 4}.get(level, 0)
+        for key, vals in _T.items():
+            w = self.widgets.get(key)
+            if w is None:
+                continue
+            try:
+                target_val = vals[idx]
+                w.set(target_val)
+            except Exception:
+                pass
+        # Refresh live preview after applying preset
+        try:
+            self._deg_refresh_preview()
+        except Exception:
+            pass
 
     def _deg_generate_otf_batch(self):
         """

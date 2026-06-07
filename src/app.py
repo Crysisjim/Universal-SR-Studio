@@ -184,6 +184,7 @@ class App(ctk.CTk):
                 self.settings_tab = SettingsTab(self.tab_view.tab(tab_name))
                 self.settings_tab.pack(fill="both", expand=True)
                 created_tabs.append(tab_name)
+                self._settings_tab_name = tab_name
                 print("[App] ✅ Onglet Settings créé")
             except Exception as e:
                 print(f"[App] ❌ Erreur Settings: {e}")
@@ -237,8 +238,31 @@ class App(ctk.CTk):
 
         # 7. ONGLET PAR DÉFAUT
         if created_tabs:
-            self.tab_view.set(created_tabs[0])
-            print(f"[App] Onglet par défaut : {created_tabs[0]}")
+            # First-launch: if no AI engine installed, open on Settings → AI Engines page
+            _no_engine = True
+            try:
+                _home = os.path.expanduser("~")
+                for _p in [os.path.join(_home, "IA_Engine", "neosr", "train.py"),
+                           os.path.join(_home, "IA_Engine", "traiNNer-redux", "train.py")]:
+                    if os.path.isfile(_p):
+                        _no_engine = False
+                        break
+            except Exception:
+                _no_engine = False
+
+            if _no_engine and getattr(self, "_settings_tab_name", None):
+                self.tab_view.set(self._settings_tab_name)
+                try:
+                    from src.core.translations import t as _t2
+                    self.settings_tab.tab_view.set(_t2("Moteurs IA"))
+                except Exception:
+                    try:
+                        self.settings_tab.tab_view.set("Moteurs IA")
+                    except Exception:
+                        pass
+                print("[App] Premier lancement (aucun moteur) → page Moteurs IA")
+            else:
+                self.tab_view.set(created_tabs[0])
             print(f"[App] {len(created_tabs)} onglets créés avec succès")
         else:
             messagebox.showerror(

@@ -42,6 +42,8 @@ TOOLTIPS = {
     "aug_cutmix": "CutMix : Colle un carré d'une image A sur une image B.\nForce le réseau à regarder l'image entière, pas juste des zones faciles.",
     "aug_resizemix": "ResizeMix : Redimensionne une image et la colle dans une autre.\nVariante plus stable de CutMix.",
     "aug_cutblur": "CutBlur : Colle une zone Basse Qualité (LQ) sur la Haute Qualité (HQ).\nApprend au réseau à gérer les zones mixtes net/flou. Très puissant.",
+    "moa_debug": "Sauvegarde les images avant/après augmentation dans 'debug/moa/'.\nUtile pour vérifier visuellement que les augmentations sont bien appliquées.\n[!] Génère beaucoup de fichiers — désactiver après vérification.",
+    "moa_debug_limit": "Nombre max d'itérations pour lesquelles les images debug sont sauvegardées.\nDéfaut : 100 — au-delà, la sauvegarde s'arrête automatiquement.",
 
 
 
@@ -111,6 +113,7 @@ TOOLTIPS = {
     # ================= LOSSES (FONCTIONS DE PERTE) =================
     "loss_pixel": "Pixel Loss (L1 / L2 / Huber / CHC).\nLa base de tout training. Force l'image à être mathématiquement proche de la cible pixel par pixel.\n\n--- NeoSR ---\nTypes : L1Loss, MSELoss (L2), HuberLoss, chc (Clipped Huber + Cosine Similarity).\nchc améliore la cohérence des couleurs et réduit le bruit.\n\n--- Redux ---\nTypes : l1loss, mseloss, charbonnierloss (Charbonnier = L1 lissé, recommandé).\n\n[+] Augmenter le poids → image plus fidèle mathématiquement.\n[-] Trop de poids → image floue (perd les textures fines).",
     "loss_percep": "Perceptual Loss (VGG19).\nUtilise un réseau VGG pré-entraîné pour comparer les 'caractéristiques' visuelles.\nCrée la netteté structurelle et les textures réalistes.\n\n--- NeoSR ---\nOptions : criterion (l1/l2/huber/chc), patchloss (Patch Loss pour le focus local), ipk (Image Patch Kernel).\nlayer_weights : conv1_2=0.1, conv3_4=1.0, conv4_4=1.0, conv5_4=1.0.\n\n--- Redux ---\nType : perceptualloss. Inclut Focal Distribution (num_proj_fd) + FP16 variant.\ncriterion : charbonnier (défaut), l1.\n\n[+] Augmenter → textures plus nettes, détails fins.\n[-] Trop de poids → artefacts, hallucinations.\n[!] Consomme +1-2 GB VRAM (charge VGG19).",
+    "loss_percep_anime": "Perceptual Anime Loss (ResNet50).\nLoss perceptuelle spécialisée pour l'animation (port de APISR).\nUtilise ResNet50 entraîné sur des données variées — bien mieux que VGG pour l'anime.\n\nBackbone : ResNet50 (layers intermédiaires spécifiques anime).\ncriterion : l1 (défaut).\n\n[+] Bien supérieure à VGG pour l'anime (couleurs plates, bords nets).\n[+] Moins d'hallucinations texture sur zones uniformes.\n[+] Complémentaire ou alternative à SparK FD.\n[!] TraiNNer-Redux uniquement.",
     "percep_criterion": "Méthode de comparaison pour VGG Perceptual.\n- L1 : Strict, très net. Risque d'artefacts en damier.\n- L2/MSE : Plus doux, moins d'artefacts.\n- Huber : Hybride L1/L2, robuste aux outliers. Recommandé NeoSR.\n- Charbonnier : Comme L1 mais lissé. Recommandé Redux.\n- CHC : Clipped Huber + Cosine Similarity (NeoSR uniquement).",
     "percep_layer": "Couche VGG utilisée pour extraire les features.\n* conv1_2 (0.1) : Très local — bruit, grain, pixels.\n* conv2_2 (0.1) : Textures fines — lignes, bords.\n* conv3_4 (1.0) : Formes moyennes — standard.\n* conv4_4 (1.0) : Textures complexes — recommandé SR.\n* conv5_4 (1.0) : Sémantique/abstrait — recommandé GAN.\n\nPoids plus haut = cette couche influence plus le résultat.",
     "fdl_model": "Modèle pour la FDL (Frequency Distribution Loss).\n- vgg : VGG19, classique, bon pour la structure.\n- dinov2 : Transformer Facebook. Comprend mieux les textures et le sémantique.\n- resnet : ResNet101, alternative.\n- effnet : EfficientNet v1.\n\nnum_proj : nombre de projections (24 par défaut, 256 dans le papier original).\n[+] Plus de projections → meilleure qualité perceptuelle.\n[-] Plus lent (heavy hit sur la performance).",
@@ -122,7 +125,7 @@ TOOLTIPS = {
     "loss_spark": "SparK Perceptual Loss.\nLoss perceptuelle basée sur les features InceptionNext (MetaNeXt, pré-entraîné).\n\nDeux critères :\n- fd : Fourier Domain sliced Wasserstein (magnitude + phase) — recommandé.\n- charbonnier : Charbonnier sur les feature maps brutes.\n\nLes poids sont téléchargés automatiquement (~200 MB) depuis GitHub si path est vide.\n\n[+] Texture très riche, efficace sur le grain et les détails.\n[+] Complémentaire à L1 ou Charbonnier.\n[!] TraiNNer-Redux uniquement.",
     "loss_ldl": "LDL Loss (Local Discriminative Learning).\nPénalise les artefacts dans les zones à haute fréquence (détails).\ncriterion : l1, l2, huber. ksize : taille du kernel (7 par défaut).\n\n[+] Préserve les détails fins sans flouter.\n[+] Bon complément à L1.\n[!] Disponible NeoSR et Redux.",
     "loss_consistency": "Consistency Loss.\nForce la cohérence des couleurs et de la luminosité entre sortie et cible.\nUtilise les espaces Oklab et CIE L* + Cosine Similarity.\n\nOptions : blur (lissage), cosim (similarité cosinus), saturation/brightness.\nmatch_lq_colors : matcher les couleurs du LQ au lieu du GT.\n\n[!] NeoSR uniquement.",
-    "loss_edge": "Edge Loss (Gradient-Weighted, GW Loss).\nForce le réseau à soigner les contours et les hautes fréquences.\ncriterion : l1, l2, huber, chc. corner : activer la détection de coins.\n\n[+] Lignes plus nettes, transitions plus propres.\n[!] NeoSR uniquement.",
+    "loss_edge": "Edge Loss — pénalise les erreurs sur les contours.\n\n• NeoSR : EdgeLoss (Gradient-Weighted, GW Loss) — critère l1/l2/huber/chc, option corner.\n• TraiNNer-Redux : SobelEdgeLoss (Sobel X+Y sur luma, MSE sur gradient magnitude) — native dev.\n\n[+] Lignes plus nettes, hautes fréquences mieux préservées.\n[+] Complémentaire à Charbonnier/L1.\n[✅] Compatible NeoSR ET TraiNNer-Redux.",
     "loss_mssim": "MS-SSIM Loss (Multi-Scale SSIM).\nMesure la similarité structurelle à plusieurs échelles.\n\n--- NeoSR ---\nOptions : window_size=11, sigma=1.5, K1=0.01, K2=0.03.\n\n--- Redux ---\nType : mssimloss. Options : channels=3, downsample=false, is_prod=true, color_space=yiq.\nVariante sssiml1 disponible (combine SSIM + L1).\n\n[+] Meilleur que L1 pour la structure perçue.\n[-] Peut lisser légèrement les détails très fins.",
     "loss_dists": "DISTS Loss.\nMesure la distance texture/structure via VGG16.\n\n[+] Excellente tolérance aux textures (grain, herbe) contrairement à LPIPS.\n[+] Peut être utilisé seul comme perceptual loss.\n[-] Consomme de la VRAM (+VGG16).\n[!] Disponible NeoSR (dists_loss) et Redux (distsloss).",
     "loss_msswd": "Multiscale Sliced Wasserstein Distance.\nLoss de cohérence couleur basée sur la distance de Wasserstein.\nnum_scale=3, num_proj=24 (128 dans le papier).\n\n[+] Idéal pour les textures aléatoires (herbe, eau, asphalte).\n[+] Complémentaire à Consistency Loss.\n[-] Lourd en calcul.\n[!] NeoSR uniquement.",
@@ -223,6 +226,51 @@ TOOLTIPS = {
     "scanlines_prob": "Probabilité d'appliquer des scanlines CRT.\n\nAssombrit une ligne sur N, simulant les lignes noires entre les rangées de phosphore d'un écran CRT. Artefact classique des captures de jeux retro, émulateurs, ou télévisions tubes.\n\n[+] Utile pour les datasets de jeux retro ou contenu CRT scanné.",
     "scanlines_strength_range": "Intensité de l'assombrissement des scanlines [Min, Max].\nEx: [0.2, 0.5]. 0.5 = ligne assombrie de 50%.",
     "scanlines_spacing_range": "Espacement entre les scanlines sombres en lignes [Min, Max].\nEx: [2, 4].\n- 2 : Une ligne sombre sur 2 (effet très prononcé).\n- 4 : Une ligne sombre sur 4 (subtil).",
+
+    # ── Custom 3 : Screentone / Dithering / Pixelate / Sinusoïdal / Subsampling ──
+    "screentone_prob": "Probabilité d'appliquer un motif screentone halftone.\nSimule la trame de points des impressions manga ou des comics.\n[+] Essentiel pour les datasets manga/scan numérique.\n[-] Ralentit légèrement (calcul de grille rotée).",
+    "screentone_dot_size": "Taille des cellules de la trame [Min, Max] en pixels.\nEx: [7, 15]. Petit = trame fine (impression haut-res). Grand = trame visible (vieux scan).",
+    "screentone_angle": "Angle de rotation de la trame en degrés [Min, Max].\nEx: [0, 90]. Varie pour éviter un moiré uniforme.",
+    "screentone_dot_type": "Forme des points du motif screentone.\ncircle : Standard manga.\nsquare : Impression digitale.\ncross : Effet gravure/BD western.",
+    "screentone_color_space": "Espace couleur dans lequel le motif est appliqué.\nrgb : Tous les canaux. gray : Luminance uniquement (plus réaliste).",
+    "dithering_prob": "Probabilité d'appliquer un tramage de couleurs.\nSimule la réduction de palette (vieux jeux, GIF, palettes 8-bit).\n[+] Utile pour datasets de captures de jeux retro ou exports GIF/PNG 8-bit.",
+    "dithering_color_ch": "Nombre de couleurs pour le tramage [Min, Max].\nEx: [2, 8]. 2 = Noir et blanc, 8 = Palette réduite.",
+    "dithering_type": "Algorithme de tramage.\nfloyd_steinberg : Diffusion d'erreur classique — recommandé.\nordered : Tramage Bayer (motif régulier).\nquantize : Réduction simple sans diffusion.\natkinson : Tramage léger (Apple Mac originel).",
+    "pixelate_prob": "Probabilité d'appliquer une pixelisation.\nSous-échantillonnage nearest-neighbor → ↓ puis ↑ → blocs visibles.\n[+] Simule les assets basse résolution, jeux retro, images web compressées.",
+    "pixelate_size": "Taille des blocs de pixelisation [Min, Max] en pixels.\nEx: [2, 16]. 2 = léger flou par blocs. 16 = gros pixels '8-bit'.",
+    "sin_prob": "Probabilité d'appliquer une ondulation sinusoïdale de luminosité.\nSimule les artefacts de compression vidéo ou les interférences analogiques.\n[+] Utile pour les datasets vidéo compressée ou les captures TV.",
+    "sin_shape": "Période de l'ondulation en pixels [Min, Max].\nEx: [100, 600]. Petit = ondulations serrées. Grand = dérive lente.",
+    "sin_alpha": "Amplitude de l'ondulation [Min, Max] (fraction de 255).\nEx: [0.1, 0.4]. 0.1 = subtil. 0.4 = clairement visible.",
+    "sin_bias": "Déphasage de l'onde via bruit aléatoire [Min, Max] × π.\nEx: [0.8, 1.2]. Varie la position de départ de l'onde.",
+    "sin_orientation": "Direction des ondulations.\nhorizontal : Bandes verticales (lignes de scan).\nvertical : Bandes horizontales.\naléatoire : Choix aléatoire par image.",
+    "subsampling_prob": "Probabilité d'appliquer un sous-échantillonnage chroma configurable (wtp-style).\nVersion avancée du chroma subsampling avec matrice YUV et format personnalisables.\n[+] Plus précis que le chroma_prob standard pour certains encodages vidéo.",
+    "subsampling_format": "Format de sous-échantillonnage chroma.\n4:4:4 : Aucune réduction. 4:2:2 : Horizontal ×2. 4:2:0 : ×2 H et V (standard JPEG). 4:1:1 : Forte réduction H.",
+    "subsampling_yuv": "Matrice de conversion YUV.\n601 = SD/vidéo ancienne. 709 = HD. 2020 = UHD.",
+
+    # ── Custom 4 : Niveaux couleur / Saturation / Shift / Halo ──────────────────
+    "color_level_prob": "Probabilité d'appliquer un ajustement de niveaux de couleur.\nSimule les images trop sombres, trop claires, ou avec plage dynamique compressée.\n[+] Robustesse aux sources avec histogramme non optimal.",
+    "color_level_high": "Niveau de sortie maximum [Min, Max] (0–255).\nEx: [220, 255]. 220 = image légèrement délavée (saturation compressée).",
+    "color_level_low": "Niveau de sortie minimum [Min, Max] (0–255).\nEx: [0, 35]. 35 = voile gris (source bon marché ou vieilli).",
+    "color_level_gamma": "Correction gamma [Min, Max].\nEx: [0.7, 1.5]. < 1.0 = image sombre. > 1.0 = image plus claire.",
+    "wtp_halo_prob": "Probabilité d'appliquer des halos de ringing (wtp-style).\nAmplifie les hautes fréquences aux bords — sur-netteté agressive commune aux caméras bas de gamme et à la compression JPEG forte.\n[+] Crucial pour datasets de captures d'écran ou vidéo sur-sharpée.",
+    "wtp_halo_strength": "Intensité du halo/ringing [Min, Max].\nEx: [0.1, 0.5]. 0.5 = halos clairement visibles autour des bords.",
+    "wtp_halo_radius": "Rayon du noyau de flou utilisé pour générer les halos [Min, Max] en pixels.\nEx: [3, 12]. Grand rayon = halos plus larges (sur-netteté globale).",
+    "saturation_prob": "Probabilité d'appliquer un ajustement de saturation.\nSimule les images sur-saturées (réglage TV agressif) ou désaturées (vieux scan).\n[+] Améliore la robustesse aux sources avec saturation non neutre.",
+    "saturation_range": "Plage du facteur de saturation [Min, Max].\nEx: [0.3, 1.8]. < 1.0 = désaturation (grisé). > 1.0 = sur-saturation (couleurs criardes). 1.0 = neutre.",
+    "shift_prob": "Probabilité d'appliquer un décalage de pixels (glitch).\nDécale tous les pixels d'un axe — simule les erreurs de compression ou artefacts CCD.\n[+] Utile pour les datasets de captures glitchées ou vieux encodages.",
+    "shift_range": "Amplitude du décalage en pixels [Min, Max].\nEx: [1, 8]. Petit = glitch subtil. Grand = décalage visible.",
+    "shift_axis": "Axe du décalage pixel.\nhorizontal : Glitch latéral (artefact scan-line).\nvertical : Glitch vertical.\nles deux / both : Combiné.",
+
+    # ── NEW : DiscBlur / Vignette / QuantizeDepth / Clusters Couplés ────────────
+    "disc_blur_prob": "Probabilité d'appliquer un flou bokeh/défocus (disc blur).\nApproche d'un noyau disque — simule une mise au point ratée ou une optique cheap.\n[+] Réaliste pour les datasets de photos prises hors focus.\n[+] Différent du flou gaussien : bords moins lissés, plus 'photographique'.",
+    "disc_blur_radius_range": "Rayon du flou défocus [Min, Max] en pixels.\nEx: [2, 8]. 2 = léger défocus. 8 = fort hors-focus.",
+    "vignette_prob": "Probabilité d'appliquer un vignettage de lentille.\nAssombrit progressivement les bords de l'image — artefact très commun sur les optiques bas de gamme et les anciennes pellicules.\n[+] Très réaliste pour les photos issues de smartphones, objectifs cheap ou pellicules.",
+    "vignette_strength_range": "Intensité du vignettage [Min, Max].\nEx: [0.2, 0.6]. 0.6 = coins très sombres (objectif old/cheap).",
+    "vignette_radius_range": "Rayon de la zone nette [Min, Max] (fraction de la diagonale).\nEx: [0.45, 0.75]. 0.45 = vignette commence dès le milieu. 0.75 = seulement les coins.",
+    "quantize_depth_prob": "Probabilité d'appliquer une réduction de profondeur bit uniforme.\nContrairement au posterize (arrondi par canal), quantize découpe l'espace en niveaux égaux — simule les captures 6-bit ou 5-bit (vieux écrans, caméras bas de gamme).\n[+] Différent du banding : pas d'artefact de palette, mais une quantification uniforme.",
+    "quantize_depth_bits_range": "Profondeur bit cible [Min, Max] bits par canal.\nEx: [4, 7]. 4 bits = 16 niveaux par canal (effet fort). 7 bits = 128 niveaux (subtil).",
+    "coupled_optical_prob": "Probabilité d'appliquer le cluster 'Optique Cheap' (couplé).\nDisc Blur + Vignette + Aberration Chromatique tirent ENSEMBLE sur un seul roll probabiliste.\nConcepte sr_degrade : les défauts d'une optique bas de gamme co-occurrent toujours — plus réaliste que des prob. indépendantes.\n[+] Simule un vrai objectif cheap/vieux. [!] Désactiver les 3 dégradations individuelles pour éviter le double-effet.",
+    "coupled_vintage_prob": "Probabilité d'appliquer le cluster 'Vintage' (couplé).\nVHS + Banding + Film Grain tirent ENSEMBLE.\nConcepte sr_degrade : sur une vraie cassette VHS, ces 3 artefacts sont inséparables.\n[+] Très réaliste pour les datasets de captures VHS/analogiques. [!] Idem — désactiver les 3 individuellement.",
 
     # ================= PARAMÈTRES ARCHITECTURES =================
     # --- COMMUNS ---
@@ -353,6 +401,13 @@ TOOLTIPS = {
     "gfisrv2_n_blocks": "Nombre de GatedCNNBlocks dans le corps du réseau.\nChaque bloc est un GatedCNN avec convolutions décalées (shift).\n[+] Plus de blocs → meilleure reconstruction.\n[-] Plus lent, +VRAM.\nDéfaut : 24.",
     "gfisrv2_expansion_ratio": "Ratio d'expansion des canaux dans les blocs Gated.\nEx: 2.667 (8/3) → largeur intermédiaire = dim × 2.667.\nPlus élevé = plus large, meilleure capacité, +VRAM.\nDéfaut : 2.667 (8/3).",
     "gfisrv2_mid_dim": "Dimension intermédiaire du module d'upsample.\nUtilisé pour les modes pixelshuffle et dysample.\nDéfaut : 32.",
+    # ================= FIGSR =================
+    "figsr_dim": "Dimension des features internes (largeur du réseau).\nPlus élevé = meilleure qualité, plus lourd en VRAM.\nDéfaut : 48.",
+    "figsr_n_blocks": "Nombre de GatedCNNBlocks (corps Fourier-Inception-Gated).\nRépartis en deux moitiés autour d'une unité de Fourier.\n[+] Plus de blocs → meilleure reconstruction.\n[-] Plus lent, +VRAM.\nDéfaut : 24.",
+    "figsr_expansion_ratio": "Ratio d'expansion des canaux dans les blocs Gated.\nEx: 2.667 (8/3) → largeur intermédiaire = dim × 2.667.\nPlus élevé = plus large, meilleure capacité, +VRAM.\nDéfaut : 2.667 (8/3).",
+    "figsr_mid_dim": "Dimension intermédiaire du module d'upsample.\nUtilisé pour pixelshuffle et dysample.\nDéfaut : 32.",
+    # ================= AetherNet =================
+    "aether_mlp_ratio": "Ratio d'expansion FFN (GatedConvFFN).\nContrôle la largeur intermédiaire des blocs : hidden = dim × mlp_ratio.\n[+] Plus élevé (ex: 2.0) : Meilleure capacité de représentation.\n[-] Plus lent, légèrement +VRAM.\n[i] Les canaux (embed_dim) et profondeurs (depths) sont fixes selon le variant sélectionné.\nDéfaut : 1.5",
 }
 
 # --- TOOLTIPS (ENGLISH) ---
@@ -382,6 +437,8 @@ TOOLTIPS_EN = {
     "aug_cutmix": "CutMix: Pastes a square from image A onto image B.\nForces the network to look at the whole image, not just easy zones.",
     "aug_resizemix": "ResizeMix: Resizes an image and pastes it into another.\nMore stable variant of CutMix.",
     "aug_cutblur": "CutBlur: Pastes a Low Quality (LQ) region onto a High Quality (HQ) image.\nTeaches the network to handle mixed sharp/blurry zones. Very powerful.",
+    "moa_debug": "Save images before/after augmentation in 'debug/moa/'.\nUseful to visually verify augmentations are applied correctly.\n[!] Generates many files — disable after verification.",
+    "moa_debug_limit": "Max iterations for which debug images are saved.\nDefault: 100 — saving stops automatically beyond this.",
 
     # ================= HYPERPARAMETERS (TRAINING) =================
     "batch_size": "Number of images processed simultaneously by the GPU.\n[+] Higher: More stable and faster training.\n[-] Lower: Less VRAM required, but more chaotic convergence.\n(1080Ti: 4 to 8 recommended).",
@@ -449,6 +506,7 @@ TOOLTIPS_EN = {
     # ================= LOSSES (LOSS FUNCTIONS) =================
     "loss_pixel": "Pixel Loss (L1 / L2 / Huber / CHC).\nThe foundation of all training. Forces the image to be mathematically close to the target pixel by pixel.\n\n--- NeoSR ---\nTypes: L1Loss, MSELoss (L2), HuberLoss, chc (Clipped Huber + Cosine Similarity).\nchc improves color coherence and reduces noise.\n\n--- Redux ---\nTypes: l1loss, mseloss, charbonnierloss (Charbonnier = smoothed L1, recommended).\n\n[+] Increase weight → image more mathematically faithful.\n[-] Too much weight → blurry image (loses fine textures).",
     "loss_percep": "Perceptual Loss (VGG19).\nUses a pre-trained VGG network to compare visual 'features'.\nCreates structural sharpness and realistic textures.\n\n--- NeoSR ---\nOptions: criterion (l1/l2/huber/chc), patchloss (Patch Loss for local focus), ipk (Image Patch Kernel).\nlayer_weights: conv1_2=0.1, conv3_4=1.0, conv4_4=1.0, conv5_4=1.0.\n\n--- Redux ---\nType: perceptualloss. Includes Focal Distribution (num_proj_fd) + FP16 variant.\ncriterion: charbonnier (default), l1.\n\n[+] Increase → sharper textures, fine details.\n[-] Too much weight → artifacts, hallucinations.\n[!] Consumes +1-2 GB VRAM (loads VGG19).",
+    "loss_percep_anime": "Perceptual Anime Loss (ResNet50).\nPerceptual loss specialized for animation (ported from APISR).\nUses ResNet50 trained on diverse data — much better than VGG for anime.\n\nBackbone: ResNet50 (anime-specific intermediate layers).\ncriterion: l1 (default).\n\n[+] Far superior to VGG for anime (flat colors, sharp edges).\n[+] Less texture hallucination on uniform areas.\n[+] Complementary to or replaces SparK FD.\n[!] TraiNNer-Redux only.",
     "percep_criterion": "Comparison method for VGG Perceptual.\n- L1: Strict, very sharp. Risk of checkerboard artifacts.\n- L2/MSE: Softer, fewer artifacts.\n- Huber: Hybrid L1/L2, robust to outliers. Recommended NeoSR.\n- Charbonnier: Like L1 but smoothed. Recommended Redux.\n- CHC: Clipped Huber + Cosine Similarity (NeoSR only).",
     "percep_layer": "VGG layer used to extract features.\n* conv1_2 (0.1): Very local — noise, grain, pixels.\n* conv2_2 (0.1): Fine textures — lines, edges.\n* conv3_4 (1.0): Medium shapes — standard.\n* conv4_4 (1.0): Complex textures — recommended SR.\n* conv5_4 (1.0): Semantic/abstract — recommended GAN.\n\nHigher weight = this layer influences the result more.",
     "fdl_model": "Model for FDL (Frequency Distribution Loss).\n- vgg: VGG19, classic, good for structure.\n- dinov2: Facebook Transformer. Better understanding of textures and semantics.\n- resnet: ResNet101, alternative.\n- effnet: EfficientNet v1.\n\nnum_proj: number of projections (24 by default, 256 in the original paper).\n[+] More projections → better perceptual quality.\n[-] Slower (heavy performance hit).",
@@ -460,7 +518,7 @@ TOOLTIPS_EN = {
     "loss_spark": "SparK Perceptual Loss.\nPerceptual loss based on InceptionNext (MetaNeXt, pretrained) features.\n\nTwo criteria:\n- fd: Fourier Domain sliced Wasserstein (magnitude + phase) — recommended.\n- charbonnier: Charbonnier on raw feature maps.\n\nWeights are automatically downloaded (~200 MB) from GitHub if path is empty.\n\n[+] Rich texture, effective on grain and fine details.\n[+] Complementary to L1 or Charbonnier.\n[!] TraiNNer-Redux only.",
     "loss_ldl": "LDL Loss (Local Discriminative Learning).\nPenalizes artifacts in high-frequency regions (details).\ncriterion: l1, l2, huber. ksize: kernel size (7 by default).\n\n[+] Preserves fine details without blurring.\n[+] Good complement to L1.\n[!] Available NeoSR and Redux.",
     "loss_consistency": "Consistency Loss.\nForces color and brightness coherence between output and target.\nUses Oklab and CIE L* color spaces + Cosine Similarity.\n\nOptions: blur (smoothing), cosim (cosine similarity), saturation/brightness.\nmatch_lq_colors: match LQ colors instead of GT.\n\n[!] NeoSR only.",
-    "loss_edge": "Edge Loss (Gradient-Weighted, GW Loss).\nForces the network to refine contours and high frequencies.\ncriterion: l1, l2, huber, chc. corner: enable corner detection.\n\n[+] Sharper lines, cleaner transitions.\n[!] NeoSR only.",
+    "loss_edge": "Edge Loss — penalizes errors on contours and high frequencies.\n\n• NeoSR: EdgeLoss (Gradient-Weighted, GW Loss) — criterion l1/l2/huber/chc, corner option.\n• TraiNNer-Redux: SobelEdgeLoss (Sobel X+Y on luma, MSE on gradient magnitude) — native dev.\n\n[+] Sharper lines, better preservation of high frequencies.\n[+] Complementary to Charbonnier/L1.\n[✅] Compatible with NeoSR AND TraiNNer-Redux.",
     "loss_mssim": "MS-SSIM Loss (Multi-Scale SSIM).\nMeasures structural similarity at multiple scales.\n\n--- NeoSR ---\nOptions: window_size=11, sigma=1.5, K1=0.01, K2=0.03.\n\n--- Redux ---\nType: mssimloss. Options: channels=3, downsample=false, is_prod=true, color_space=yiq.\nVariant sssiml1 available (combines SSIM + L1).\n\n[+] Better than L1 for perceived structure.\n[-] May slightly smooth very fine details.",
     "loss_dists": "DISTS Loss.\nMeasures texture/structure distance via VGG16.\n\n[+] Excellent tolerance for textures (grain, grass) unlike LPIPS.\n[+] Can be used alone as perceptual loss.\n[-] Consumes VRAM (+VGG16).\n[!] Available NeoSR (dists_loss) and Redux (distsloss).",
     "loss_msswd": "Multiscale Sliced Wasserstein Distance.\nColor coherence loss based on Wasserstein distance.\nnum_scale=3, num_proj=24 (128 in the paper).\n\n[+] Ideal for random textures (grass, water, asphalt).\n[+] Complementary to Consistency Loss.\n[-] Heavy computation.\n[!] NeoSR only.",
@@ -561,6 +619,51 @@ TOOLTIPS_EN = {
     "scanlines_prob": "Probability of applying CRT scanlines.\n\nDarkens every N lines, simulating the black lines between phosphor rows on a CRT screen. Classic artifact from captures of retro games, emulators, or tube televisions.\n\n[+] Useful for retro game or CRT-scanned content datasets.",
     "scanlines_strength_range": "Scanline darkening intensity [Min, Max].\nEx: [0.2, 0.5]. 0.5 = line darkened by 50%.",
     "scanlines_spacing_range": "Spacing between dark scanlines in lines [Min, Max].\nEx: [2, 4].\n- 2: One dark line every 2 (very pronounced effect).\n- 4: One dark line every 4 (subtle).",
+
+    # ── Custom 3 ────────────────────────────────────────────────────────────────
+    "screentone_prob": "Probability of applying a halftone screentone pattern.\nSimulates manga/comic dot printing patterns.\n[+] Essential for manga/digital scan datasets.",
+    "screentone_dot_size": "Cell size of the halftone grid [Min, Max] in pixels.\nEx: [7, 15]. Small = fine grid (hi-res print). Large = visible dots (old scan).",
+    "screentone_angle": "Rotation angle of the halftone grid in degrees [Min, Max].\nEx: [0, 90]. Varies to avoid uniform moiré.",
+    "screentone_dot_type": "Shape of the screentone dots.\ncircle: Standard manga. square: Digital print. cross: Engraving/Western comics effect.",
+    "screentone_color_space": "Color space for the screentone pattern.\nrgb: All channels. gray: Luminance only (more realistic).",
+    "dithering_prob": "Probability of applying color dithering.\nSimulates palette reduction (retro games, GIF, 8-bit palettes).\n[+] Useful for retro game screenshots or 8-bit exports.",
+    "dithering_color_ch": "Number of colors for dithering [Min, Max].\nEx: [2, 8]. 2 = black & white, 8 = reduced palette.",
+    "dithering_type": "Dithering algorithm.\nfloyd_steinberg: Classic error diffusion — recommended.\nordered: Bayer dithering (regular pattern).\nquantize: Simple reduction without diffusion.\natkinson: Light dithering (original Apple Mac).",
+    "pixelate_prob": "Probability of applying pixelation.\nNearest-neighbor downsample then upsample → visible block artifacts.\n[+] Simulates low-res assets, retro games, compressed web images.",
+    "pixelate_size": "Pixelation block size [Min, Max] in pixels.\nEx: [2, 16]. 2 = light block blur. 16 = large '8-bit' pixels.",
+    "sin_prob": "Probability of applying a sinusoidal brightness ripple.\nSimulates video compression artifacts or analog interference.\n[+] Useful for compressed video or TV capture datasets.",
+    "sin_shape": "Ripple period in pixels [Min, Max].\nEx: [100, 600]. Small = tight waves. Large = slow drift.",
+    "sin_alpha": "Ripple amplitude [Min, Max] (fraction of 255).\nEx: [0.1, 0.4]. 0.1 = subtle. 0.4 = clearly visible.",
+    "sin_bias": "Wave phase offset via random noise [Min, Max] × π.\nEx: [0.8, 1.2]. Varies the wave starting position.",
+    "sin_orientation": "Ripple direction.\nhorizontal: Vertical bands. vertical: Horizontal bands. random: Random per image.",
+    "subsampling_prob": "Probability of applying configurable chroma subsampling (wtp-style).\nAdvanced version with custom YUV matrix and format.\n[+] More accurate than standard chroma_prob for specific video encodings.",
+    "subsampling_format": "Chroma subsampling format.\n4:4:4: No reduction. 4:2:2: ×2 horizontal. 4:2:0: ×2 H+V (standard JPEG). 4:1:1: Heavy horizontal.",
+    "subsampling_yuv": "YUV conversion matrix.\n601 = SD/legacy. 709 = HD. 2020 = UHD.",
+
+    # ── Custom 4 ────────────────────────────────────────────────────────────────
+    "color_level_prob": "Probability of applying color levels adjustment.\nSimulates dark/bright or compressed dynamic range images.\n[+] Robustness to sources with non-neutral histogram.",
+    "color_level_high": "Maximum output level [Min, Max] (0–255).\nEx: [220, 255]. 220 = slightly washed-out image.",
+    "color_level_low": "Minimum output level [Min, Max] (0–255).\nEx: [0, 35]. 35 = gray veil (cheap or aged source).",
+    "color_level_gamma": "Gamma correction [Min, Max].\nEx: [0.7, 1.5]. <1.0 = darker image. >1.0 = lighter image.",
+    "wtp_halo_prob": "Probability of applying ringing/halo artifacts (wtp-style).\nAmplifies high-frequency edges — aggressive over-sharpening common in cheap cameras and heavy JPEG.\n[+] Crucial for screenshot or over-sharpened video datasets.",
+    "wtp_halo_strength": "Halo/ringing intensity [Min, Max].\nEx: [0.1, 0.5]. 0.5 = clearly visible halos around edges.",
+    "wtp_halo_radius": "Blur kernel radius for halo generation [Min, Max] in pixels.\nEx: [3, 12]. Large = wider halos (global over-sharpening).",
+    "saturation_prob": "Probability of applying a saturation adjustment.\nSimulates over-saturated (aggressive TV setting) or desaturated (old scan) images.\n[+] Robustness to sources with non-neutral saturation.",
+    "saturation_range": "Saturation factor range [Min, Max].\nEx: [0.3, 1.8]. <1.0 = desaturation. >1.0 = over-saturation. 1.0 = neutral.",
+    "shift_prob": "Probability of applying pixel shift (glitch).\nShifts all pixels along an axis — simulates compression errors or CCD artifacts.\n[+] Useful for glitched captures or old encoding datasets.",
+    "shift_range": "Shift amplitude in pixels [Min, Max].\nEx: [1, 8]. Small = subtle glitch. Large = visible offset.",
+    "shift_axis": "Pixel shift axis.\nhorizontal: Lateral glitch. vertical: Vertical glitch. both: Combined.",
+
+    # ── NEW: DiscBlur / Vignette / QuantizeDepth / Coupled Clusters ──────────────
+    "disc_blur_prob": "Probability of applying bokeh/defocus blur (disc blur).\nApproximates a disk kernel — simulates missed focus or cheap optics.\n[+] Realistic for out-of-focus photo datasets.\n[+] Different from Gaussian: less smooth edges, more 'photographic'.",
+    "disc_blur_radius_range": "Defocus blur radius [Min, Max] in pixels.\nEx: [2, 8]. 2 = slight defocus. 8 = strong out-of-focus.",
+    "vignette_prob": "Probability of applying lens vignetting.\nGradually darkens image edges — very common on cheap lenses and old film.\n[+] Very realistic for smartphone, cheap lens, or film photos.",
+    "vignette_strength_range": "Vignette intensity [Min, Max].\nEx: [0.2, 0.6]. 0.6 = very dark corners (old/cheap lens).",
+    "vignette_radius_range": "Clear zone radius [Min, Max] (fraction of diagonal).\nEx: [0.45, 0.75]. 0.45 = vignette starts at center. 0.75 = corners only.",
+    "quantize_depth_prob": "Probability of applying uniform bit depth reduction.\nUnlike posterize (per-channel rounding), quantize splits space into equal levels — simulates 6-bit/5-bit captures (old displays, cheap cameras).\n[+] Different from banding: no palette artifact, uniform quantization.",
+    "quantize_depth_bits_range": "Target bit depth [Min, Max] bits per channel.\nEx: [4, 7]. 4 bits = 16 levels (strong). 7 bits = 128 levels (subtle).",
+    "coupled_optical_prob": "Probability of applying the 'Cheap Optics' coupled cluster.\nDisc Blur + Vignette + Chromatic Aberration fire TOGETHER on a single probability roll.\nsr_degrade concept: cheap lens defects always co-occur — more realistic than independent probs.\n[+] Simulates a real cheap/old lens. [!] Disable individual degs to avoid double effect.",
+    "coupled_vintage_prob": "Probability of applying the 'Vintage' coupled cluster.\nVHS + Banding + Film Grain fire TOGETHER.\nsr_degrade concept: on a real VHS tape, these 3 artifacts are inseparable.\n[+] Very realistic for VHS/analog capture datasets. [!] Disable 3 individually to avoid double effect.",
 
     # ================= ARCHITECTURE PARAMETERS =================
     # --- COMMON ---
@@ -688,6 +791,13 @@ TOOLTIPS_EN = {
     "gfisrv2_n_blocks": "Number of GatedCNNBlocks in the network body.\nEach block is a GatedCNN with shifted convolutions.\n[+] More blocks → better reconstruction.\n[-] Slower, +VRAM.\nDefault: 24.",
     "gfisrv2_expansion_ratio": "Channel expansion ratio in Gated blocks.\nEx: 2.667 (8/3) → intermediate width = dim × 2.667.\nHigher = wider, better capacity, +VRAM.\nDefault: 2.667 (8/3).",
     "gfisrv2_mid_dim": "Intermediate dimension of the upsampling module.\nUsed for pixelshuffle and dysample modes.\nDefault: 32.",
+    # ================= FIGSR =================
+    "figsr_dim": "Internal feature dimension (network width).\nHigher = better quality, heavier VRAM.\nDefault: 48.",
+    "figsr_n_blocks": "Number of GatedCNNBlocks (Fourier-Inception-Gated body).\nSplit into two halves around a Fourier unit.\n[+] More blocks → better reconstruction.\n[-] Slower, +VRAM.\nDefault: 24.",
+    "figsr_expansion_ratio": "Channel expansion ratio in Gated blocks.\nEx: 2.667 (8/3) → intermediate width = dim × 2.667.\nHigher = wider, better capacity, +VRAM.\nDefault: 2.667 (8/3).",
+    "figsr_mid_dim": "Intermediate dimension of the upsampling module.\nUsed for pixelshuffle and dysample.\nDefault: 32.",
+    # ================= AetherNet =================
+    "aether_mlp_ratio": "FFN expansion ratio (GatedConvFFN).\nControls intermediate width: hidden = dim × mlp_ratio.\n[+] Higher (e.g. 2.0): Better representation capacity.\n[-] Slower, slightly +VRAM.\n[i] Channels (embed_dim) and depths are fixed per selected variant.\nDefault: 1.5",
 }
 
 
@@ -1167,6 +1277,29 @@ ARCH_FIELDS = {
         {"label": "Num Feat", "key": "num_feat", "default": 64, "tip_key": "num_feat"},
         {"label": "Num Conv", "key": "num_conv", "default": 8, "tip_key": "num_conv"},
     ],
+    # ── AetherNet (Phhofm) — NeoSR arch, structural reparameterization + QAT support ─
+    # Presets avec canaux/profondeurs fixes. Seul mlp_ratio est sûrement overridable via **kwargs.
+    "aether_mobile": [
+        {"label": "MLP Ratio", "key": "mlp_ratio", "default": 1.5, "tip_key": "aether_mlp_ratio"},
+    ],
+    "aether_tiny": [
+        {"label": "MLP Ratio", "key": "mlp_ratio", "default": 1.5, "tip_key": "aether_mlp_ratio"},
+    ],
+    "aether_small": [
+        {"label": "MLP Ratio", "key": "mlp_ratio", "default": 1.5, "tip_key": "aether_mlp_ratio"},
+    ],
+    "aether_medium": [
+        {"label": "MLP Ratio", "key": "mlp_ratio", "default": 1.5, "tip_key": "aether_mlp_ratio"},
+    ],
+    "aether_large": [
+        {"label": "MLP Ratio", "key": "mlp_ratio", "default": 1.5, "tip_key": "aether_mlp_ratio"},
+    ],
+    "aether_pro": [
+        {"label": "MLP Ratio", "key": "mlp_ratio", "default": 1.75, "tip_key": "aether_mlp_ratio"},
+    ],
+    "aether_extreme": [
+        {"label": "MLP Ratio", "key": "mlp_ratio", "default": 2.0, "tip_key": "aether_mlp_ratio"},
+    ],
 }
 
 DISC_FIELDS = {
@@ -1288,7 +1421,14 @@ NEOSR_ARCH_FAMILIES = {
     "🚀 Léger / Rapide": ["span", "spanplus", "compact", "ultracompact", "safmn", "lmlt", "plksr", "realplksr", "cugan"],
     "🤖 Transformers (Lourd)": ["hat", "swinir_small", "swinir_medium", "dat_s", "srformer_medium", "drct", "atd"],
     "🎨 GAN / Restauration": ["esrgan", "rcan", "artcnn_r16f96"],
-    "📦 Autres": ["cfsr", "craft", "dct", "dctlsa", "ditn", "esc", "eimn", "flexnet", "grformer", "hasn", "hit_srf", "hma", "krgn", "man", "moesr", "mosrv2", "msdan", "plainusr", "rgt", "asid", "catanet"],
+    "📦 Autres": ["cfsr", "craft", "dct", "dctlsa", "ditn", "esc", "eimn", "flexnet", "grformer", "hasn", "hit_srf", "hma", "krgn", "man", "moesr", "mosrv2", "msdan", "plainusr", "rgt", "asid"],
+    "🆕 Nouveaux / Communauté": [
+        # v2.5.5: CATANet (NeoSR) — Token Aggregation Block + LRSA
+        "catanet",
+        # v2.5.6: AetherNet (Phhofm) — structural reparameterization, QAT, deployment-first
+        "aether_mobile", "aether_tiny", "aether_small",
+        "aether_medium", "aether_large", "aether_pro", "aether_extreme",
+    ],
 }
 
 REDUX_ARCH_FAMILIES = {
@@ -1326,7 +1466,17 @@ REDUX_ARCH_FAMILIES = {
         "flexnet", "srformer_light",
     ],
     "🆕 Nouveaux / Communauté": [
-        "smosr", "spanpp", "gfisrv2",
+        # v2.5.5 end-to-end tested: CATANet(NeoSR only), SMoSR, SpanF, SpanC(=spanpp), SpanPP, GFISRv2
+        "smosr",
+        "spanf",      # SPAN simplifié, très léger
+        "spanpp",     # SpanC / SpanPP — IGConv multi-scale (SpanC = nom registre, spanpp = nom UI)
+        "gfisrv2",
+        "figsr",
+        # v2.5.6: ParagonSR (Phhofm)
+        "paragonsr_nano", "paragonsr_tiny", "paragonsr_xs",
+        "paragonsr_s", "paragonsr_m", "paragonsr_l", "paragonsr_xl", "paragonsr_anime",
+        "paragonsr2_realtime", "paragonsr2_stream", "paragonsr2_photo",
+        "paragonsr2_pro", "paragonsr2_ultimate", "paragonsr2_ultimate_v2",
     ],
 }
 
@@ -1346,7 +1496,13 @@ REDUX_ARCH_FAMILIES_EN = {
     "🎨 GAN / Restoration": ["esrgan", "esrgan_lite", "rcan", "rcan_l", "rcan_unshuffle", "artcnn_r16f96", "artcnn_r8f64", "artcnn_r8f48", "artcnn_r3f24", "scunet_aaf6aa"],
     "🎞️ Video / Temporal": ["temporalspan", "temporalspanv2", "tscunet"],
     "🧪 Experimental / Heavy": REDUX_ARCH_FAMILIES["🧪 Expérimental / Lourd"],
-    "🆕 New / Community": REDUX_ARCH_FAMILIES["🆕 Nouveaux / Communauté"],
+    "🆕 New / Community": REDUX_ARCH_FAMILIES["🆕 Nouveaux / Communauté"],  # includes spanf + spanpp(=SpanC)
+    "🏆 ParagonSR (Phhofm)": [
+        "paragonsr_nano", "paragonsr_tiny", "paragonsr_xs",
+        "paragonsr_s", "paragonsr_m", "paragonsr_l", "paragonsr_xl", "paragonsr_anime",
+        "paragonsr2_realtime", "paragonsr2_stream", "paragonsr2_photo",
+        "paragonsr2_pro", "paragonsr2_ultimate", "paragonsr2_ultimate_v2",
+    ],
 }
 
 
@@ -1453,7 +1609,8 @@ ARCH_PROFILES = {
     "spanf":         [6, 5, 7, 10, 10, 8, 5],  # SPAN simplifié, SPAB1 blocks, très léger
     "spanpp":         [6, 6, 8, 8, 8, 8, 5],    # SpanC multi-scale IGConv, SPAB reparamétrisable
     "catanet":       [7, 7, 8, 4, 4, 7, 8],    # CATANet transformer TAB+LRSA, NeoSR
-    "gfisrv2":       [6, 7, 8, 7, 7, 7, 6],    # GFISRv2 GatedCNN + FFT-inspired, multi-upsampler
+    "gfisrv2":       [6, 7, 8, 7, 7, 7, 6],    # GFISRv2 GatedCNN + FFT-inspired, multi-upsampler, PSNR fiable
+    "figsr":         [7, 8, 7, 6, 7, 8, 6],    # FIGSR Fourier-Inception-Gated, meilleure texture/détail, légèrement plus lent
     "swin2sr_l":     [8, 7, 8, 4, 4, 7, 8],
     "swinir_l":      [8, 7, 8, 4, 4, 7, 8],
     # --- Profils ajoutés d'après bench Redux 2026-05-19 + type d'architecture ---
@@ -1525,6 +1682,32 @@ ARCH_PROFILES = {
     "hit_sir":         [7, 7, 8, 5, 5, 7, 7],
     "hit_sng":         [7, 7, 8, 5, 5, 7, 7],
     "metaflexnet":     [7, 6, 8, 5, 5, 7, 7],
+    # ── AetherNet (Phhofm) — NeoSR, struct reparam, QAT support ─────────────
+    "aether_mobile": [5, 5, 6, 10, 10, 5, 6],
+    "aether_tiny":   [5, 5, 6, 10,  9, 5, 6],
+    "aether_small":  [6, 6, 7,  8,  8, 6, 7],
+    "aether_medium": [7, 7, 7,  7,  7, 7, 8],  # balanced, channel+attn
+    "aether_large":  [7, 7, 8,  5,  6, 7, 8],  # spatial+channel attn
+    "aether_pro":    [8, 7, 8,  5,  6, 7, 8],
+    "aether_extreme":[8, 8, 9,  3,  4, 7, 9],
+    # ── ParagonSR v1 (Phhofm) — conv-first, Magic Kernel Sharp upsampler ──────
+    # Format : [Netteté, Texture, Fidélité/PSNR, Vitesse, Légèreté_VRAM, Efficacité_Anime, Efficacité_Réaliste]
+    # Variants: nano < tiny < xs < s < m < l < xl (speed ↓, quality ↑)
+    "paragonsr_nano":  [5, 5, 6, 10, 10, 5, 6],
+    "paragonsr_tiny":  [6, 5, 6,  9,  9, 6, 6],
+    "paragonsr_xs":    [6, 6, 7,  8,  8, 6, 7],
+    "paragonsr_s":     [7, 6, 7,  7,  8, 7, 7],   # balanced (recommended)
+    "paragonsr_m":     [7, 7, 8,  6,  7, 7, 7],
+    "paragonsr_l":     [8, 7, 8,  5,  6, 7, 8],
+    "paragonsr_xl":    [8, 8, 8,  4,  5, 7, 8],
+    "paragonsr_anime": [7, 7, 7,  7,  8, 9, 5],   # specialized for anime/illustration
+    # ── ParagonSR2 (Phhofm) — dual-path, selective attention, deployment-first ─
+    "paragonsr2_realtime":   [5, 5, 6, 10, 10, 5, 6],
+    "paragonsr2_stream":     [6, 6, 7,  8,  8, 6, 7],
+    "paragonsr2_photo":      [7, 7, 7,  7,  7, 7, 8],  # balanced, photo focus
+    "paragonsr2_pro":        [8, 7, 8,  5,  6, 7, 8],
+    "paragonsr2_ultimate":   [8, 8, 9,  3,  4, 7, 9],  # flagship ~23M params
+    "paragonsr2_ultimate_v2":[8, 8, 9,  3,  4, 7, 9],
 }
 
 REDUX_LOSS_INFO = {
@@ -1532,6 +1715,7 @@ REDUX_LOSS_INFO = {
     "mseloss": {"loss_weight": 1.0, "reduction": "mean"},
     "charbonnierloss": {"loss_weight": 1.0, "reduction": "mean", "eps": 1e-12},
     "perceptualloss": {"loss_weight": 1.0, "layer_weights": "dict(conv5_4=1)", "criterion": "l1"},
+    "perceptualanimeloss": {"loss_weight": 1.0, "criterion": "l1"},
     "ganloss": {"loss_weight": 1.0, "gan_type": "vanilla", "real_label_val": 1.0, "fake_label_val": 0.0},
     "multiscaleganloss": {"loss_weight": 1.0, "gan_type": "vanilla", "real_label_val": 1.0, "fake_label_val": 0.0},
     "adistsloss": {"loss_weight": 1.0, "window_size": 21},
@@ -1704,6 +1888,37 @@ REDUX_ARCH_FIELDS = {
          "tip_key": "upsampler"},
         {"label": "Mid Dim", "key": "mid_dim", "default": 32, "tip_key": "gfisrv2_mid_dim"},
     ],
+    "figsr": [
+        {"label": "Dim", "key": "dim", "default": 48, "tip_key": "figsr_dim"},
+        {"label": "N Blocks", "key": "n_blocks", "default": 24, "tip_key": "figsr_n_blocks"},
+        {"label": "Expansion Ratio", "key": "expansion_ratio", "default": 2.6667, "tip_key": "figsr_expansion_ratio"},
+        {"label": "Upsampler", "key": "upsampler", "default": "pixelshuffledirect",
+         "type": "combobox",
+         "choices": ["pixelshuffledirect", "pixelshuffle", "nearest+conv", "dysample", "transpose+conv", "pa_up", "lda"],
+         "tip_key": "upsampler"},
+        {"label": "Mid Dim", "key": "mid_dim", "default": 32, "tip_key": "figsr_mid_dim"},
+    ],
+
+    # ── ParagonSR v1 (Phhofm) — conv-first, Magic Kernel Sharp upsampler ──────────────────
+    # Params shown are factory defaults — overridable via **kwargs passed to ParagonSR().
+    # [num_feat, num_groups, num_blocks, ffn_expansion] — same fields for all variants.
+    "paragonsr_nano":  [{"label": "Num Feat", "key": "num_feat", "default": 24}, {"label": "Num Groups", "key": "num_groups", "default": 3}, {"label": "Blocks/Group", "key": "num_blocks", "default": 2}, {"label": "FFN Expansion", "key": "ffn_expansion", "default": 1.5}],
+    "paragonsr_tiny":  [{"label": "Num Feat", "key": "num_feat", "default": 32}, {"label": "Num Groups", "key": "num_groups", "default": 3}, {"label": "Blocks/Group", "key": "num_blocks", "default": 2}, {"label": "FFN Expansion", "key": "ffn_expansion", "default": 2.0}],
+    "paragonsr_xs":    [{"label": "Num Feat", "key": "num_feat", "default": 48}, {"label": "Num Groups", "key": "num_groups", "default": 4}, {"label": "Blocks/Group", "key": "num_blocks", "default": 4}, {"label": "FFN Expansion", "key": "ffn_expansion", "default": 2.0}],
+    "paragonsr_s":     [{"label": "Num Feat", "key": "num_feat", "default": 64}, {"label": "Num Groups", "key": "num_groups", "default": 6}, {"label": "Blocks/Group", "key": "num_blocks", "default": 6}, {"label": "FFN Expansion", "key": "ffn_expansion", "default": 2.0}],
+    "paragonsr_m":     [{"label": "Num Feat", "key": "num_feat", "default": 96}, {"label": "Num Groups", "key": "num_groups", "default": 8}, {"label": "Blocks/Group", "key": "num_blocks", "default": 8}, {"label": "FFN Expansion", "key": "ffn_expansion", "default": 2.0}],
+    "paragonsr_l":     [{"label": "Num Feat", "key": "num_feat", "default": 128}, {"label": "Num Groups", "key": "num_groups", "default": 10}, {"label": "Blocks/Group", "key": "num_blocks", "default": 10}, {"label": "FFN Expansion", "key": "ffn_expansion", "default": 2.0}],
+    "paragonsr_xl":    [{"label": "Num Feat", "key": "num_feat", "default": 160}, {"label": "Num Groups", "key": "num_groups", "default": 12}, {"label": "Blocks/Group", "key": "num_blocks", "default": 12}, {"label": "FFN Expansion", "key": "ffn_expansion", "default": 2.0}],
+    "paragonsr_anime": [{"label": "Num Feat", "key": "num_feat", "default": 28}, {"label": "Num Groups", "key": "num_groups", "default": 2}, {"label": "Blocks/Group", "key": "num_blocks", "default": 3}, {"label": "FFN Expansion", "key": "ffn_expansion", "default": 1.5}],
+
+    # ── ParagonSR2 (Phhofm) — dual-path, selective attention, deployment-first ──────────
+    # detail_gain: initial gain for learned detail path (learnable param). Tweak for more/less texture.
+    "paragonsr2_realtime":   [{"label": "Num Feat", "key": "num_feat", "default": 16},  {"label": "Groups", "key": "num_groups", "default": 1}, {"label": "Blocks/Group", "key": "num_blocks", "default": 3}, {"label": "Detail Gain", "key": "detail_gain", "default": 0.05}],
+    "paragonsr2_stream":     [{"label": "Num Feat", "key": "num_feat", "default": 32},  {"label": "Groups", "key": "num_groups", "default": 2}, {"label": "Blocks/Group", "key": "num_blocks", "default": 3}, {"label": "Detail Gain", "key": "detail_gain", "default": 0.1}],
+    "paragonsr2_photo":      [{"label": "Num Feat", "key": "num_feat", "default": 64},  {"label": "Groups", "key": "num_groups", "default": 4}, {"label": "Blocks/Group", "key": "num_blocks", "default": 4}, {"label": "Detail Gain", "key": "detail_gain", "default": 0.1}],
+    "paragonsr2_pro":        [{"label": "Num Feat", "key": "num_feat", "default": 64},  {"label": "Groups", "key": "num_groups", "default": 6}, {"label": "Blocks/Group", "key": "num_blocks", "default": 6}, {"label": "Detail Gain", "key": "detail_gain", "default": 0.1}],
+    "paragonsr2_ultimate":   [{"label": "Num Feat", "key": "num_feat", "default": 180}, {"label": "Groups", "key": "num_groups", "default": 8}, {"label": "Blocks/Group", "key": "num_blocks", "default": 8}, {"label": "Detail Gain", "key": "detail_gain", "default": 0.1}],
+    "paragonsr2_ultimate_v2":[{"label": "Num Feat", "key": "num_feat", "default": 180}, {"label": "Groups", "key": "num_groups", "default": 8}, {"label": "Blocks/Group", "key": "num_blocks", "default": 8}, {"label": "Detail Gain", "key": "detail_gain", "default": 0.1}],
 
     # SAFMN & SCUNet
     "safmn": [{"label": "Dim", "key": "dim", "default": 36}, {"label": "N Blocks", "key": "n_blocks", "default": 8}],
@@ -1800,6 +2015,14 @@ REDUX_VRAM_FACTORS = {
     "smosr": 0.65,
     "spanf": 0.55, "spanpp": 0.72,
     "gfisrv2": 0.70,
+    "figsr": 0.70,
+    # ParagonSR v1 (Phhofm) — conv-first, Magic Kernel upsampler
+    "paragonsr_nano": 0.35, "paragonsr_tiny": 0.50, "paragonsr_xs": 0.65,
+    "paragonsr_s": 0.80, "paragonsr_m": 1.10, "paragonsr_l": 1.50, "paragonsr_xl": 2.00,
+    "paragonsr_anime": 0.85,
+    # ParagonSR2 (Phhofm) — dual-path, selective attention, deployment-first
+    "paragonsr2_realtime": 0.30, "paragonsr2_stream": 0.50, "paragonsr2_photo": 0.80,
+    "paragonsr2_pro": 1.20, "paragonsr2_ultimate": 2.50, "paragonsr2_ultimate_v2": 2.50,
     "sebica": 0.75, "sebica_mini": 0.60,
     "ditn_real": 1.98, "ditn": 3.0,
     "eimn_a": 0.94, "eimn_l": 2.0,

@@ -62,6 +62,16 @@ ARCH_SIGNATURES = {
     # Clés réelles vérifiées sur state_dict : irca_attn / iasa_attn + first_conv
     "catanet": ["blocks.0.0.irca_attn.to_k.weight", "blocks.0.0.iasa_attn.to_q.weight", "first_conv.weight"],
 
+    # ── v2.5.6 : custom archs ────────────────────────────────────────────────
+    # FIGSR (Fourier-Inception-Gated SR, umzi2) — gfisr_body_half + cat_to_dim + fu (FourierUnit)
+    "figsr": ["gfisr_body_half", "cat_to_dim", "fu"],
+    # ParagonSR v1 (Phhofm) — Magic Kernel Sharp upsampler (very distinctive) + conv_fuse
+    "paragonsr": ["magic_upsampler", "conv_fuse"],
+    # ParagonSR2 (Phhofm) — dual-path: detail_gain scalar + base path (base.conv_in or base.body)
+    "paragonsr2": ["detail_gain", "base.conv_in"],
+    # AetherNet (Phhofm, NeoSR) — conv_after_body + stages + conv_before_upsample
+    "aethernet": ["conv_after_body", "stages", "conv_before_upsample"],
+
     # ── v2.5.5 : nouveaux moteurs ─────────────────────────────────────────────
     # OSEDiff : One-Step Efficient Diffusion SR (diffusion UNet + VAE, SD-based)
     # Clés typiques : unet.conv_in, vae.encoder.conv_in, time_embedding ou time_embed
@@ -715,6 +725,39 @@ def _onnx_upscale(
     return True, f"ONNX upscale réussi : {os.path.basename(output_path)}"
 
 
+def _onnx_subprocess_infer(model_path, input_path, output_path, log, progress_callback,
+                           stop_event=None, out_format="PNG", bit_depth=8, quality=95):
+    """Run ONNX inference in an engine venv (onnxruntime not bundled in frozen exe)."""
+    import subprocess
+    venv_py = next((p for p in [_TRAINNER_VENV_PY, _NEOSR_VENV_PY] if os.path.exists(p)), None)
+    if not venv_py:
+        return False, "Aucun venv moteur trouvé pour l'inférence ONNX."
+    if not os.path.isfile(_ONNX_RUNNER):
+        return False, f"Runner ONNX introuvable : {_ONNX_RUNNER}"
+    _PROGRESS_MAP = [("[ONNX] Chargement", 0.10), ("[ONNX] Providers", 0.25),
+                     ("[ONNX] Inference", 0.55), ("[ONNX] Sauvegarde", 0.92)]
+    cmd = [venv_py, _ONNX_RUNNER, model_path, input_path, output_path,
+           str(out_format), str(bit_depth), str(quality)]
+    try:
+        proc = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, encoding="utf-8", errors="replace",
+            env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+            creationflags=0x08000000 if sys.platform == "win32" else 0,
+        )
+        killed = _run_proc_with_stop(proc, _PROGRESS_MAP, log, progress_callback, stop_event)
+        proc.stdout.close()
+        if killed:
+            return False, "Arrêt demandé par l'utilisateur."
+    except Exception as e:
+        return False, f"Erreur lancement subprocess ONNX : {e}"
+    if proc.returncode == 0:
+        if progress_callback:
+            progress_callback(1.0)
+        return True, f"ONNX (subprocess) : {os.path.basename(output_path)}"
+    return False, f"Subprocess ONNX a échoué (code {proc.returncode})"
+
+
 # ─── Subprocess helper : non-blocking reader + immediate kill ─────
 
 def _run_proc_with_stop(proc, progress_map, log, progress_callback, stop_event):
@@ -763,20 +806,144 @@ def _run_proc_with_stop(proc, progress_map, log, progress_callback, stop_event):
 
 # ─── Universal subprocess fallback (spandrel + SpanPlus) ─────────
 
-_TRAINNER_VENV_PY = os.path.join(
-    os.path.expanduser("~"), "IA_Engine", "traiNNer-redux", ".venv", "Scripts", "python.exe"
-)
-_NEOSR_VENV_PY = os.path.join(
-    os.path.expanduser("~"), "IA_Engine", "neosr", ".venv", "Scripts", "python.exe"
-)
+# v2.5.6: shared runtimes/.venv (legacy per-engine .venv kept as fallback).
+from src.core import engine_paths as _ep
+_TRAINNER_VENV_PY = _ep.resolve_engine_python(_ep.redux_path())
+_NEOSR_VENV_PY = _ep.resolve_engine_python(_ep.neosr_path())
 # Keep old spanplus_runner for compatibility; prefer universal_runner
 _UNIVERSAL_RUNNER = os.path.join(os.path.dirname(__file__), "universal_runner.py")
 _SPANPLUS_RUNNER  = os.path.join(os.path.dirname(__file__), "spanplus_runner.py")
 _NEOSR_RUNNER         = os.path.join(os.path.dirname(__file__), "neosr_runner.py")
 _NEOSR_GENERAL_RUNNER = os.path.join(os.path.dirname(__file__), "neosr_general_runner.py")
+_ONNX_RUNNER          = os.path.join(os.path.dirname(__file__), "onnx_runner.py")
+
+# ─── Custom arch injection ───────────────────────────────────────
+# These archs (gfisrv2, smosr, spanpp/SpanC, figsr) are NOT in the official
+# traiNNer-redux / neosr repos. We bundle them and copy them into the engine's
+# archs/ folder before inference, re-applying on every run (survives git pull,
+# fresh installs). Same pattern as runner.py _patch_* methods.
+_CUSTOM_ARCHS_DIR = os.path.join(os.path.dirname(_UNIVERSAL_RUNNER), "custom_archs")
+_CUSTOM_ARCH_FILES = ["gfisrv2_arch.py", "smosr_arch.py", "spanpp_arch.py", "figsr_arch.py"]
+
+
+def _peek_safetensors_keys(path: str) -> list:
+    """Read tensor names from a .safetensors header without torch (8-byte len + JSON)."""
+    import json, struct
+    with open(path, "rb") as f:
+        n = struct.unpack("<Q", f.read(8))[0]
+        header = json.loads(f.read(n).decode("utf-8"))
+    return [k for k in header.keys() if k != "__metadata__"]
+
+
+# Cache: model_path → "neosr" | "neosr_general" | "trainner" (frozen routing decision)
+_FROZEN_ROUTE_CACHE = {}
+
+
+def _frozen_route_infer(model_path, input_path, output_path, log, progress_callback,
+                        stop_event=None, tile_size=0, tile_pad=32, use_amp=False, scale=0):
+    """Route inference to the correct engine venv in frozen mode (no in-process torch).
+
+    safetensors: peek keys torch-free → detect arch → route neosr/traiNNer.
+    .pth / unknown: try traiNNer, fall back to neosr venv (covers ESC and neosr-only .pth).
+    """
+    _key = os.path.realpath(model_path)
+    _cached = _FROZEN_ROUTE_CACHE.get(_key)
+
+    def _trainner():
+        return _spanplus_subprocess_infer(
+            model_path, input_path, output_path, log, progress_callback,
+            stop_event=stop_event, tile_size=tile_size, tile_pad=tile_pad,
+            use_amp=use_amp, scale_hint=scale)
+
+    def _neosr():
+        return _neosr_subprocess_infer(
+            model_path, input_path, output_path, log, progress_callback,
+            stop_event=stop_event, use_amp=use_amp)
+
+    def _neosr_general():
+        return _neosr_general_subprocess_infer(
+            model_path, input_path, output_path, log, progress_callback,
+            stop_event=stop_event)
+
+    # Use cached routing if known (avoids repeating the fallback cascade per frame)
+    if _cached == "neosr" and os.path.exists(_NEOSR_VENV_PY):
+        return _neosr()
+    if _cached == "neosr_general" and os.path.exists(_NEOSR_VENV_PY):
+        return _neosr_general()
+    if _cached == "trainner":
+        return _trainner()
+
+    # Detect arch torch-free for safetensors → route directly
+    _arch = None
+    if model_path.lower().endswith(".safetensors"):
+        try:
+            _keys = _peek_safetensors_keys(model_path)
+            _arch = detect_arch_from_state({k: None for k in _keys})
+        except Exception:
+            pass
+
+    if _arch == "esc" and os.path.exists(_NEOSR_VENV_PY):
+        _FROZEN_ROUTE_CACHE[_key] = "neosr";  return _neosr()
+    if _arch in _NEOSR_GENERAL_ARCHS and os.path.exists(_NEOSR_VENV_PY):
+        _FROZEN_ROUTE_CACHE[_key] = "neosr_general";  return _neosr_general()
+
+    # Default: traiNNer venv
+    _res = _trainner()
+    if _res[0]:
+        _FROZEN_ROUTE_CACHE[_key] = "trainner"
+        return _res
+
+    # traiNNer failed — for non-safetensors (e.g. ESC .pth) try neosr venv fallback
+    _stopped = isinstance(_res[1], str) and ("Arrêt" in _res[1] or "arrêt" in _res[1])
+    if (not _stopped and not model_path.lower().endswith(".safetensors")
+            and os.path.exists(_NEOSR_VENV_PY)):
+        log("Échec venv traiNNer → tentative venv neosr...")
+        _r2 = _neosr()
+        if _r2[0]:
+            _FROZEN_ROUTE_CACHE[_key] = "neosr";  return _r2
+        _r3 = _neosr_general()
+        if _r3[0]:
+            _FROZEN_ROUTE_CACHE[_key] = "neosr_general";  return _r3
+    return _res
+
+
+def ensure_custom_archs(log=None) -> None:
+    """Copy bundled custom arch .py into the engine archs/ folders if missing or changed.
+
+    Targets traiNNer-redux (and neosr if present). Idempotent: only writes when
+    the destination file is absent or differs from the bundled source.
+    """
+    if not os.path.isdir(_CUSTOM_ARCHS_DIR):
+        return
+    home = os.path.expanduser("~")
+    targets = [
+        os.path.join(home, "IA_Engine", "traiNNer-redux", "traiNNer", "archs"),
+        os.path.join(home, "IA_Engine", "neosr", "neosr", "archs"),
+    ]
+    for archs_dir in targets:
+        if not os.path.isdir(archs_dir):
+            continue
+        for fname in _CUSTOM_ARCH_FILES:
+            src = os.path.join(_CUSTOM_ARCHS_DIR, fname)
+            dst = os.path.join(archs_dir, fname)
+            if not os.path.isfile(src):
+                continue
+            try:
+                need_copy = True
+                if os.path.isfile(dst):
+                    with open(src, "rb") as a, open(dst, "rb") as b:
+                        need_copy = a.read() != b.read()
+                if need_copy:
+                    import shutil
+                    shutil.copy2(src, dst)
+                    if log:
+                        log(f"[ARCH] {fname} injecté dans {os.path.basename(os.path.dirname(archs_dir))}")
+            except Exception as _e:
+                if log:
+                    log(f"[ARCH] Échec injection {fname} : {_e}")
 
 # Archs qui appellent net_opt() au niveau module → subprocess neosr_general_runner obligatoire
-_NEOSR_GENERAL_ARCHS = {"ninasr", "lmlt", "eimn", "drct"}
+# _NEOSR_GENERAL_ARCHS now defined earlier (includes aethernet)
 
 # Archs à exécuter via subprocess traiNNer-redux même si importables en-process.
 # Raison : le kernel CUDA compilé dans le venv traiNNer est requis.
@@ -784,7 +951,10 @@ _NEOSR_GENERAL_ARCHS = {"ninasr", "lmlt", "eimn", "drct"}
 # - smosr, gfisrv2 : MetaUpsample (famille DySample) → même problème probable
 # - spanc  : MetaIGConv coord-based → incertain, subprocess par sécurité
 # - spanf  : conv depthwise standard, mais subprocess pour cohérence venv
-_TRAINNER_SUBPROCESS_ARCHS = {"spanplus", "smosr", "gfisrv2", "spanc", "spanf"}
+_TRAINNER_SUBPROCESS_ARCHS = {"spanplus", "smosr", "gfisrv2", "spanc", "spanf",
+                              "figsr", "paragonsr", "paragonsr2"}
+# AetherNet = NeoSR arch → route via neosr subprocess
+_NEOSR_GENERAL_ARCHS = {"ninasr", "lmlt", "eimn", "drct", "aethernet"}
 
 # ─── Model cache ─────────────────────────────────────────────────
 # Clé : chemin absolu canonique du modèle.
@@ -878,6 +1048,7 @@ class PersistentBatchSession:
                 stdin=_sp.PIPE, stdout=_sp.PIPE, stderr=_sp.PIPE,
                 text=True, encoding="utf-8", errors="replace",
                 env=_env, cwd=engine_dir,
+                creationflags=0x08000000 if sys.platform == "win32" else 0,
             )
         except Exception as e:
             self._log(f"[PersistentBatch] Échec lancement : {e}")
@@ -1174,6 +1345,8 @@ def _spanplus_subprocess_infer(
     # Pass tile/amp/scale params as argv so universal_runner can use them
     cmd = [venv_py, runner, model_path, input_path, output_path,
            str(tile_size), str(tile_pad), "1" if use_amp else "0", str(scale_hint)]
+    # TRAINNER_ROOT lets universal_runner add the traiNNer-redux source to sys.path
+    # so that `from traiNNer.archs.*` imports work without editable install.
     try:
         proc = subprocess.Popen(
             cmd,
@@ -1182,7 +1355,9 @@ def _spanplus_subprocess_infer(
             text=True,
             encoding="utf-8",
             errors="replace",
-            env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+            env={**os.environ, "PYTHONIOENCODING": "utf-8",
+                 "TRAINNER_ROOT": _ep.redux_path()},
+            creationflags=0x08000000 if sys.platform == "win32" else 0,  # CREATE_NO_WINDOW
         )
         killed = _run_proc_with_stop(proc, _PROGRESS_MAP, log, progress_callback, stop_event)
         proc.stdout.close()
@@ -1235,7 +1410,8 @@ def _neosr_subprocess_infer(
         ("[NeoSR] Sauvegarde", 0.92),
     ]
 
-    cmd = [venv_py, runner, model_path, input_path, output_path, "1" if use_amp else "0"]
+    # neosr_runner.py accepts exactly 3 positional args (model, input, output) — no amp flag
+    cmd = [venv_py, runner, model_path, input_path, output_path]
     try:
         proc = subprocess.Popen(
             cmd,
@@ -1245,6 +1421,7 @@ def _neosr_subprocess_infer(
             encoding="utf-8",
             errors="replace",
             env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+            creationflags=0x08000000 if sys.platform == "win32" else 0,  # CREATE_NO_WINDOW
         )
         killed = _run_proc_with_stop(proc, _PROGRESS_MAP, log, progress_callback, stop_event)
         proc.stdout.close()
@@ -1306,6 +1483,7 @@ def _neosr_general_subprocess_infer(
             encoding="utf-8",
             errors="replace",
             env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+            creationflags=0x08000000 if sys.platform == "win32" else 0,  # CREATE_NO_WINDOW
         )
         killed = _run_proc_with_stop(proc, _PROGRESS_MAP, log, progress_callback, stop_event)
         proc.stdout.close()
@@ -1375,8 +1553,23 @@ def upscale_image(
         except OSError:
             pass
 
-    # ── ONNX short-circuit (no PyTorch needed) ──
+    # Warn if user picked a discriminator (net_d) — cannot be used for upscaling
+    _base = os.path.basename(model_path).lower()
+    if _base.startswith("net_d") or _base.startswith("net_d_"):
+        return False, ("Ce fichier est un discriminateur (net_d) — il ne peut pas servir à l'upscale.\n"
+                       "Utilisez le générateur : net_g_*.safetensors ou net_g_ema_*.safetensors.")
+
+    # Ensure custom archs (gfisrv2, smosr, spanpp, figsr) are present in engine before inference
+    ensure_custom_archs(log)
+
+    # ── ONNX short-circuit ──
     if model_path.lower().endswith(".onnx"):
+        # Frozen exe has no onnxruntime → run in engine venv subprocess
+        if getattr(sys, 'frozen', False):
+            ensure_custom_archs(log)
+            return _onnx_subprocess_infer(model_path, input_path, output_path, log,
+                                          progress_callback, stop_event=stop_event,
+                                          out_format=out_format, bit_depth=bit_depth, quality=quality)
         return _onnx_upscale(model_path, input_path, output_path, log, progress_callback,
                              out_format=out_format, bit_depth=bit_depth, quality=quality)
 
@@ -1390,6 +1583,15 @@ def upscale_image(
         except ImportError:
             pass
     if not TORCH_AVAILABLE:
+        # In frozen portable build: torch not bundled in exe.
+        # Route to the correct venv subprocess (no in-process torch needed).
+        if getattr(sys, 'frozen', False):
+            log("Mode portable : inference via subprocess venv (torch non dispo en-process)")
+            return _frozen_route_infer(
+                model_path, input_path, output_path, log, progress_callback,
+                stop_event=stop_event, tile_size=tile_size, tile_pad=tile_pad,
+                use_amp=use_amp, scale=scale,
+            )
         return False, "PyTorch non installé"
     if not IMAGING_AVAILABLE:
         return False, "Pillow/NumPy non installé"
@@ -1886,6 +2088,9 @@ def upscale_folder(
     if not os.path.isdir(input_folder):
         return 0, 0, [f"Dossier introuvable : {input_folder}"]
 
+    # Ensure custom archs present before batch (covers persistent worker too)
+    ensure_custom_archs(callback if callable(callback) else None)
+
     exts = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".tif"}
     raw_files = [f for f in os.listdir(input_folder)
                  if os.path.splitext(f)[1].lower() in exts]
@@ -1908,20 +2113,24 @@ def upscale_folder(
     def _stopped() -> bool:
         return stop_event is not None and stop_event.is_set()
 
-    # Determine if the model is a subprocess arch (needs persistent worker)
+    # Determine if the model is a subprocess arch (needs persistent worker).
+    # Use all state_dict keys (metadata only for safetensors — no tensor data loaded).
     _is_subprocess_arch = False
     if os.path.isfile(model_path) and persistent_batch:
         try:
-            import safetensors.torch as _st
             if model_path.endswith(".safetensors"):
-                _sd_keys = set(list(_st.load_file(model_path, device="cpu").keys())[:5])
+                # Read only the header (key names + dtypes/shapes) — zero tensor data
+                import struct as _struct, json as _json
+                with open(model_path, "rb") as _mf:
+                    _hlen = _struct.unpack("<Q", _mf.read(8))[0]
+                    _hmeta = _json.loads(_mf.read(_hlen))
+                _sd_keys = set(k for k in _hmeta if k != "__metadata__")
             else:
                 _ck = torch.load(model_path, map_location="cpu", weights_only=False)
                 _sd = _ck if any(k.endswith(".weight") for k in _ck.keys()) else (
                     _ck.get("params_ema") or _ck.get("params") or _ck)
-                _sd_keys = set(list(_sd.keys())[:5])
-            _arch_detected = detect_arch_from_state(
-                {k: None for k in _sd_keys})  # type: ignore
+                _sd_keys = set(_sd.keys())
+            _arch_detected = detect_arch_from_state({k: None for k in _sd_keys})  # type: ignore
             _is_subprocess_arch = (_arch_detected or "") in _TRAINNER_SUBPROCESS_ARCHS
         except Exception:
             pass

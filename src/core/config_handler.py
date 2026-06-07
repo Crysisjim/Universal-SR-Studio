@@ -20,6 +20,16 @@ _ARCHS_NO_CHANNELS = {
     "catanet", "cfsr", "cugan", "dunet", "eimn", "esc", "flexnet", "hasn",
     "krgn", "lmlt", "man", "metagan", "moesr", "mosrv2", "msdan", "ninasr",
     "plainusr", "plksr", "safmn", "vgg",
+    # ParagonSR (v1) and ParagonSR2 factory functions use `in_chans` not `num_in_ch`.
+    # They're fully self-contained presets — pass only `scale`, no channel args.
+    "paragonsr_anime", "paragonsr_nano", "paragonsr_tiny", "paragonsr_xs",
+    "paragonsr_s", "paragonsr_m", "paragonsr_l", "paragonsr_xl",
+    "paragonsr2_realtime", "paragonsr2_stream", "paragonsr2_photo",
+    "paragonsr2_pro", "paragonsr2_ultimate", "paragonsr2_ultimate_v2",
+    # AetherNet (Phhofm) — NeoSR arch, factory functions accept scale + **kwargs.
+    # AetherNet uses `in_chans` internally, not `num_in_ch` — skip channel injection.
+    "aether_mobile", "aether_tiny", "aether_small",
+    "aether_medium", "aether_large", "aether_pro", "aether_extreme",
 }
 
 
@@ -178,9 +188,10 @@ class ConfigHandler:
         flat["use_hflip"] = str(ds_train.get("use_hflip", True)).lower()
         flat["use_rot"] = str(ds_train.get("use_rot", True)).lower()
         
+        aug_map = {"mixup": "aug_mixup", "cutmix": "aug_cutmix", "resizemix": "aug_resizemix", "cutblur": "aug_cutblur"}
+        # NeoSR format: augmentation/aug_prob inside datasets.train
         augs = ds_train.get("augmentation", [])
         probs = ds_train.get("aug_prob", [])
-        aug_map = {"mixup": "aug_mixup", "cutmix": "aug_cutmix", "resizemix": "aug_resizemix", "cutblur": "aug_cutblur"}
         idx = 0
         for a in augs:
             if a == "none": idx += 1; continue
@@ -188,6 +199,26 @@ class ConfigHandler:
                 flat[aug_map[a]] = "true"
                 if idx < len(probs): flat[f"prob_{aug_map[a]}"] = probs[idx]
             idx += 1
+        # Redux format: use_moa/moa_augs/moa_probs under train: section (TrainOptions)
+        _train_sect = cfg.get("train", {}) or {}
+        _moa_augs  = _train_sect.get("moa_augs", cfg.get("moa_augs", []))   # fallback top-level for old configs
+        _moa_probs = _train_sect.get("moa_probs", cfg.get("moa_probs", []))
+        if (_train_sect.get("use_moa") or cfg.get("use_moa")) and _moa_augs:
+            # Reconstruct per-aug UI prob from MoA normalized probs
+            # none_prob ~ 0.4, remainder distributed among active augs
+            _none_prob = next((p for a, p in zip(_moa_augs, _moa_probs) if a == "none"), 0.4)
+            _avail = 1.0 - _none_prob if _none_prob < 1.0 else 0.6
+            for _a, _p in zip(_moa_augs, _moa_probs):
+                if _a == "none": continue
+                if _a in aug_map:
+                    flat[aug_map[_a]] = "true"
+                    # Inverse-scale moa_prob back to UI slider range [0,1]
+                    flat[f"prob_{aug_map[_a]}"] = round(_p / _avail, 3) if _avail > 0 else 0.15
+        # MoA debug (shared by both Redux train section and NeoSR)
+        _moa_debug = _train_sect.get("moa_debug", cfg.get("moa_debug", False))
+        flat["moa_debug"] = str(_moa_debug).lower()
+        _moa_debug_limit = _train_sect.get("moa_debug_limit", cfg.get("moa_debug_limit", 100))
+        flat["moa_debug_limit"] = int(_moa_debug_limit) if _moa_debug_limit else 100
 
         ds_val = cfg.get("datasets", {}).get("val", {})
         # Validation paths can be list-form in Redux: dataroot_gt: ['path']
@@ -208,13 +239,22 @@ class ConfigHandler:
         iter_val = logger.get("total_iter") or train.get("total_iter") or train.get("n_iter") or 100000
         flat["total_iter"] = iter_val
         flat["warmup_iter"] = train.get("warmup_iter", -1)
+        flat["adaptive_d"] = str(train.get("adaptive_d", False)).lower()
         flat["grad_clip"] = str(train.get("grad_clip", False)).lower()
         # NeoSR uses "ema", Redux uses "ema_decay" — read both for round-trip fidelity
         flat["ema"] = str(train.get("ema", train.get("ema_decay", 0.999)))
         flat["sam"] = train.get("sam", "none")
         flat["sam_init"] = train.get("sam_init", -1)
-        flat["eco_mode"] = str(train.get("eco", False)).lower()
-        eco_pt = paths.get("eco_pretrain_g")
+        # ECO: native dev nests it under train.eco.enabled; old custom used a bool train.eco.
+        _eco = train.get("eco", False)
+        if isinstance(_eco, dict):
+            flat["eco_mode"] = str(_eco.get("enabled", False)).lower()
+            flat["eco_end_ratio"] = str(_eco.get("end_ratio", 0.75))
+            flat["eco_mode_kind"] = str(_eco.get("mode", "full"))
+        else:
+            flat["eco_mode"] = str(_eco).lower()
+        # Teacher pretrain: native pretrain_network_g_teacher, fallback to old eco_pretrain_g.
+        eco_pt = paths.get("pretrain_network_g_teacher", paths.get("eco_pretrain_g"))
         flat["eco_pretrain_path"] = "" if eco_pt is None else str(eco_pt)
         flat["match_lq_colors"] = str(train.get("match_lq_colors", False)).lower()
         
@@ -341,7 +381,7 @@ class ConfigHandler:
 
         if "gan_opt" in train:
             flat["use_gan"] = "true"
-            flat["gan_loss_weight"] = train["gan_opt"].get("loss_weight", 0.05)
+            flat["dyn_gan_weight"] = train["gan_opt"].get("loss_weight", 0.05)
             flat["gan_type"] = train["gan_opt"].get("gan_type", "bce")
             flat["real_label_val"] = train["gan_opt"].get("real_label_val", 1.0)
             flat["fake_label_val"] = train["gan_opt"].get("fake_label_val", 0.0)
@@ -387,7 +427,7 @@ class ConfigHandler:
                     flat["cosim_lambda"] = loss.get("cosim_lambda", 5)
                 elif "ganloss" in lt:
                     flat["use_gan"] = "true"
-                    flat["gan_loss_weight"] = lw
+                    flat["dyn_gan_weight"] = lw
                     flat["gan_type"] = loss.get("gan_type", "vanilla")
                 elif "dists" in lt:
                     flat["loss_dists"] = "true"
@@ -419,11 +459,19 @@ class ConfigHandler:
                     flat["weight_loss_contextual"] = lw
                     flat["ctx_distance_type"] = loss.get("distance_type", "cosine")
                     flat["ctx_band_width"]    = loss.get("band_width",    0.5)
+                elif "perceptualanimeloss" in lt or "percep_anime" in lt:
+                    flat["loss_percep_anime"] = "true"
+                    flat["weight_loss_percep_anime"] = lw
+                    flat["percep_anime_criterion"]   = loss.get("criterion", "l1")
                 elif "spark" in lt:
                     flat["loss_spark"] = "true"
                     flat["weight_loss_spark"] = lw
                     flat["spark_criterion"]   = loss.get("criterion", "fd")
                     flat["spark_path"]        = loss.get("path", "")
+                elif "sobeledge" in lt or "sobel_edge" in lt:
+                    # SobelEdgeLoss (traiNNer-redux native) — mapped to loss_edge widget
+                    flat["loss_edge"] = "true"
+                    flat["weight_loss_edge"] = lw
 
         flat["print_freq"] = logger.get("print_freq", 100)
         flat["save_freq"] = logger.get("save_checkpoint_freq", 5000)
@@ -679,17 +727,47 @@ class ConfigHandler:
             # Datasets
             train_type = "realesrgandataset" if is_otf else "pairedimagedataset"
             gt_path = data.get("dataroot_gt", "datasets/train/dataset1/hr").replace("\\", "/")
+
+            # MoA augmentations — Redux native format (top-level keys, NOT in datasets.train).
+            # Format: use_moa + moa_augs list + moa_probs list (must sum to 1.0).
+            # none_prob=0.4 fixed; remaining 0.6 distributed proportionally among enabled augs.
+            _moa_active = []  # (aug_name, raw_prob) for enabled augs
+            for _akey, _aname, _apkey in [
+                ("aug_mixup",     "mixup",     "prob_aug_mixup"),
+                ("aug_cutmix",    "cutmix",    "prob_aug_cutmix"),
+                ("aug_resizemix", "resizemix", "prob_aug_resizemix"),
+                ("aug_cutblur",   "cutblur",   "prob_aug_cutblur"),
+            ]:
+                if safe_bool(_akey, False):
+                    _moa_active.append((_aname, safe_num(_apkey, 0.15, float)))
+
+            _none_prob = 0.4
+            if _moa_active:
+                _raw_total = sum(p for _, p in _moa_active)
+                _scale = (1.0 - _none_prob) / _raw_total if _raw_total > 0 else 1.0
+                _moa_augs_list  = ["none"] + [n for n, _ in _moa_active]
+                _moa_probs_list = [_none_prob] + [p * _scale for _, p in _moa_active]
+                # Normalize to exactly 1.0 (fix float rounding on first element)
+                _diff = 1.0 - sum(_moa_probs_list)
+                _moa_probs_list[0] = round(_moa_probs_list[0] + _diff, 4)
+                _moa_probs_list = [round(v, 4) for v in _moa_probs_list]
+            else:
+                _moa_augs_list  = ["none", "mixup", "cutmix", "resizemix", "cutblur"]
+                _moa_probs_list = [0.4, 0.15, 0.15, 0.15, 0.15]
+
             train_ds = {
                 "name": "Train Dataset",
                 "type": train_type,
                 "dataroot_gt": [gt_path],
                 "lq_size": lq_size,
-                "use_hflip": True,
-                "use_rot": True,
+                "use_hflip": safe_bool("use_hflip", True),
+                "use_rot": safe_bool("use_rot", True),
                 "num_worker_per_gpu": safe_num("num_worker_per_gpu", 8, int),
                 "batch_size_per_gpu": bs,
                 "accum_iter": safe_num("accumulate", 1, int),
             }
+            # NOTE: augmentation keys go to top-level config (MoA format), NOT here.
+            # (NeoSR uses augmentation/aug_prob inside datasets.train — Redux uses use_moa top-level)
             if not is_otf:
                 lq_path = data.get("dataroot_lq", "")
                 if lq_path:
@@ -728,6 +806,12 @@ class ConfigHandler:
                     "dataroot_lq": [val_lq] if val_lq else ["datasets/val/dataset1/lr"],
                 },
             }
+
+            # MoA (Mix of Augmentations) — NOT written.
+            # This traiNNer-redux dev version does not include use_moa/moa_augs in ReduxOptions
+            # (msgspec strict → ValidationError on unknown fields). Augmentation checkboxes in the
+            # UI are saved in the .yml for round-trip fidelity but NOT sent to train.py.
+            # use_hflip / use_rot remain in DatasetOptions and work correctly.
 
             # Network — dyn_ keys are arch params EXCEPT these UI-only ones:
             _DYN_NOT_NET = {"gan_weight"}
@@ -804,9 +888,12 @@ class ConfigHandler:
             resume = data.get("resume_state", "")
             if resume:
                 config["path"]["resume_state"] = resume.replace("\\", "/")
-            eco_pretrain = data.get("eco_pretrain_path", "")
-            if eco_pretrain:
-                config["path"]["eco_pretrain_g"] = eco_pretrain.replace("\\", "/")
+            # ECO (native in traiNNer-redux dev): teacher pretrain weights go to
+            # path.pretrain_network_g_teacher (NOT the old custom eco_pretrain_g).
+            eco_on = safe_bool("eco_mode", False)
+            eco_pretrain = (data.get("eco_pretrain_path", "") or "").strip()
+            if eco_on and eco_pretrain:
+                config["path"]["pretrain_network_g_teacher"] = eco_pretrain.replace("\\", "/")
 
             # Train
             lr = safe_num("lr", 5e-4, float)
@@ -836,7 +923,6 @@ class ConfigHandler:
                 "ema_decay": safe_num("ema", 0.999, float),
                 "ema_power": 0.75,
                 "grad_clip": safe_bool("grad_clip", False),
-                "eco": safe_bool("eco_mode", False),
                 "optim_g": {
                     "type": data.get("optim_g", "AdamW"),
                     "lr": lr,
@@ -846,6 +932,13 @@ class ConfigHandler:
                 "scheduler": sched_section,
                 "total_iter": total_iter,
                 "warmup_iter": safe_num("warmup_iter", -1, int),
+                "adaptive_d": safe_bool("adaptive_d", False),
+                # MoA (Mixture of Augmentations) — in TrainOptions, NOT top-level.
+                "use_moa": bool(_moa_active),
+                "moa_augs": _moa_augs_list,
+                "moa_probs": _moa_probs_list,
+                "moa_debug": safe_bool("moa_debug", False),
+                "moa_debug_limit": safe_num("moa_debug_limit", 100, int),
             }
 
             if use_gan:
@@ -892,26 +985,62 @@ class ConfigHandler:
                 losses.append({"type": "gradientvarianceloss", "loss_weight": safe_num("weight_loss_gv", 1.0, float), "patch_size": safe_num("gv_patch_size", 16, int), "criterion": data.get("gv_criterion", "charbonnier")})
             if safe_bool("loss_luma", False):
                 losses.append({"type": "lumaloss", "loss_weight": safe_num("weight_loss_luma", 1.0, float), "criterion": data.get("luma_criterion", "l1")})
+            # SobelEdgeLoss — native in traiNNer-redux dev (sobel_edge_loss.py).
+            # Penalizes gradient magnitude diff (Sobel X+Y on luma). Sharpens edges + high-freq.
+            # Reuses the loss_edge / weight_loss_edge widgets from the NeoSR EdgeLoss section.
+            if safe_bool("loss_edge", False):
+                losses.append({"type": "sobeledgeloss", "loss_weight": safe_num("weight_loss_edge", 0.05, float)})
             if safe_bool("loss_contextual", False):
                 losses.append({"type": "contextualloss", "loss_weight": safe_num("weight_loss_contextual", 1.0, float), "distance_type": data.get("ctx_distance_type", "cosine"), "band_width": safe_num("ctx_band_width", 0.5, float)})
+            if safe_bool("loss_percep_anime", False):
+                # PerceptualAnimeLoss — ResNet50 backbone, APISR-ported, anime-specific perceptual loss
+                _pa_available = os.path.exists(os.path.join(
+                    os.path.expanduser("~"), "IA_Engine", "traiNNer-redux",
+                    "traiNNer", "losses", "perceptual_anime_loss.py"))
+                if _pa_available:
+                    losses.append({"type": "PerceptualAnimeLoss",
+                                   "loss_weight": safe_num("weight_loss_percep_anime", 1.0, float),
+                                   "criterion": data.get("percep_anime_criterion", "l1")})
+                # else: absent from this traiNNer-redux version — silently skip
             if safe_bool("loss_spark", False):
-                # SparkLoss uses a VGG-like backbone with 5 max-pools (÷32 total).
-                # Minimum lq_size: 4 × 32 = 128 (to fit the internal 4×4 conv kernel).
-                # Anything below 128 crashes with "kernel size > input size".
-                if lq_size < 128:
-                    lq_size = 128
-                    train_ds["lq_size"] = lq_size
-                _spark_entry = {"type": "SparkLoss", "loss_weight": safe_num("weight_loss_spark", 0.2, float), "criterion": data.get("spark_criterion", "fd")}
-                _spark_path = (data.get("spark_path") or "").strip()
-                if _spark_path:
-                    _spark_entry["path"] = _spark_path
-                losses.append(_spark_entry)
+                # Check if SparkLoss is available in this traiNNer-redux version.
+                # It was removed from the official repo; skip silently if absent (avoids
+                # "No object named 'sparkloss' found in 'loss' registry" crash).
+                _spark_available = os.path.exists(os.path.join(
+                    os.path.expanduser("~"), "IA_Engine", "traiNNer-redux",
+                    "traiNNer", "losses", "spark_loss.py"))
+                if _spark_available:
+                    # SparkLoss uses a VGG-like backbone with 5 max-pools (÷32 total).
+                    # Minimum lq_size: 4 × 32 = 128 (to fit the internal 4×4 conv kernel).
+                    if lq_size < 128:
+                        lq_size = 128
+                        train_ds["lq_size"] = lq_size
+                    _spark_entry = {"type": "SparkLoss", "loss_weight": safe_num("weight_loss_spark", 0.2, float), "criterion": data.get("spark_criterion", "fd")}
+                    _spark_path = (data.get("spark_path") or "").strip()
+                    if _spark_path:
+                        _spark_entry["path"] = _spark_path
+                    losses.append(_spark_entry)
+                # else: SparkLoss absent from this traiNNer-redux version — silently skip
             if use_gan:
                 losses.append({"type": "ganloss", "gan_type": data.get("gan_type", "vanilla"),
-                               "loss_weight": safe_num("gan_loss_weight", 0.1, float)})
+                               "loss_weight": safe_num("dyn_gan_weight", 0.05, float)})
             if not losses:
                 losses.append({"type": "charbonnierloss", "loss_weight": 1.0})
             train_section["losses"] = losses
+
+            # ECO (native traiNNer-redux dev): nested eco struct + teacher network.
+            # The teacher defaults to the same arch as the student (network_g).
+            if eco_on:
+                train_section["eco"] = {
+                    "enabled": True,
+                    "end_ratio": safe_num("eco_end_ratio", 0.75, float),
+                    "mode": (data.get("eco_mode_kind") or "full").strip().lower()
+                            if (data.get("eco_mode_kind") or "").strip().lower() in ("full", "hr_only")
+                            else "full",
+                }
+                # network_g_teacher mirrors the student arch unless already provided.
+                import copy as _copy
+                config["network_g_teacher"] = _copy.deepcopy(config.get("network_g", {}))
 
             config["train"] = train_section
 
@@ -937,10 +1066,11 @@ class ConfigHandler:
                 "use_tb_logger": safe_bool("use_tb_logger", True),
             }
 
-            # Monitoring — persisted so checkboxes restore on reload
+            # Monitoring — stored in user YAML as a USS metadata section.
+            # Stripped by tab_run._strip_custom_keys_from_yaml before sending to traiNNer-redux,
+            # so msgspec never sees it. Reader restores it on config reload.
             config["monitoring"] = {
                 "auto_tensorboard": safe_bool("auto_tensorboard", False),
-                "port": safe_num("port_tb", 6006, int),
                 "auto_ngrok": safe_bool("auto_ngrok", False),
             }
 
@@ -1056,11 +1186,7 @@ class ConfigHandler:
             "use_amp": safe_bool("use_amp", False), "bfloat16": safe_bool("bfloat16", False),
             "fast_matmul": safe_bool("fast_matmul", False),
             "compile": safe_bool("compile", False),
-            "monitoring": {
-                "auto_tensorboard": safe_bool("auto_tensorboard", False), 
-                "port": safe_num("port_tb", 6006, int),
-                "auto_ngrok": safe_bool("auto_ngrok", False)
-            },
+            # monitoring NOT included — traiNNer-redux msgspec rejects unknown fields
             "degradations": {
                 "resize_prob": safe_list("resize_prob", [0.2, 0.7, 0.1]),
                 "resize_range": safe_list("resize_range", [0.5, 1.5]),
@@ -1133,7 +1259,9 @@ class ConfigHandler:
                     "accumulate": safe_num("accumulate", 1, int),
                     "patch_size": safe_num("patch_size", 64, int),
                     "use_shuffle": True, "use_hflip": safe_bool("use_hflip", True), "use_rot": safe_bool("use_rot", True),
-                    "augmentation": augs, "aug_prob": probs
+                    "augmentation": augs, "aug_prob": probs,
+                    "moa_debug": safe_bool("moa_debug", False),
+                    "moa_debug_limit": safe_num("moa_debug_limit", 100, int),
                 },
                 "val": {
                     "name": "ValSet", "type": "paired", "dataroot_gt": data.get("val_gt", ""), "dataroot_lq": data.get("val_lq", ""), "io_backend": {"type": "disk"}
@@ -1144,9 +1272,10 @@ class ConfigHandler:
             "train": {
                 "total_iter": total_iter, "n_iter": total_iter,
                 "warmup_iter": safe_num("warmup_iter", -1, int),
+                "adaptive_d": safe_bool("adaptive_d", False),
                 "ema": safe_num("ema", 0.999, float),
                 "grad_clip": safe_bool("grad_clip", False),
-                "eco": safe_bool("eco_mode", False),
+                # "eco" removed — traiNNer-redux dropped this field in newer versions (msgspec strict)
                 "match_lq_colors": safe_bool("match_lq_colors", False),
                 "optim_g": {
                     "type": optim_type, "lr": safe_num("lr", 5e-5, float), 

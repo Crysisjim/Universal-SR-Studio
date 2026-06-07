@@ -249,15 +249,16 @@ class TrainingRunner:
         try:
             with open(target, "r", encoding="utf-8") as f:
                 src = f.read()
-            marker = "def check_dependencies():"
-            bypass_line = "    return  # auto-patched by Universal SR Studio — bypasses false PyTorch version error\n"
-            # Already bypassed if any `return` immediately follows the function def
+            # Match both old "def check_dependencies():" and new "def check_dependencies() -> None:"
             import re as _re
-            if _re.search(r"def check_dependencies\(\):\s*\n\s+return\b", src):
+            bypass_line = "    return  # auto-patched by Universal SR Studio — bypasses false PyTorch version error\n"
+            # Already patched?
+            if _re.search(r"def check_dependencies\(.*\).*:\s*\n\s+return\b", src):
                 return  # already patched
-            idx = src.find(marker)
-            if idx == -1:
+            _m = _re.search(r"def check_dependencies\(.*\).*:", src)
+            if not _m:
                 return
+            idx = _m.start()
             insert_at = src.find("\n", idx) + 1
             patched = src[:insert_at] + bypass_line + src[insert_at:]
             with open(target, "w", encoding="utf-8") as f:
@@ -265,6 +266,160 @@ class TrainingRunner:
             log_callback("[PATCH] check_dependencies.py — bypass version PyTorch appliqué.\n")
         except Exception as e:
             log_callback(f"[WARN] Impossible de patcher check_dependencies.py : {e}\n")
+
+    @staticmethod
+    def _inject_custom_engine_files(script_path: str, log_callback) -> None:
+        """Copy bundled custom losses/archs into the engine before training.
+
+        v2.5.6: re-integrates features that lived in the old IA_Engine and were
+        lost when it was deleted. NOTHING is removed from the engine — we only
+        ADD files that the official traiNNer-redux (dev) does not ship:
+
+          losses/spark_loss.py        → SparkLoss (FD + Charbonnier, umzi2/SparK_Perceptual)
+          archs/inceptionnext_arch.py → InceptionNeXt backbone required by SparkLoss
+
+        Idempotent: only writes when the destination is absent or differs from the
+        bundled source. Survives `git pull` (re-applies on every training start).
+        ECO is NOT injected here — it is native in traiNNer-redux dev (EcoOptions).
+        """
+        engine_dir = os.path.dirname(script_path)
+        core_dir = os.path.dirname(__file__)
+        bundled = os.path.join(core_dir, "custom_engine")
+        # Detect engine type from script path to know neosr vs traiNNer
+        _is_neosr = "neosr" in engine_dir.lower() and "trainner" not in engine_dir.lower()
+        # (src dir, engine dst dir) pairs — engine-type aware.
+        if _is_neosr:
+            mapping = [
+                # aethernet (neosr arch) — neosr training injection
+                (os.path.join(core_dir, "custom_neosr_archs"),
+                 os.path.join(engine_dir, "neosr", "archs")),
+            ]
+        else:
+            mapping = [
+                (os.path.join(bundled, "losses"), os.path.join(engine_dir, "traiNNer", "losses")),
+                (os.path.join(bundled, "archs"),  os.path.join(engine_dir, "traiNNer", "archs")),
+                # Custom archs absent from official dev: gfisrv2, smosr, spanpp, figsr, paragonsr2
+                (os.path.join(core_dir, "custom_archs"), os.path.join(engine_dir, "traiNNer", "archs")),
+            ]
+        import shutil
+        for src_dir, dst_dir in mapping:
+            if not os.path.isdir(src_dir) or not os.path.isdir(dst_dir):
+                continue
+            for fname in os.listdir(src_dir):
+                if not fname.endswith(".py"):
+                    continue
+                src = os.path.join(src_dir, fname)
+                dst = os.path.join(dst_dir, fname)
+                try:
+                    need_copy = True
+                    if os.path.isfile(dst):
+                        with open(src, "rb") as a, open(dst, "rb") as b:
+                            need_copy = a.read() != b.read()
+                    if need_copy:
+                        shutil.copy2(src, dst)
+                        log_callback(f"[INJECT] {fname} ajouté au moteur (custom feature ré-intégrée).\n")
+                except Exception as e:
+                    log_callback(f"[WARN] Injection {fname} échouée : {e}\n")
+
+    @staticmethod
+    def _clean_val_dirs(config_path: str, log_callback) -> None:
+        """Remove non-image files (Thumbs.db, .DS_Store, desktop.ini, etc.) from all dataset dirs.
+
+        Windows auto-generates Thumbs.db (hidden system file) in image folders; pyvips crashes
+        when it tries to load it during validation. Handles both YAML inline and list format.
+
+        YAML inline:   dataroot_gt: C:/path
+        YAML list:     dataroot_gt:
+                           - C:/path
+        TOML:          dataroot_gt = "C:/path"
+        """
+        _IMAGE_EXTS = {
+            ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".tif",
+            ".gif", ".avif", ".heic", ".heif",
+        }
+        # Files to delete — Windows hidden system files that break pyvips/PIL loaders
+        _JUNK_NAMES = {"thumbs.db", ".ds_store", "desktop.ini", "picasa.ini", ".picasa.ini"}
+
+        try:
+            with open(config_path, "r", encoding="utf-8") as _f:
+                lines = _f.readlines()
+        except Exception:
+            return
+
+        # Two-pass line scan: handles both "key: value" and "key:\n  - value" YAML list format
+        _PATH_KEYS = {"dataroot_gt", "dataroot_lq", "val_gt", "val_lq"}
+        candidates = set()
+        _expect_list = False  # True after we see "key:" with no inline value
+
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+
+            # YAML list item — "- C:/some/path"
+            if _expect_list:
+                if stripped.startswith("- "):
+                    val = stripped[2:].strip().strip('"\'')
+                    if val:
+                        candidates.add(val)
+                        continue  # keep consuming list items
+                elif stripped and not stripped.startswith("#"):
+                    _expect_list = False  # Non-empty non-list line: list ended
+
+            # YAML/TOML key detection
+            for key in _PATH_KEYS:
+                # Match "dataroot_gt:" or "dataroot_gt = "
+                if stripped.lower().startswith(key + ":") or stripped.lower().startswith(key + " ="):
+                    sep = ":" if ":" in stripped else "="
+                    after = stripped.split(sep, 1)[1].strip().strip('"\'')
+                    if after and not after.startswith("#"):
+                        candidates.add(after)
+                    else:
+                        _expect_list = True  # No inline value → expect list on next lines
+                    break
+
+        # Also scan by absolute path pattern (fallback for embedded paths or unusual formats)
+        import re as _re
+        for m in _re.finditer(r'[A-Za-z]:[/\\][^\s\'"#\n\r]+', "\n".join(lines)):
+            candidates.add(m.group(0).rstrip(",;"))
+
+        removed = []
+        scanned = set()
+        for raw_path in candidates:
+            folder = raw_path.strip().replace("/", os.sep).replace("\\", os.sep)
+            if folder in scanned or not os.path.isdir(folder):
+                continue
+            scanned.add(folder)
+            try:
+                # Use os.scandir with FILE_FLAG_BACKUP_SEMANTICS to see hidden system files on Windows
+                for entry in os.scandir(folder):
+                    if not entry.is_file():
+                        continue
+                    fname_lower = entry.name.lower()
+                    ext = os.path.splitext(entry.name)[1].lower()
+                    if ext not in _IMAGE_EXTS and fname_lower in _JUNK_NAMES:
+                        try:
+                            os.remove(entry.path)
+                            removed.append(entry.path)
+                        except PermissionError:
+                            # Thumbs.db may be locked by Explorer — try attrib to clear hidden flag first
+                            try:
+                                import subprocess as _sp
+                                _sp.run(["attrib", "-H", "-S", entry.path],
+                                        capture_output=True, timeout=3)
+                                os.remove(entry.path)
+                                removed.append(entry.path)
+                            except Exception as _e2:
+                                log_callback(f"[WARN] Impossible de supprimer {entry.name} : {_e2}\n")
+                        except Exception as _e:
+                            log_callback(f"[WARN] Impossible de supprimer {entry.name} : {_e}\n")
+            except Exception:
+                pass
+
+        if removed:
+            for p in removed:
+                log_callback(f"[CLEAN] Supprimé fichier non-image : {os.path.basename(p)}\n")
+        else:
+            # Silent when nothing to clean — no log spam on normal runs
+            pass
 
     def start_training(self, python_path, script_path, config_path, log_callback, on_finish_callback):
         if self.is_running:
@@ -282,10 +437,15 @@ class TrainingRunner:
             self._patch_sr_model_multiscale(script_path, log_callback)
             self._patch_sr_model_val_multiscale(script_path, log_callback)
             self._patch_ldl_loss_huber(script_path, log_callback)
+            # Re-integrate custom engine files (SparkLoss + InceptionNeXt backbone).
+            self._inject_custom_engine_files(script_path, log_callback)
+
+        # Nettoyer les fichiers non-images dans les dossiers de validation (Thumbs.db, .DS_Store, etc.)
+        self._clean_val_dirs(config_path, log_callback)
 
         # Réinitialisation absolue des flags
         self.stop_requested = False
-        
+
         script_dir = os.path.dirname(script_path)
 
         # Lecture rapide des options

@@ -56,16 +56,11 @@ def _find_torch_python() -> str:
 
     Returns '' if no usable Python with torch is found.
     """
-    # 1. Direct import
-    try:
-        import torch  # noqa: F401
-        return sys.executable
-    except ImportError:
-        pass
-
-    # 2. Engine venvs
     home = os.path.expanduser("~")
+    from src.core import engine_paths as _ep
     candidates = [
+        # v2.5.6: shared runtimes/.venv first, then legacy per-engine venvs.
+        _ep.shared_venv_python(),
         os.path.join(home, "IA_Engine", "traiNNer-redux", ".venv", "Scripts", "python.exe"),
         os.path.join(home, "IA_Engine", "neosr", ".venv", "Scripts", "python.exe"),
         os.path.join(home, "IA_Engine", "traiNNer-redux", "venv", "Scripts", "python.exe"),
@@ -73,6 +68,23 @@ def _find_torch_python() -> str:
         os.path.join(home, "IA_Engine", "traiNNer-redux", ".venv", "bin", "python"),
         os.path.join(home, "IA_Engine", "neosr", ".venv", "bin", "python"),
     ]
+
+    # Frozen exe: torch is NOT in-process. Return the first existing engine venv directly.
+    # Do NOT run a verification subprocess from here — CWD = _internal/ (PyInstaller chdir)
+    # makes `python -c "import torch"` pick up the exe's bundled numpy → ABI clash → false
+    # negative. Real subprocess scripts (run with cwd=engine_dir) import torch fine.
+    if getattr(sys, "frozen", False):
+        for py in candidates:
+            if os.path.exists(py):
+                return py
+        return ""
+
+    # Dev mode: torch may be importable in-process
+    try:
+        import torch  # noqa: F401
+        return sys.executable
+    except ImportError:
+        pass
     flags = 0x08000000 if sys.platform == "win32" else 0  # CREATE_NO_WINDOW
     for py in candidates:
         if not os.path.exists(py):
@@ -80,7 +92,7 @@ def _find_torch_python() -> str:
         try:
             r = subprocess.run(
                 [py, "-c", "import torch; print('ok')"],
-                capture_output=True, text=True, timeout=8,
+                capture_output=True, text=True, timeout=40,
                 creationflags=flags
             )
             if r.returncode == 0 and "ok" in r.stdout:
@@ -1305,21 +1317,60 @@ class ToolsTab(ctk.CTkFrame):
         # instead of silently defaulting to max.
         if scale == 0 and model and os.path.isfile(model):
             try:
-                import torch as _tch
-                _sd = None
+                # Read MetaIGConv scale list to show multi-scale dialog.
+                # In frozen mode: torch not importable in-process (CWD=_internal, numpy ABI clash).
+                # Fix: torch-free safetensors read for .safetensors; subprocess for .pth.
+                _ms_raw = None  # will hold list of int scale values if MetaIGConv found
                 if model.endswith(".safetensors"):
-                    from safetensors.torch import load_file as _lf
-                    _sd = _lf(model, device="cpu")
+                    # Torch-free: read safetensors header + binary blob
+                    try:
+                        import json as _json_st, struct as _struct_st
+                        with open(model, "rb") as _f_st:
+                            _n_st = _struct_st.unpack("<Q", _f_st.read(8))[0]
+                            _hdr = _json_st.loads(_f_st.read(_n_st).decode("utf-8", "replace"))
+                        if "MetaIGConv" in _hdr:
+                            _meta = _hdr["MetaIGConv"]
+                            _dtype, _shape = _meta.get("dtype", ""), _meta.get("shape", [])
+                            _offs = _meta.get("data_offsets", [0, 0])
+                            _nbytes = _offs[1] - _offs[0]
+                            _elem = _nbytes // max(1, abs(_offs[1] - _offs[0]) // max(1, sum(_shape) if _shape else 1))
+                            # Read the raw i64 or i32 integers
+                            with open(model, "rb") as _f2:
+                                _f2.seek(8 + _n_st + _offs[0])
+                                _raw = _f2.read(_nbytes)
+                            _fmt = "<" + ("q" if "I64" in _dtype.upper() else "i") * (_nbytes // (8 if "I64" in _dtype.upper() else 4))
+                            _ms_raw = list(_struct_st.unpack(_fmt, _raw))
+                    except Exception:
+                        pass
                 else:
-                    _ck = _tch.load(model, map_location="cpu", weights_only=False)
-                    for _k in ("params_ema", "params_g", "params", "model", "state_dict"):
-                        if _k in _ck:
-                            _sd = _ck[_k]; break
-                    if _sd is None and any(k.endswith(".weight") for k in _ck):
-                        _sd = _ck
-                if _sd is not None and "MetaIGConv" in _sd:
-                    _ms = sorted(set(int(v.item()) for v in _sd["MetaIGConv"]))
-                    if len(_ms) > 1:
+                    # .pth file: run a quick subprocess with venv python to detect
+                    _py_venv = _find_torch_python()
+                    if _py_venv:
+                        import subprocess as _sp_ms
+                        _ms_script = (
+                            "import torch, sys\n"
+                            f"ck = torch.load({repr(model)}, map_location='cpu', weights_only=False)\n"
+                            "sd = None\n"
+                            "for k in ('params_ema','params_g','params','model','state_dict'):\n"
+                            "    if k in ck: sd = ck[k]; break\n"
+                            "if sd is None and any(x.endswith('.weight') for x in ck): sd = ck\n"
+                            "if sd and 'MetaIGConv' in sd:\n"
+                            "    print(','.join(str(int(v.item())) for v in sd['MetaIGConv']))\n"
+                        )
+                        _r_ms = _sp_ms.run(
+                            [_py_venv, "-c", _ms_script],
+                            capture_output=True, text=True, timeout=30,
+                            creationflags=0x08000000 if sys.platform == "win32" else 0,
+                        )
+                        if _r_ms.returncode == 0 and _r_ms.stdout.strip():
+                            try:
+                                _ms_raw = [int(x) for x in _r_ms.stdout.strip().split(",")]
+                            except Exception:
+                                pass
+
+                if _ms_raw is not None:
+                    _ms = sorted(set(int(v) for v in _ms_raw))
+                if _ms_raw is not None and len(_ms) > 1:
                         import tkinter as _tk
                         _result = [max(_ms)]   # default = max if dialog dismissed
                         _dlg = ctk.CTkToplevel(self)
@@ -1448,6 +1499,16 @@ class ToolsTab(ctk.CTkFrame):
         self.widgets["log_ups"].delete("1.0", "end")
         self.widgets["prog_ups"].set(0)
         self.widgets["prog_ups_pct"].configure(text="0%")
+
+        # Guard: prevent launching a second upscale while one is running
+        _existing = getattr(self, "_ups_thread", None)
+        if _existing is not None and _existing.is_alive():
+            messagebox.showwarning(
+                _t("Upscale en cours", "Upscale in progress"),
+                _t("Un upscale est déjà en cours. Cliquez sur Stop puis attendez l'arrêt.",
+                   "An upscale is already running. Click Stop and wait for it to finish.")
+            )
+            return
 
         # Reset & enable stop button
         self._ups_stop_flag = threading.Event()
@@ -1750,7 +1811,8 @@ class ToolsTab(ctk.CTkFrame):
                 self._ui_update(self.widgets["ups_stop_btn"].configure,
                                 state="disabled", text="⏹ Stop")
 
-        threading.Thread(target=worker, daemon=True).start()
+        self._ups_thread = threading.Thread(target=worker, daemon=True)
+        self._ups_thread.start()
 
     # ==========================================
     # PAGE 3: GÉNÉRATEUR LQ (enrichi)
@@ -2478,7 +2540,15 @@ log("✅ Conversion complete.")
 
         self.btn_lmdb.configure(state="disabled")
         self.btn_lmdb_stop.configure(state="normal")
-        py_path = self.settings.get("python_path", "python")
+        # LMDB script needs cv2 + lmdb → use an engine venv python (frozen exe has neither
+        # in a usable form). Fall back to settings/PATH only if no venv found.
+        py_path = _find_torch_python() or self.settings.get("python_path", "") or "python"
+        if py_path == sys.executable:
+            # Frozen exe itself — won't have cv2/lmdb importable; prefer a venv
+            from src.core import engine_paths as _ep
+            _vp = _ep.any_engine_python()
+            if _vp:
+                py_path = _vp
 
         script_code = f"""import os, sys, cv2, lmdb; src=r"{src}"; dst=r"{dst}"
 try:
@@ -3110,12 +3180,28 @@ except Exception as e: print(f"ERROR:{{e}}")
         return f
 
     def _inspect_model(self):
-        from src.core.model_export import detect_model_format, format_model_info
         path = self.widgets["mi_path"].get()
         if not path or not os.path.exists(path):
             from tkinter import messagebox
             messagebox.showerror(_t("Erreur", "Error"), _t("Fichier non trouve.", "File not found."))
             return
+        # Frozen exe lacks torch/safetensors → run model_export CLI in an engine venv
+        if getattr(sys, "frozen", False) and not path.lower().endswith(".onnx"):
+            py = _find_torch_python()
+            _me = os.path.join(os.path.dirname(os.path.dirname(__file__)), "core", "model_export.py")
+            if py and py != sys.executable and os.path.isfile(_me):
+                try:
+                    r = subprocess.run([py, _me, path], capture_output=True, text=True,
+                                       timeout=60, creationflags=0x08000000 if sys.platform == "win32" else 0)
+                    text = r.stdout.strip() or (r.stderr.strip()[:500] if r.stderr else "Aucune sortie.")
+                    self.widgets["mi_output"].delete("1.0", "end")
+                    self.widgets["mi_output"].insert("1.0", text)
+                    return
+                except Exception as e:
+                    self.widgets["mi_output"].delete("1.0", "end")
+                    self.widgets["mi_output"].insert("1.0", f"Erreur inspection venv : {e}")
+                    return
+        from src.core.model_export import detect_model_format, format_model_info
         info = detect_model_format(path)
         text = format_model_info(info)
         self.widgets["mi_output"].delete("1.0", "end")
@@ -4629,7 +4715,12 @@ except Exception as e: print(f"ERROR:{{e}}")
         from pathlib import Path
         base   = Path(__file__).parent.parent.parent / "core"
         script = base / "benchmark_runner.py"
-        return sys.executable, str(script)
+        # In a frozen build sys.executable is the .exe (no torch) → re-launches the app.
+        # Use an engine venv python that actually has torch for benchmark_runner.py.
+        py = sys.executable
+        if getattr(sys, "frozen", False):
+            py = _find_torch_python() or py
+        return py, str(script)
 
     def _bench_build_cmd(self, python, script, list_only=False):
         """Retourne une liste de commandes à exécuter séquentiellement.

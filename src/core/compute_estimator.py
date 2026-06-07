@@ -157,6 +157,42 @@ ARCH_MULTIPLIER = {
     "spanpp": 14.0,
     # GFISRv2: GatedCNN + FFT multi-upsampler, classe compact/intermédiaire
     "gfisrv2": 8.0,
+    # FIGSR: Fourier-Inception-Gated, même famille que gfisrv2 (~même coût)
+    "figsr": 8.0,
+    # ── ParagonSR v1 (Phhofm) — conv-first, Magic Kernel Sharp upsampler ──────
+    # Measured: paragonsr_m (72) @ 1x, batch=4, patch=96, GTX 1080 Ti → 11 it/s, 0.62 GB VRAM
+    # Speed: 11 / (0.18 * (64/96) * (4/1)^0.25) = 64.7 → ~65.0
+    # VRAM base: 0.62 / (96/64)^1.5 = 0.337 GB at batch=4, patch=64
+    "paragonsr_nano":  75.0,  # num_feat=24, minimal
+    "paragonsr_tiny":  70.0,  # num_feat=40
+    "paragonsr_xs":    68.0,  # num_feat=48
+    "paragonsr_s":     66.0,  # num_feat=64
+    "paragonsr_m":     65.0,  # num_feat=72, measured ~11 it/s @ 1x
+    "paragonsr_base":  52.0,  # num_feat=88, estimated ~9 it/s @ 1x
+    "paragonsr_large": 36.0,  # num_feat=128
+    "paragonsr_xl":    22.0,  # num_feat=192
+    "paragonsr_xxl":   12.0,  # num_feat=256
+    "paragonsr":       65.0,  # generic fallback
+    # ── ParagonSR v2 (Phhofm) — similar class, slightly heavier ────────────
+    "paragonsr2_nano":  65.0,
+    "paragonsr2_tiny":  58.0,
+    "paragonsr2_xs":    52.0,
+    "paragonsr2_s":     45.0,
+    "paragonsr2_m":     38.0,
+    "paragonsr2_base":  30.0,
+    "paragonsr2_pro":   22.0,
+    "paragonsr2_ultimate": 15.0,
+    "paragonsr2_ultimate_v2": 12.0,
+    "paragonsr2":       38.0,  # generic fallback
+    # ── AetherNet (Phhofm) — NeoSR, structural reparameterization ──────────
+    # Estimates only — no direct bench measurement yet.
+    "aether_mobile":  60.0,   # 64ch, 2×4 blocks — ultra-light
+    "aether_tiny":    50.0,   # 64ch, 3×3 blocks
+    "aether_small":   35.0,   # 96ch, 4×4 blocks
+    "aether_medium":  22.0,   # 128ch, 4×4 + channel attn
+    "aether_large":   12.0,   # 180ch, 5×5 + spatial+channel attn
+    "aether_pro":      8.0,   # 192ch, lk_kernel=15
+    "aether_extreme":  3.5,   # 256ch, 5×12 + lk_kernel=21
 }
 
 # Base VRAM (GB) at batch=4, patch=64 — used by estimate_vram()
@@ -258,6 +294,41 @@ ARCH_BASE_VRAM = {
     "spanpp": 1.9,
     # GFISRv2 : GatedCNN + FFT — estimé, classe compact+
     "gfisrv2": 2.2,
+    # FIGSR : Fourier-Inception-Gated — estimé, ~même que gfisrv2
+    "figsr": 2.2,
+    # ── ParagonSR v1 (Phhofm) — base VRAM batch=4, patch=64 ───────────────
+    # Measured: paragonsr_m @ 1x, batch=4, patch=96 → 0.62 GB → base = 0.62/(96/64)^1.5 = 0.34 GB
+    # paragonsr_base @ 1x, batch=10, patch=128 → 2.13 GB → base ≈ 0.30 GB (consistent)
+    # NOTE: paragonsr is 1x-optimized (no upsampling layers) → much lighter than 4x arches
+    "paragonsr_nano":   0.22,
+    "paragonsr_tiny":   0.26,
+    "paragonsr_xs":     0.30,
+    "paragonsr_s":      0.32,
+    "paragonsr_m":      0.34,  # measured at 1x batch=4 patch=96 → base=0.34 GB
+    "paragonsr_base":   0.42,  # num_feat=88, slightly heavier
+    "paragonsr_large":  0.65,  # num_feat=128
+    "paragonsr_xl":     1.2,   # num_feat=192
+    "paragonsr_xxl":    2.2,   # num_feat=256
+    "paragonsr":        0.34,  # generic fallback
+    # ── ParagonSR v2 ──────────────────────────────────────────────────────
+    "paragonsr2_nano":   0.28,
+    "paragonsr2_tiny":   0.35,
+    "paragonsr2_xs":     0.42,
+    "paragonsr2_s":      0.55,
+    "paragonsr2_m":      0.70,
+    "paragonsr2_base":   0.90,
+    "paragonsr2_pro":    1.30,
+    "paragonsr2_ultimate": 1.80,
+    "paragonsr2_ultimate_v2": 2.20,
+    "paragonsr2":        0.70,  # generic fallback
+    # ── AetherNet (Phhofm) — NeoSR, structural reparameterization ────────
+    "aether_mobile":   0.35,
+    "aether_tiny":     0.40,
+    "aether_small":    0.60,
+    "aether_medium":   0.90,
+    "aether_large":    1.50,
+    "aether_pro":      1.80,
+    "aether_extreme":  3.00,
 }
 
 

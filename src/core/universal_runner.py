@@ -12,6 +12,7 @@ Exit 0 = success, 1 = error. All output to stdout (UTF-8).
 """
 import sys
 import os
+import re
 import math
 import traceback
 
@@ -99,13 +100,17 @@ def run(model_path: str, input_path: str, output_path: str,
                 detected = "spanplus"
             elif "blocks_2.0.body" in " ".join(state_dict.keys()) and "upsampler.MetaUpsample" in state_dict:
                 detected = "smosr"
+            elif "cat_to_dim.weight" in state_dict and "gfisr_body_half.0.fc1.weight" in state_dict:
+                detected = "figsr"
             elif "gfisr_body.0.fc1.weight" in state_dict and "upscale.MetaUpsample" in state_dict:
                 detected = "gfisrv2"
             elif "block_1.c1_r.conv3.eval_conv.weight" in state_dict and "upsampler.amplitude" in state_dict:
                 detected = "spanpp"
             elif "block_1.conv_a.eval_conv.weight" in state_dict and "MetaIGConv" in state_dict:
                 detected = "spanc"
-            elif "block_1.conv1.eval_conv.weight" in state_dict and "conv_near.weight" in state_dict:
+            elif ("block_1.c1_r.eval_conv.weight" in state_dict
+                  and "conv_near.weight" in state_dict
+                  and "conv_cat.weight" in state_dict):
                 detected = "spanf"
             elif "feats.0.eval_conv.weight" in state_dict or "feats.0.sk.weight" in state_dict:
                 detected = "spanplus"  # SPANPlus sans DySample (1x conv upsampler)
@@ -115,6 +120,14 @@ def run(model_path: str, input_path: str, output_path: str,
                 # RCAN — spandrel mis-detects n_feats for scale-1 (deband) models
                 # because it reads n_feats from the absent pixelshuffle tail.0.
                 detected = "rcan"
+            elif ("conv_fuse.weight" in state_dict
+                  and any(k.startswith("magic_upsampler.") for k in state_dict)):
+                # ParagonSR v1 (Phhofm) — Magic Kernel Sharp upsampler signature
+                detected = "paragonsr"
+            elif ("detail_gain" in state_dict
+                  and any(k.startswith("base.conv_in") or k.startswith("base.body") for k in state_dict)):
+                # ParagonSR v2 (Phhofm) — dual-path architecture
+                detected = "paragonsr2"
 
             if detected == "spanplus":
                 from traiNNer.archs.spanplus_arch import SpanPlus
@@ -132,20 +145,42 @@ def run(model_path: str, input_path: str, output_path: str,
                 print(f"[Runner] SpanPlus manuel : fc={fc}, scale={scale}x, up={upsampler}", flush=True)
 
             elif detected == "smosr":
-                from traiNNer.archs.smosr_arch import SMoSR
-                w = state_dict.get("blocks_1.0.body.0.W")
-                dim = int(w.shape[0]) if w is not None else 48
-                n_mb = len([k for k in state_dict if k.startswith("blocks_2.") and k.endswith(".body.0.W")])
-                n_mb = n_mb if n_mb > 0 else 3
+                from traiNNer.archs.smosr_arch import SMoSR, SampleMods
+                # Construction scale comes from short.weight = in_ch * scale^2 (reliable).
+                # MetaUpsample[2] is doubled for this arch (self.scale = scale*2) — don't use it.
+                _short = state_dict.get("short.weight")
+                _cscale = max(1, int(round(math.sqrt(_short.shape[0] / 3.0)))) if _short is not None else 2
+                # dim from upsampler input: in = dim + in_ch*scale^2
+                _upw = state_dict.get("upsampler.0.eval_conv.weight")
+                if _upw is not None:
+                    dim = int(_upw.shape[1]) - 3 * _cscale * _cscale
+                else:
+                    w = state_dict.get("blocks_1.0.body.0.W")
+                    dim = int(w.shape[0]) if w is not None else 48
+                # n_mb: distinct blocks_2.N indices
+                _idx = set()
+                for _k in state_dict:
+                    _mm = re.match(r"blocks_2\.(\d+)\.", _k)
+                    if _mm:
+                        _idx.add(int(_mm.group(1)))
+                n_mb = len(_idx) if _idx else 3
+                _rep = any(".eval_conv." in _k for _k in state_dict)
+                _up = "pixelshuffledirect"
+                _mid = 32
                 meta = state_dict.get("upsampler.MetaUpsample")
-                if meta is not None and scale <= 0:
+                if meta is not None:
                     try:
-                        scale = max(1, int(meta[2].item()))
+                        _up = list(SampleMods.__args__)[int(meta[1].item())]
+                        _mid = int(meta[5].item())
                     except Exception:
-                        scale = 4
-                model = SMoSR(scale=max(1, scale), dim=dim, n_mb=n_mb)
+                        pass
+                model = SMoSR(dim=dim, scale=max(1, _cscale), rep=_rep, n_mb=n_mb,
+                              upsampler=_up, upsampler_mid_dim=_mid)
                 model.load_state_dict(state_dict, strict=False)
-                print(f"[Runner] SMoSR manuel : dim={dim}, n_mb={n_mb}, scale={scale}x", flush=True)
+                # Real upscale = _cscale (model.scale attribute is doubled/misleading for SMoSR)
+                scale = scale_hint if scale_hint > 0 else _cscale
+                print(f"[Runner] SMoSR manuel : dim={dim}, n_mb={n_mb}, scale={scale}x, "
+                      f"rep={_rep}, up={_up}", flush=True)
 
             elif detected == "gfisrv2":
                 from traiNNer.archs.gfisrv2_arch import GFISRV2
@@ -153,15 +188,41 @@ def run(model_path: str, input_path: str, output_path: str,
                 dim = int(w.shape[0]) if w is not None else 48
                 n_blocks = len([k for k in state_dict if k.startswith("gfisr_body.") and k.endswith(".fc1.weight")])
                 n_blocks = n_blocks if n_blocks > 0 else 24
+                _msc = 0
                 meta = state_dict.get("upscale.MetaUpsample")
-                if meta is not None and scale <= 0:
+                if meta is not None:
                     try:
-                        scale = max(1, int(meta[2].item()))
+                        _msc = max(1, int(meta[2].item()))
                     except Exception:
-                        scale = 4
+                        _msc = 0
+                scale = scale_hint if scale_hint > 0 else (_msc if _msc > 0 else 4)
                 model = GFISRV2(scale=max(1, scale), dim=dim, n_blocks=n_blocks)
                 model.load_state_dict(state_dict, strict=False)
                 print(f"[Runner] GFISRv2 manuel : dim={dim}, n_blocks={n_blocks}, scale={scale}x", flush=True)
+
+            elif detected == "figsr":
+                from traiNNer.archs.figsr_arch import FIGSR, SampleMods
+                w = state_dict.get("in_to_dim.weight")
+                dim = int(w.shape[0]) if w is not None else 48
+                n_blocks = (len([k for k in state_dict if k.startswith("gfisr_body_half.") and k.endswith(".fc1.weight")])
+                            + len([k for k in state_dict if k.startswith("gfisr_body_half_2.") and k.endswith(".fc1.weight")]))
+                n_blocks = n_blocks if n_blocks > 0 else 24
+                upsampler = "pixelshuffledirect"
+                mid_dim = 32
+                _msc = 0
+                meta = state_dict.get("upscale.MetaUpsample")
+                if meta is not None:
+                    try:
+                        _msc = max(1, int(meta[2].item()))
+                        upsampler = list(SampleMods.__args__)[int(meta[1].item())]
+                        mid_dim = int(meta[5].item())
+                    except Exception:
+                        pass
+                scale = scale_hint if scale_hint > 0 else (_msc if _msc > 0 else 4)
+                model = FIGSR(scale=max(1, scale), dim=dim, n_blocks=n_blocks,
+                              upsampler=upsampler, mid_dim=mid_dim)
+                model.load_state_dict(state_dict, strict=False)
+                print(f"[Runner] FIGSR manuel : dim={dim}, n_blocks={n_blocks}, scale={scale}x, up={upsampler}", flush=True)
 
             elif detected in ("spanc", "spanpp"):
                 from traiNNer.archs.spanpp_arch import SpanC
@@ -199,11 +260,63 @@ def run(model_path: str, input_path: str, output_path: str,
 
             elif detected == "spanf":
                 from traiNNer.archs.spanf_arch import spanf
-                w = state_dict.get("block_1.conv1.eval_conv.weight")
+                w = state_dict.get("block_1.c1_r.eval_conv.weight")
                 fc = int(w.shape[0]) if w is not None else 32
-                model = spanf(feature_channels=fc, scale=max(1, scale))
+                # conv_2 output = num_out_ch * scale^2 → infer scale (scale_hint overrides)
+                _msc = 0
+                _c2 = state_dict.get("conv_2.eval_conv.weight")
+                if _c2 is not None:
+                    _out = _c2.shape[0]
+                    _s = int(math.sqrt(_out / 3.0))
+                    _msc = _s if _s >= 1 and _s * _s == int(_out / 3.0) else 0
+                scale = scale_hint if scale_hint > 0 else (_msc if _msc > 0 else 1)
+                model = spanf(num_in_ch=3, num_out_ch=3, feature_channels=fc, scale=max(1, scale))
                 model.load_state_dict(state_dict, strict=False)
                 print(f"[Runner] SpanF manuel : fc={fc}, scale={scale}x", flush=True)
+
+            elif detected == "paragonsr":
+                # ParagonSR v1 (Phhofm) — conv-first, Magic Kernel Sharp upsampler.
+                # Detect ALL params from state_dict to ensure correct shapes.
+                # NOTE: paragonsr_anime factory hardcodes num_feat=28 and ignores YAML's
+                # num_feat kwarg. Always detect from conv_in.weight, never trust YAML.
+                from traiNNer.archs.paragonsr_arch import ParagonSR
+                _ci = state_dict.get("conv_in.weight")
+                num_feat = int(_ci.shape[0]) if _ci is not None else 28
+                # Detect num_groups and num_blocks from body.G.blocks.B.* key structure
+                _body_g = set()
+                _body_b = set()
+                for _k in state_dict:
+                    if _k.startswith("body.") and ".blocks." in _k:
+                        _parts = _k.split(".")
+                        if len(_parts) >= 4:
+                            _body_g.add(_parts[1]); _body_b.add(_parts[3])
+                num_groups = max(len(_body_g), 1)
+                num_blocks  = max(len(_body_b), 1)
+                # Detect ffn_expansion from GatedFFN project_in_g shape ratio
+                # project_in_g: [hidden, in_ch, 1, 1] where hidden = in_ch * ffn_expansion
+                _pig = state_dict.get("body.0.blocks.0.transformer.project_in_g.weight")
+                if _pig is not None and _pig.shape[1] > 0:
+                    _ffn_expansion = round(_pig.shape[0] / _pig.shape[1], 4)
+                else:
+                    _ffn_expansion = 1.5  # paragonsr_anime default
+                model = ParagonSR(scale=max(1, scale), num_feat=num_feat,
+                                  num_groups=num_groups, num_blocks=num_blocks,
+                                  ffn_expansion=_ffn_expansion)
+                model.load_state_dict(state_dict, strict=False)
+                print(f"[Runner] ParagonSR manuel : feat={num_feat}, groups={num_groups}, "
+                      f"blocks={num_blocks}, ffn_exp={_ffn_expansion}, scale={scale}x", flush=True)
+
+            elif detected == "paragonsr2":
+                # ParagonSR2 (Phhofm) — dual-path, selective attention.
+                # Detect num_feat from conv_in.weight shape.
+                from traiNNer.archs.paragonsr2_arch import ParagonSR2
+                _ci = state_dict.get("conv_in.weight")
+                num_feat = int(_ci.shape[0]) if _ci is not None else 64
+                # detect variant from num_feat
+                _variant = "realtime" if num_feat <= 16 else "stream" if num_feat <= 32 else "photo" if num_feat <= 64 else "pro" if num_feat <= 128 else "ultimate"
+                model = ParagonSR2(scale=max(1, scale), num_feat=num_feat, variant=_variant)
+                model.load_state_dict(state_dict, strict=False)
+                print(f"[Runner] ParagonSR2 manuel : feat={num_feat}, variant={_variant}, scale={scale}x", flush=True)
 
             elif detected == "rcan":
                 from spandrel.architectures.RCAN.__arch.rcan_arch import RCAN

@@ -216,6 +216,41 @@ def cmd_init(payload: dict) -> None:
     _scale = _detect_scale(sd)
     _scale_hint = int(payload.get("scale_hint", 0))  # user-selected scale (0=auto)
 
+    # 0) FIGSR manual — MUST run before GFISRV2 (figsr also has in_to_dim.weight but
+    #    uses gfisr_body_half/_2 + cat_to_dim instead of gfisr_body).
+    if "cat_to_dim.weight" in sd and "gfisr_body_half.0.fc1.weight" in sd:
+        try:
+            from traiNNer.archs.figsr_arch import FIGSR, SampleMods
+            _w   = sd.get("in_to_dim.weight")
+            _dim = int(_w.shape[0]) if _w is not None else 48
+            _nb  = (len([k for k in sd if k.startswith("gfisr_body_half.") and k.endswith(".fc1.weight")])
+                    + len([k for k in sd if k.startswith("gfisr_body_half_2.") and k.endswith(".fc1.weight")]))
+            _nb  = _nb if _nb > 0 else 24
+            _figsr_scale = 1
+            _up = "pixelshuffledirect"
+            _mid = 32
+            _meta = sd.get("upscale.MetaUpsample")
+            if _meta is not None:
+                try:
+                    _figsr_scale = max(1, int(_meta[2].item()))
+                    _up  = list(SampleMods.__args__)[int(_meta[1].item())]
+                    _mid = int(_meta[5].item())
+                except Exception:
+                    pass
+            if _scale_hint > 0:
+                _figsr_scale = _scale_hint
+            _model = FIGSR(scale=max(1, _figsr_scale), dim=_dim, n_blocks=_nb,
+                           upsampler=_up, mid_dim=_mid).eval()
+            _model.load_state_dict(sd, strict=False)
+            _model = _model.to(_device)
+            _arch  = "FIGSR"
+            _scale = max(1, _figsr_scale)
+            _emit({"status": "ready", "arch": _arch, "scale": _scale, "backend": "figsr-manual"})
+            return
+        except Exception as _e:
+            _emit({"status": "error", "msg": f"FIGSR load failed: {_e}"})
+            return
+
     # 1) GFISRV2 manual — MUST run before spandrel (spandrel misidentifies it as SPAN)
     # Mirror universal_runner.py: no upsampler/mid_dim params, strict=False.
     # Scale MUST be inferred from the checkpoint, NOT from _detect_scale():
@@ -223,8 +258,8 @@ def cmd_init(payload: dict) -> None:
     #     don't match pixel-shuffle patterns → GFISRV2(scale=4,...) creates wrong upscale
     #   - upscale.0.weight [3, 48, 3, 3] → out_ch=3 = RGB = scale 1
     #   - upscale.MetaUpsample → stores scale at index 2 (DySample upsamplers)
-    _GFISRV2_KEYS = {"in_to_dim.weight", "gfisr_body.0.fc1.weight"}
-    if any(k in sd for k in _GFISRV2_KEYS):
+    # Require gfisr_body.0 specifically (not just in_to_dim, which figsr also has).
+    if "gfisr_body.0.fc1.weight" in sd:
         try:
             from traiNNer.archs.gfisrv2_arch import GFISRV2
             _w   = sd.get("in_to_dim.weight")
@@ -305,6 +340,68 @@ def cmd_init(payload: dict) -> None:
             _emit({"status": "error", "msg": f"SpanPP load failed: {_e}"})
             return
 
+    # 2b) SMoSR manual — before spandrel (spandrel misidentifies it)
+    if ("short.weight" in sd and "upsampler.MetaUpsample" in sd
+            and any(k.startswith("blocks_2.") for k in sd)):
+        try:
+            import re as _re
+            from traiNNer.archs.smosr_arch import SMoSR, SampleMods
+            _short = sd.get("short.weight")
+            _cscale = max(1, int(round(math.sqrt(_short.shape[0] / 3.0)))) if _short is not None else 2
+            _upw = sd.get("upsampler.0.eval_conv.weight")
+            _dim = (int(_upw.shape[1]) - 3 * _cscale * _cscale) if _upw is not None else 48
+            _idx = set()
+            for _k in sd:
+                _m = _re.match(r"blocks_2\.(\d+)\.", _k)
+                if _m:
+                    _idx.add(int(_m.group(1)))
+            _nmb = len(_idx) if _idx else 3
+            _rep = any(".eval_conv." in _k for _k in sd)
+            _up = "pixelshuffledirect"
+            _mid = 32
+            _meta = sd.get("upsampler.MetaUpsample")
+            if _meta is not None:
+                try:
+                    _up = list(SampleMods.__args__)[int(_meta[1].item())]
+                    _mid = int(_meta[5].item())
+                except Exception:
+                    pass
+            _model = SMoSR(dim=_dim, scale=max(1, _cscale), rep=_rep, n_mb=_nmb,
+                           upsampler=_up, upsampler_mid_dim=_mid)
+            _model.load_state_dict(sd, strict=False)
+            _model = _model.to(_device).eval()
+            _arch = "SMoSR"
+            _scale = _scale_hint if _scale_hint > 0 else _cscale
+            _emit({"status": "ready", "arch": _arch, "scale": _scale, "backend": "smosr-manual"})
+            return
+        except Exception as _e:
+            _emit({"status": "error", "msg": f"SMoSR load failed: {_e}"})
+            return
+
+    # 2c) SpanF manual — before spandrel
+    if ("block_1.c1_r.eval_conv.weight" in sd and "conv_near.weight" in sd
+            and "conv_cat.weight" in sd):
+        try:
+            from traiNNer.archs.spanf_arch import spanf
+            _w = sd.get("block_1.c1_r.eval_conv.weight")
+            _fc = int(_w.shape[0]) if _w is not None else 32
+            _c2 = sd.get("conv_2.eval_conv.weight")
+            _ssc = 1
+            if _c2 is not None:
+                _out = _c2.shape[0]
+                _s = int(math.sqrt(_out / 3.0))
+                _ssc = _s if _s >= 1 and _s * _s == int(_out / 3.0) else 1
+            _scale = _scale_hint if _scale_hint > 0 else _ssc
+            _model = spanf(num_in_ch=3, num_out_ch=3, feature_channels=_fc, scale=max(1, _scale))
+            _model.load_state_dict(sd, strict=False)
+            _model = _model.to(_device).eval()
+            _arch = "SpanF"
+            _emit({"status": "ready", "arch": _arch, "scale": _scale, "backend": "spanf-manual"})
+            return
+        except Exception as _e:
+            _emit({"status": "error", "msg": f"SpanF load failed: {_e}"})
+            return
+
     # 3) Spandrel (universel — pour tout ce qui n'est pas GFISRV2/SpanPP)
     try:
         import spandrel
@@ -365,6 +462,62 @@ def cmd_init(payload: dict) -> None:
             return
         except Exception:
             pass
+
+    # ── ParagonSR v1 (Phhofm) — conv-first, Magic Kernel Sharp 1x upsampler ──
+    # Signature: conv_fuse.weight + magic_upsampler.* prefix keys
+    if "conv_fuse.weight" in sd and any(k.startswith("magic_upsampler.") for k in sd):
+        try:
+            from traiNNer.archs.paragonsr_arch import ParagonSR
+            _ci = sd.get("conv_in.weight")
+            _num_feat = int(_ci.shape[0]) if _ci is not None else 28
+            _body_g = set(); _body_b = set()
+            for _k in sd:
+                if _k.startswith("body.") and ".blocks." in _k:
+                    _pts = _k.split(".")
+                    if len(_pts) >= 4:
+                        _body_g.add(_pts[1]); _body_b.add(_pts[3])
+            _num_groups = max(len(_body_g), 1)
+            _num_blocks = max(len(_body_b), 1)
+            # Detect ffn_expansion from project_in_g ratio
+            _pig = sd.get("body.0.blocks.0.transformer.project_in_g.weight")
+            _ffn_exp = round(_pig.shape[0] / _pig.shape[1], 4) if (_pig is not None and _pig.shape[1] > 0) else 1.5
+            # ParagonSR is always 1x (Magic Kernel Sharp = identity for 1x)
+            _psr_scale = _scale_hint if _scale_hint > 0 else 1
+            _model = ParagonSR(scale=max(1, _psr_scale), num_feat=_num_feat,
+                               num_groups=_num_groups, num_blocks=_num_blocks,
+                               ffn_expansion=_ffn_exp).eval()
+            _model.load_state_dict(sd, strict=False)
+            _model = _model.to(_device)
+            _arch = "ParagonSR"
+            _scale = max(1, _psr_scale)
+            _emit({"status": "ready", "arch": _arch, "scale": _scale,
+                   "backend": f"paragonsr-manual feat={_num_feat} g={_num_groups} b={_num_blocks}"})
+            return
+        except Exception as _e:
+            _emit({"status": "error", "msg": f"ParagonSR load failed: {_e}"})
+            return
+
+    # ── ParagonSR v2 (Phhofm) — dual-path architecture ───────────────────────
+    # Signature: detail_gain + base.conv_in or base.body prefix
+    if "detail_gain" in sd and any(k.startswith("base.conv_in") or k.startswith("base.body") for k in sd):
+        try:
+            from traiNNer.archs.paragonsr2_arch import ParagonSR2
+            _ci2 = sd.get("conv_in.weight")
+            _nf2 = int(_ci2.shape[0]) if _ci2 is not None else 64
+            _var2 = ("realtime" if _nf2 <= 16 else "stream" if _nf2 <= 32 else
+                     "photo" if _nf2 <= 64 else "pro" if _nf2 <= 128 else "ultimate")
+            _psr2_scale = _scale_hint if _scale_hint > 0 else 1
+            _model = ParagonSR2(scale=max(1, _psr2_scale), num_feat=_nf2, variant=_var2).eval()
+            _model.load_state_dict(sd, strict=False)
+            _model = _model.to(_device)
+            _arch = "ParagonSR2"
+            _scale = max(1, _psr2_scale)
+            _emit({"status": "ready", "arch": _arch, "scale": _scale,
+                   "backend": f"paragonsr2-manual feat={_nf2} var={_var2}"})
+            return
+        except Exception as _e:
+            _emit({"status": "error", "msg": f"ParagonSR2 load failed: {_e}"})
+            return
 
     # ── Block NeoSR-only architectures BEFORE the SPAN fallback ──────────────
     # These archs exist only in the NeoSR engine (different venv from traiNNer).

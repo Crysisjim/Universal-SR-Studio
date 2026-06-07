@@ -851,8 +851,8 @@ class RunTab(ctk.CTkFrame):
         lg_components = re.findall(r"l_g_(\w+):\s*([0-9.eE+\-]+)", raw)
         # Discriminator losses (Redux GAN)
         ld_total = re.search(r"l_d_total:\s*([0-9.eE+\-]+)", raw)
-        ld_real  = re.search(r"l_d_real:\s*([0-9.eE+\-]+)", raw)
-        ld_fake  = re.search(r"l_d_fake:\s*([0-9.eE+\-]+)", raw)
+        ld_real  = re.search(r"(?:l_)?d_real:\s*([0-9.eE+\-]+)", raw)
+        ld_fake  = re.search(r"(?:l_)?d_fake:\s*([0-9.eE+\-]+)", raw)
         gn_g = re.search(r"grad_norm_g:\s*([0-9.eE+\-]+)", raw)
         gn_d = re.search(r"grad_norm_d:\s*([0-9.eE+\-]+)", raw)
 
@@ -1520,6 +1520,23 @@ class RunTab(ctk.CTkFrame):
         fg_prob     = float(get_val("film_grain_prob", 0.0))
         os_prob     = float(get_val("oversharp_prob", 0.0))
         sl_prob     = float(get_val("scanlines_prob", 0.0))
+        # Custom 3
+        sc_prob  = float(get_val("screentone_prob", 0.0))
+        di_prob  = float(get_val("dithering_prob", 0.0))
+        px_prob  = float(get_val("pixelate_prob", 0.0))
+        sin_prob = float(get_val("sin_prob", 0.0))
+        ss_prob  = float(get_val("subsampling_prob", 0.0))
+        # Custom 4
+        cl_prob  = float(get_val("color_level_prob", 0.0))
+        ha_prob  = float(get_val("wtp_halo_prob", 0.0))
+        sat_prob = float(get_val("saturation_prob", 0.0))
+        sh_prob  = float(get_val("shift_prob", 0.0))
+        # New
+        db_prob  = float(get_val("disc_blur_prob", 0.0))
+        vig_prob = float(get_val("vignette_prob", 0.0))
+        qd_prob  = float(get_val("quantize_depth_prob", 0.0))
+        cop_prob = float(get_val("coupled_optical_prob", 0.0))
+        cvt_prob = float(get_val("coupled_vintage_prob", 0.0))
 
         has_post     = post_prob > 0.0
         has_band     = band_prob > 0.0
@@ -1533,6 +1550,10 @@ class RunTab(ctk.CTkFrame):
         has_fg       = fg_prob > 0.0
         has_os       = os_prob > 0.0
         has_sl       = sl_prob > 0.0
+        # Extra covers Custom 3+4 + new — passed as has_extra to install_patches
+        has_extra = any([sc_prob, di_prob, px_prob, sin_prob, ss_prob,
+                         cl_prob, ha_prob, sat_prob, sh_prob,
+                         db_prob, vig_prob, qd_prob, cop_prob, cvt_prob])
 
         # Engine dir = parent of script (train.py)
         engine_dir = os.path.dirname(script_path)
@@ -1547,66 +1568,109 @@ class RunTab(ctk.CTkFrame):
         # Always strip USR Studio metadata sections from Redux YAMLs (msgspec rejects unknown fields)
         if is_redux and config_path.lower().endswith((".yml", ".yaml")):
             try:
-                self._strip_custom_keys_from_yaml(config_path, ["monitoring"])
+                # "monitoring" = top-level USS metadata (rejected by msgspec)
+                # "augmentation"/"aug_prob" = NeoSR dataset-level aug format (Redux uses different schema)
+                self._strip_custom_keys_from_yaml(
+                    config_path,
+                    # "monitoring" = USS metadata section (top-level, rejected by msgspec)
+                    # "augmentation"/"aug_prob" = NeoSR dataset-level aug format (rejected by Redux)
+                    # "use_moa"/"moa_*" top-level = old wrong placement (now written under train:)
+                    ["monitoring", "augmentation", "aug_prob",
+                     "use_moa", "moa_augs", "moa_probs", "moa_debug", "moa_debug_limit"]
+                )
             except Exception:
                 pass
 
         if not any([has_post, has_band, has_chroma, has_ca, has_hal, has_sp, has_vhs,
-                    has_alias, has_interlace, has_fg, has_os, has_sl]):
+                    has_alias, has_interlace, has_fg, has_os, has_sl, has_extra]):
             return  # Nothing more to patch
 
-        # Collect custom deg params for the side-channel file
+        def _lst(key, default):
+            v = get_val(key, default)
+            return list(v) if isinstance(v, (list, tuple)) else list(default)
+
+        # Collect ALL custom deg params for the side-channel file
         custom_params = {
+            # Custom 1
             "posterize_prob": post_prob,
-            "posterize_bits_range": list(get_val("posterize_bits_range", [3, 6])),
+            "posterize_bits_range": _lst("posterize_bits_range", [3, 6]),
             "banding_prob": band_prob,
-            "banding_levels_range": list(get_val("banding_levels_range", [16, 64])),
+            "banding_levels_range": _lst("banding_levels_range", [16, 64]),
             "chroma_prob": chroma_prob,
             "ca_prob": ca_prob,
-            "ca_shift_range": list(get_val("ca_shift_range", [1, 5])),
+            "ca_shift_range": _lst("ca_shift_range", [1, 5]),
             "halation_prob": hal_prob,
-            "halation_strength_range": list(get_val("halation_strength_range", [0.05, 0.3])),
+            "halation_strength_range": _lst("halation_strength_range", [0.05, 0.3]),
             "salt_pepper_prob": sp_prob,
-            "salt_pepper_amount_range": list(get_val("salt_pepper_amount_range", [0.001, 0.05])),
+            "salt_pepper_amount_range": _lst("salt_pepper_amount_range", [0.001, 0.05]),
             "vhs_prob": vhs_prob,
-            "vhs_strength_range": list(get_val("vhs_strength_range", [0.1, 0.5])),
+            "vhs_strength_range": _lst("vhs_strength_range", [0.1, 0.5]),
+            # Custom 2
             "aliasing_prob": alias_prob,
-            "aliasing_scale_range": list(get_val("aliasing_scale_range", [0.5, 0.85])),
+            "aliasing_scale_range": _lst("aliasing_scale_range", [0.5, 0.85]),
             "interlace_weave_prob": iw_prob,
-            "interlace_weave_strength_range": list(get_val("interlace_weave_strength_range", [0.5, 1.0])),
+            "interlace_weave_strength_range": _lst("interlace_weave_strength_range", [0.5, 1.0]),
             "interlace_flicker_prob": if_prob,
-            "interlace_flicker_strength_range": list(get_val("interlace_flicker_strength_range", [0.1, 0.4])),
+            "interlace_flicker_strength_range": _lst("interlace_flicker_strength_range", [0.1, 0.4]),
             "interlace_blend_prob": ib_prob,
-            "interlace_blend_strength_range": list(get_val("interlace_blend_strength_range", [0.3, 1.0])),
+            "interlace_blend_strength_range": _lst("interlace_blend_strength_range", [0.3, 1.0]),
             "film_grain_prob": fg_prob,
-            "film_grain_strength_range": list(get_val("film_grain_strength_range", [0.03, 0.12])),
-            "film_grain_size_range": list(get_val("film_grain_size_range", [1, 2])),
+            "film_grain_strength_range": _lst("film_grain_strength_range", [0.03, 0.12]),
+            "film_grain_size_range": _lst("film_grain_size_range", [1, 2]),
             "oversharp_prob": os_prob,
-            "oversharp_strength_range": list(get_val("oversharp_strength_range", [0.5, 2.0])),
+            "oversharp_strength_range": _lst("oversharp_strength_range", [0.5, 2.0]),
             "scanlines_prob": sl_prob,
-            "scanlines_strength_range": list(get_val("scanlines_strength_range", [0.2, 0.5])),
-            "scanlines_spacing_range": list(get_val("scanlines_spacing_range", [2, 4])),
+            "scanlines_strength_range": _lst("scanlines_strength_range", [0.2, 0.5]),
+            "scanlines_spacing_range": _lst("scanlines_spacing_range", [2, 4]),
+            # Custom 3 — FIX: were in UI but never written to sidecar → not applied at training
+            "screentone_prob": sc_prob,
+            "screentone_dot_size": _lst("screentone_dot_size", [7, 15]),
+            "screentone_angle": _lst("screentone_angle", [0, 90]),
+            "screentone_dot_type": get_val("screentone_dot_type", "circle"),
+            "screentone_color_space": get_val("screentone_color_space", "rgb"),
+            "dithering_prob": di_prob,
+            "dithering_color_ch": _lst("dithering_color_ch", [2, 8]),
+            "dithering_type": get_val("dithering_type", "floyd_steinberg"),
+            "pixelate_prob": px_prob,
+            "pixelate_size": _lst("pixelate_size", [2, 16]),
+            "sin_prob": sin_prob,
+            "sin_shape": _lst("sin_shape", [100, 600]),
+            "sin_alpha": _lst("sin_alpha", [0.1, 0.4]),
+            "sin_bias": _lst("sin_bias", [0.8, 1.2]),
+            "sin_orientation": get_val("sin_orientation", "aléatoire"),
+            "subsampling_prob": ss_prob,
+            "subsampling_format": get_val("subsampling_format", "4:2:0"),
+            "subsampling_yuv": get_val("subsampling_yuv", "601"),
+            # Custom 4 — FIX: same
+            "color_level_prob": cl_prob,
+            "color_level_high": _lst("color_level_high", [220, 255]),
+            "color_level_low": _lst("color_level_low", [0, 35]),
+            "color_level_gamma": _lst("color_level_gamma", [0.7, 1.5]),
+            "wtp_halo_prob": ha_prob,
+            "wtp_halo_strength": _lst("wtp_halo_strength", [0.1, 0.5]),
+            "wtp_halo_radius": _lst("wtp_halo_radius", [3, 12]),
+            "saturation_prob": sat_prob,
+            "saturation_range": _lst("saturation_range", [0.3, 1.8]),
+            "shift_prob": sh_prob,
+            "shift_range": _lst("shift_range", [1, 8]),
+            "shift_axis": get_val("shift_axis", "aléatoire"),
+            # NEW
+            "disc_blur_prob": db_prob,
+            "disc_blur_radius_range": _lst("disc_blur_radius_range", [2.0, 8.0]),
+            "vignette_prob": vig_prob,
+            "vignette_strength_range": _lst("vignette_strength_range", [0.2, 0.6]),
+            "vignette_radius_range": _lst("vignette_radius_range", [0.45, 0.75]),
+            "quantize_depth_prob": qd_prob,
+            "quantize_depth_bits_range": _lst("quantize_depth_bits_range", [4, 7]),
+            "coupled_optical_prob": cop_prob,
+            "coupled_vintage_prob": cvt_prob,
         }
 
-        # If Redux: strip custom deg keys from the YAML before launch (msgspec rejects unknown fields)
+        # If Redux: strip ALL custom deg keys from the YAML before launch (msgspec strict)
         if is_redux and config_path.lower().endswith((".yml", ".yaml")):
             try:
-                self._strip_custom_keys_from_yaml(config_path, [
-                    "posterize_prob", "posterize_bits_range",
-                    "banding_prob", "banding_levels_range",
-                    "chroma_prob",
-                    "ca_prob", "ca_shift_range",
-                    "halation_prob", "halation_strength_range",
-                    "salt_pepper_prob", "salt_pepper_amount_range",
-                    "vhs_prob", "vhs_strength_range",
-                    "aliasing_prob", "aliasing_scale_range",
-                    "interlace_weave_prob", "interlace_weave_strength_range",
-                    "interlace_flicker_prob", "interlace_flicker_strength_range",
-                    "interlace_blend_prob", "interlace_blend_strength_range",
-                    "film_grain_prob", "film_grain_strength_range", "film_grain_size_range",
-                    "oversharp_prob", "oversharp_strength_range",
-                    "scanlines_prob", "scanlines_strength_range", "scanlines_spacing_range",
-                ])
+                from src.core.otf_custom_degradations import _ALL_CUSTOM_KEYS
+                self._strip_custom_keys_from_yaml(config_path, list(_ALL_CUSTOM_KEYS))
                 self.append_log(f"[Custom Deg] {_t('Cles custom retirees du YAML pour msgspec compatibility.', 'Custom keys removed from YAML for msgspec compatibility.')}\n")
             except Exception as e:
                 self.append_log(f"[Custom Deg] Avertissement strip YAML: {e}\n")
@@ -1628,24 +1692,12 @@ class RunTab(ctk.CTkFrame):
                                  has_halation=has_hal, has_salt_pepper=has_sp,
                                  has_vhs=has_vhs, has_aliasing=has_alias,
                                  has_interlace=has_interlace, has_film_grain=has_fg,
-                                 has_oversharp=has_os, has_scanlines=has_sl)
+                                 has_oversharp=has_os, has_scanlines=has_sl,
+                                 has_extra=has_extra)
             if ok:
-                msg = []
-                if has_post:   msg.append(f"posterize p={post_prob:.2f}")
-                if has_band:   msg.append(f"banding p={band_prob:.2f}")
-                if has_chroma: msg.append(f"chroma p={chroma_prob:.2f}")
-                if has_ca:     msg.append(f"CA p={ca_prob:.2f}")
-                if has_hal:    msg.append(f"halation p={hal_prob:.2f}")
-                if has_sp:     msg.append(f"salt&pepper p={sp_prob:.2f}")
-                if has_vhs:    msg.append(f"VHS p={vhs_prob:.2f}")
-                if has_alias:     msg.append(f"aliasing p={alias_prob:.2f}")
-                if iw_prob > 0:   msg.append(f"interlace-weave p={iw_prob:.2f}")
-                if if_prob > 0:   msg.append(f"interlace-flicker p={if_prob:.2f}")
-                if ib_prob > 0:   msg.append(f"interlace-blend p={ib_prob:.2f}")
-                if has_fg:        msg.append(f"film-grain p={fg_prob:.2f}")
-                if has_os:        msg.append(f"oversharp p={os_prob:.2f}")
-                if has_sl:        msg.append(f"scanlines p={sl_prob:.2f}")
-                self.append_log(f"[Custom Deg] Patch applique: {', '.join(msg)}\n")
+                active = [k for k, v in custom_params.items()
+                          if k.endswith("_prob") and isinstance(v, float) and v > 0.0]
+                self.append_log(f"[Custom Deg] Patch appliqué: {', '.join(a.replace('_prob','') for a in active)}\n")
         except Exception as e:
             self.append_log(f"[Custom Deg] Erreur: {e}\n")
 
@@ -1840,12 +1892,23 @@ class RunTab(ctk.CTkFrame):
                 if k in data["degradations"]:
                     del data["degradations"][k]
                     modified = True
+            # Also check nested under 'datasets.*' (e.g. augmentation/aug_prob in dataset train)
+            if "datasets" in data and isinstance(data.get("datasets"), dict):
+                for _ds_val in data["datasets"].values():
+                    if isinstance(_ds_val, dict) and k in _ds_val:
+                        del _ds_val[k]
+                        modified = True
 
         if modified:
             with open(yaml_path, "w", encoding="utf-8") as f:
                 yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
 
     def on_start(self):
+        # Guard: prevent starting a second training while one is already running.
+        if self.runner.is_running:
+            self.append_log("[ERREUR] Un entraînement est déjà en cours. Arrêtez-le d'abord.\n")
+            return
+
         py = self.entries_dict["python_path"].get()
         sc = self.entries_dict["script_path"].get()
         cf = self.entries_dict["config_path"].get()
@@ -2045,10 +2108,9 @@ class RunTab(ctk.CTkFrame):
         if not engine: return 
 
         engine_root = os.path.join(self.base_engine_path, engine)
-        if sys.platform == "win32":
-            py_path = os.path.join(engine_root, ".venv", "Scripts", "python.exe")
-        else:
-            py_path = os.path.join(engine_root, ".venv", "bin", "python")
+        # v2.5.6: shared runtimes/.venv with legacy per-engine fallback.
+        from src.core import engine_paths as _ep
+        py_path = _ep.resolve_engine_python(engine_root)
         script_path = os.path.join(engine_root, "train.py")
 
         if os.path.exists(py_path):
@@ -2719,6 +2781,9 @@ class RunTab(ctk.CTkFrame):
                     if md_r and md_f:
                         try: _loss_d.append((float(md_r.group(1)) + float(md_f.group(1))) / 2)
                         except Exception: pass
+                    elif md_r:
+                        try: _loss_d.append(float(md_r.group(1)))
+                        except Exception: pass
                 # PSNR — NeoSR: "Best PSNR : 24.6367........ dB"  → [0-9]+\.[0-9]+ évite de capturer les points trailers
                 # Redux: "psnr = 32.88" ou "psnr: 32.88"
                 mp = re.search(r'psnr\s*[=:]\s*([0-9]+\.[0-9]+)', _line, re.IGNORECASE)
@@ -2856,7 +2921,13 @@ class RunTab(ctk.CTkFrame):
         py_entry = self.entries_dict.get("python_path")
         py_exec = py_entry.get().strip() if py_entry else ""
         if not py_exec or not os.path.isfile(py_exec):
+            # Frozen exe can't run tensorboard (sys.executable = the app). Find an engine venv.
             py_exec = sys.executable
+            if getattr(sys, "frozen", False):
+                from src.core import engine_paths as _ep
+                _vp = _ep.any_engine_python()
+                if _vp:
+                    py_exec = _vp
 
         # --- 2. Resolve engine root from script path ---
         script_entry = self.entries_dict.get("script_path")
@@ -2948,10 +3019,21 @@ class RunTab(ctk.CTkFrame):
         self.append_log(f"[TensorBoard] Logdir(s) : {log_desc}\n")
 
         # --- 5. Resolve tb_launcher.py ---
-        _this_dir = os.path.dirname(os.path.abspath(__file__))  # src/ui/tabs
+        # In frozen exe (PyInstaller): __file__ resolves inside sys._MEIPASS, path traversal works.
+        # Fallback 1: _MEIPASS explicit (frozen), Fallback 2: exe dir, Fallback 3: dev cwd.
+        import sys as _sys
+        _this_dir = os.path.dirname(os.path.abspath(__file__))  # src/ui/tabs (frozen or dev)
         _launcher = os.path.normpath(os.path.join(_this_dir, "..", "..", "core", "tb_launcher.py"))
+        if not os.path.isfile(_launcher) and getattr(_sys, 'frozen', False):
+            # Explicit _MEIPASS lookup for frozen builds
+            _launcher = os.path.normpath(os.path.join(_sys._MEIPASS, "src", "core", "tb_launcher.py"))
+        if not os.path.isfile(_launcher) and getattr(_sys, 'frozen', False):
+            # Fallback: next to the exe
+            _launcher = os.path.normpath(os.path.join(os.path.dirname(_sys.executable), "src", "core", "tb_launcher.py"))
         if not os.path.isfile(_launcher):
-            _launcher = os.path.normpath(os.path.join(os.getcwd(), "src", "core", "tb_launcher.py"))
+            # Dev fallback: project root
+            _dev_root = os.path.normpath(os.path.join(_this_dir, "..", "..", ".."))
+            _launcher = os.path.normpath(os.path.join(_dev_root, "src", "core", "tb_launcher.py"))
         if not os.path.isfile(_launcher):
             self.append_log(f"[TensorBoard] Erreur : tb_launcher.py introuvable ({_launcher}).\n")
             return
@@ -4179,8 +4261,8 @@ class RunTab(ctk.CTkFrame):
             try: self.card_loss_d.configure(text=f"{float(ld.group(1)):.4f}")
             except Exception: pass
         else:
-            ld_r = re.search(r"l_d_real:\s*([0-9.e+\-]+)", line)
-            ld_f = re.search(r"l_d_fake:\s*([0-9.e+\-]+)", line)
+            ld_r = re.search(r"(?:l_)?d_real:\s*([0-9.e+\-]+)", line)
+            ld_f = re.search(r"(?:l_)?d_fake:\s*([0-9.e+\-]+)", line)
             if ld_r and ld_f:
                 try:
                     self.card_loss_d.configure(
