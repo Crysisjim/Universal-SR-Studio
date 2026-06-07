@@ -532,11 +532,12 @@ class TrainingRunner:
             startupinfo = None
 
             if sys.platform == 'win32':
-                # IMPORTANT : CREATE_NEW_CONSOLE permet d'isoler le processus pour l'injection du signal plus tard
-                creation_flags = subprocess.CREATE_NEW_CONSOLE
+                # CREATE_NEW_PROCESS_GROUP : isole le processus pour CTRL_BREAK_EVENT sans conflit stdout=PIPE
+                # (CREATE_NEW_CONSOLE + stdout=PIPE → WinError 6 sur certains états Windows)
+                creation_flags = subprocess.CREATE_NEW_PROCESS_GROUP
                 startupinfo = subprocess.STARTUPINFO()
                 startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                startupinfo.wShowWindow = 0  # SW_HIDE — fenêtre cachée, CTRL+C reste fonctionnel
+                startupinfo.wShowWindow = 0  # SW_HIDE
 
             # Force UTF-8 for the child process — fixes UnicodeEncodeError on Windows cp1252
             # when engines like traiNNer-redux print emojis (rocket etc.) via rich logging.
@@ -570,7 +571,7 @@ class TrainingRunner:
 
             if return_code == 0:
                 log_callback("\n[SUCCES] Entraînement terminé.\n")
-            elif return_code == 3221225786 or return_code == -1073741510: # Codes d'arrêt CTRL+C Windows
+            elif return_code in (3221225786, -1073741510, 3221225787, -1073741509): # CTRL+C / CTRL+BREAK Windows
                 log_callback("\n[STOP] Arrêt manuel confirmé (Sauvegarde OK).\n")
             else:
                 log_callback(f"\n[STOP] Processus arrêté (Code : {return_code}).\n")
@@ -615,33 +616,18 @@ class TrainingRunner:
             kernel32 = ctypes.windll.kernel32
             pid = self.process.pid
 
-            # 1. Se détacher de toute console actuelle (au cas où)
-            try: kernel32.FreeConsole()
-            except Exception: pass
+            # CTRL_BREAK_EVENT (1) → envoyé au process group du processus enfant.
+            # Compatible avec CREATE_NEW_PROCESS_GROUP (pas besoin d'AttachConsole).
+            # traiNNer-redux intercepte SIGBREAK → sauvegarde propre avant exit.
+            kernel32.SetConsoleCtrlHandler(None, True)   # ignorer le signal dans le GUI
+            result = kernel32.GenerateConsoleCtrlEvent(1, pid)  # 1 = CTRL_BREAK_EVENT
+            kernel32.SetConsoleCtrlHandler(None, False)  # réactiver handler GUI
 
-            # 2. S'attacher à la console de l'entraînement
-            if kernel32.AttachConsole(pid):
-                # 3. Désactiver le handler CTRL+C de notre propre GUI (sinon l'appli se ferme aussi !)
-                kernel32.SetConsoleCtrlHandler(None, True)
-                
-                # 4. Envoyer le signal
-                # GenerateConsoleCtrlEvent(0, 0) envoie le signal à tous les processus de la console attachée
-                kernel32.GenerateConsoleCtrlEvent(0, 0)
-                
-                log_callback("> Signal envoyé. Attente de la sauvegarde...\n")
-                
-                # 5. Attendre un peu que le signal parte
-                time.sleep(0.2)
-                
-                # 6. Se détacher proprement pour permettre une future réutilisation
-                kernel32.FreeConsole()
-                
-                # 7. Réactiver le handler CTRL+C pour l'avenir (optionnel mais propre)
-                kernel32.SetConsoleCtrlHandler(None, False)
+            if result:
+                log_callback("> Signal CTRL_BREAK envoyé. Attente de la sauvegarde...\n")
             else:
-                log_callback("[ERREUR] Impossible de s'attacher à la console du processus.\n")
-                # Fallback : Si on n'arrive pas à s'attacher, on devra killer plus tard
-        
+                log_callback("[ERREUR] GenerateConsoleCtrlEvent a échoué — fallback kill prévu.\n")
+
         except Exception as e:
             log_callback(f"[ERREUR TECHNIQUE] {e}\n")
 
