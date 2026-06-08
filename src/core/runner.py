@@ -534,10 +534,13 @@ class TrainingRunner:
             if sys.platform == 'win32':
                 # CREATE_NEW_PROCESS_GROUP : isole le processus pour CTRL_BREAK_EVENT sans conflit stdout=PIPE
                 # (CREATE_NEW_CONSOLE + stdout=PIPE → WinError 6 sur certains états Windows)
-                creation_flags = subprocess.CREATE_NEW_PROCESS_GROUP
+                # CREATE_NO_WINDOW : empêche Windows Terminal d'ouvrir un onglet console (fenêtre noire)
+                # Note: CREATE_NO_WINDOW seul suffit, mais CREATE_NEW_PROCESS_GROUP est requis pour
+                # CTRL_BREAK_EVENT delivery. Les deux sont compatibles avec stdout=PIPE.
+                creation_flags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
                 startupinfo = subprocess.STARTUPINFO()
                 startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                startupinfo.wShowWindow = 0  # SW_HIDE
+                startupinfo.wShowWindow = 0  # SW_HIDE (double protection)
 
             # Force UTF-8 for the child process — fixes UnicodeEncodeError on Windows cp1252
             # when engines like traiNNer-redux print emojis (rocket etc.) via rich logging.
@@ -546,6 +549,19 @@ class TrainingRunner:
             child_env["PYTHONUTF8"] = "1"
             # Tell rich/click etc. that the terminal supports unicode.
             child_env.setdefault("FORCE_COLOR", "1")
+            # Sentinel file pour arrêt propre — traiNNer poll ce fichier à chaque iter.
+            # Plus fiable que CTRL_BREAK_EVENT (non-déterministe selon charge GPU/DataLoader).
+            import tempfile
+            self._stop_sentinel = os.path.join(
+                tempfile.gettempdir(), f"uss_stop_{os.getpid()}.sentinel"
+            )
+            # Nettoyage d'un éventuel sentinel résiduel d'une session précédente
+            try:
+                if os.path.exists(self._stop_sentinel):
+                    os.remove(self._stop_sentinel)
+            except Exception:
+                pass
+            child_env["USS_STOP_FILE"] = self._stop_sentinel
 
             self.process = subprocess.Popen(
                 cmd,
@@ -582,6 +598,13 @@ class TrainingRunner:
             self.is_running = False
             self.process = None
             self.kill_monitoring_tools()
+            # Nettoyage du sentinel file si encore présent
+            try:
+                sf = getattr(self, '_stop_sentinel', None)
+                if sf and os.path.exists(sf):
+                    os.remove(sf)
+            except Exception:
+                pass
             if on_finish_callback:
                 on_finish_callback()
 
@@ -616,17 +639,26 @@ class TrainingRunner:
             kernel32 = ctypes.windll.kernel32
             pid = self.process.pid
 
-            # CTRL_BREAK_EVENT (1) → envoyé au process group du processus enfant.
-            # Compatible avec CREATE_NEW_PROCESS_GROUP (pas besoin d'AttachConsole).
-            # traiNNer-redux intercepte SIGBREAK → sauvegarde propre avant exit.
-            kernel32.SetConsoleCtrlHandler(None, True)   # ignorer le signal dans le GUI
-            result = kernel32.GenerateConsoleCtrlEvent(1, pid)  # 1 = CTRL_BREAK_EVENT
-            kernel32.SetConsoleCtrlHandler(None, False)  # réactiver handler GUI
+            # Méthode principale : sentinel file → traiNNer poll à chaque iter (fiable).
+            # CTRL_BREAK_EVENT : hint pour accélérer l'arrêt, non-obligatoire.
+            sentinel_written = False
+            stop_file = getattr(self, '_stop_sentinel', None)
+            if stop_file:
+                try:
+                    import pathlib
+                    pathlib.Path(stop_file).touch()
+                    sentinel_written = True
+                    log_callback("> Fichier stop créé. Attente de la sauvegarde...\n")
+                except Exception as e_f:
+                    log_callback(f"[WARN] Sentinel file échoué ({e_f}) — fallback CTRL_BREAK.\n")
 
-            if result:
+            # Tenter aussi CTRL_BREAK_EVENT pour accélérer (peut ne pas fonctionner selon contexte)
+            kernel32.SetConsoleCtrlHandler(None, True)
+            kernel32.GenerateConsoleCtrlEvent(1, pid)   # 1 = CTRL_BREAK_EVENT (best-effort)
+            kernel32.SetConsoleCtrlHandler(None, False)
+
+            if not sentinel_written:
                 log_callback("> Signal CTRL_BREAK envoyé. Attente de la sauvegarde...\n")
-            else:
-                log_callback("[ERREUR] GenerateConsoleCtrlEvent a échoué — fallback kill prévu.\n")
 
         except Exception as e:
             log_callback(f"[ERREUR TECHNIQUE] {e}\n")

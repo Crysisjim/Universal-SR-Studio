@@ -241,6 +241,7 @@ class ConfigHandler:
         flat["warmup_iter"] = train.get("warmup_iter", -1)
         flat["adaptive_d"] = str(train.get("adaptive_d", False)).lower()
         flat["grad_clip"] = str(train.get("grad_clip", False)).lower()
+        flat["grad_clip_max_norm"] = str(train.get("grad_clip_max_norm", train.get("max_norm", 100)))
         # NeoSR uses "ema", Redux uses "ema_decay" — read both for round-trip fidelity
         flat["ema"] = str(train.get("ema", train.get("ema_decay", 0.999)))
         flat["sam"] = train.get("sam", "none")
@@ -923,6 +924,7 @@ class ConfigHandler:
                 "ema_decay": safe_num("ema", 0.999, float),
                 "ema_power": 0.75,
                 "grad_clip": safe_bool("grad_clip", False),
+                **({"grad_clip_max_norm": safe_num("grad_clip_max_norm", 100, float)} if safe_bool("grad_clip", False) else {}),
                 "optim_g": {
                     "type": data.get("optim_g", "AdamW"),
                     "lr": lr,
@@ -1010,12 +1012,16 @@ class ConfigHandler:
                     os.path.expanduser("~"), "IA_Engine", "traiNNer-redux",
                     "traiNNer", "losses", "spark_loss.py"))
                 if _spark_available:
-                    # SparkLoss uses a VGG-like backbone with 5 max-pools (÷32 total).
-                    # Minimum lq_size: 4 × 32 = 128 (to fit the internal 4×4 conv kernel).
-                    if lq_size < 128:
+                    _spark_criterion = data.get("spark_criterion", "fd")
+                    # criterion="fd": forward_once() uses F.conv2d with patch_size=4×4 kernel on InceptionNeXt features.
+                    # At depth ÷32 with pad=32: feature_map = (lq_size + 64) / 32 - 2.
+                    # lq_size=96  → 3×3 feature map < 4×4 kernel → RuntimeError: kernel size > input size.
+                    # lq_size=128 → 4×4 feature map = 4×4 kernel → OK.
+                    # criterion="charbonnier": forward_once() never called → no size constraint.
+                    if _spark_criterion == "fd" and lq_size < 128:
                         lq_size = 128
                         train_ds["lq_size"] = lq_size
-                    _spark_entry = {"type": "SparkLoss", "loss_weight": safe_num("weight_loss_spark", 0.2, float), "criterion": data.get("spark_criterion", "fd")}
+                    _spark_entry = {"type": "SparkLoss", "loss_weight": safe_num("weight_loss_spark", 0.2, float), "criterion": _spark_criterion}
                     _spark_path = (data.get("spark_path") or "").strip()
                     if _spark_path:
                         _spark_entry["path"] = _spark_path
@@ -1275,6 +1281,7 @@ class ConfigHandler:
                 "adaptive_d": safe_bool("adaptive_d", False),
                 "ema": safe_num("ema", 0.999, float),
                 "grad_clip": safe_bool("grad_clip", False),
+                **({"grad_clip_max_norm": safe_num("grad_clip_max_norm", 100, float)} if safe_bool("grad_clip", False) else {}),
                 # "eco" removed — traiNNer-redux dropped this field in newer versions (msgspec strict)
                 "match_lq_colors": safe_bool("match_lq_colors", False),
                 "optim_g": {

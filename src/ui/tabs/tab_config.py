@@ -1140,8 +1140,17 @@ class ConfigTab(ctk.CTkFrame):
         f_gpu = ctk.CTkFrame(f, fg_color="transparent"); f_gpu.pack(fill="x", pady=2)
         ctk.CTkLabel(f_gpu, text="Num GPU :", width=80, anchor="w").pack(side="left")
         self.widgets["num_gpu"] = ctk.CTkEntry(f_gpu, width=50); self.widgets["num_gpu"].insert(0, "1"); self.widgets["num_gpu"].pack(side="left"); ToolTip(self.widgets["num_gpu"], get_tooltip("num_gpu"))
-        for k, txt in [("use_amp", "Use AMP (FP16)"), ("bfloat16", "Use BF16 (RTX 30+)"), ("fast_matmul", "Fast MatMul (TF32)"), ("compile", "Torch Compile (Linux)"), ("grad_clip", "Gradient Clipping"), ("match_lq_colors", "Match Colors (LQ->GT)"), ("eco", "Mode ECO (Low Memory)")]:
+        for k, txt in [("use_amp", "Use AMP (FP16)"), ("bfloat16", "Use BF16 (RTX 30+)"), ("fast_matmul", "Fast MatMul (TF32)"), ("compile", "Torch Compile (Linux)"), ("match_lq_colors", "Match Colors (LQ->GT)"), ("eco", "Mode ECO (Low Memory)")]:
             chk = ctk.CTkCheckBox(f_checks, text=txt, onvalue="true", offvalue="false", command=lambda: self.refresh_ui_stats()); chk.pack(anchor="w", pady=2); self.widgets[k] = chk; ToolTip(chk, get_tooltip(k))
+        # --- Gradient Clipping + Max Norm ---
+        f_gc = ctk.CTkFrame(f_checks, fg_color="transparent"); f_gc.pack(anchor="w", pady=2)
+        gc_chk = ctk.CTkCheckBox(f_gc, text=_t("Gradient Clipping", "Gradient Clipping"), onvalue="true", offvalue="false", command=lambda: self.refresh_ui_stats())
+        gc_chk.pack(side="left"); self.widgets["grad_clip"] = gc_chk; ToolTip(gc_chk, get_tooltip("grad_clip"))
+        _gc_norm_lbl = ctk.CTkLabel(f_gc, text=_t("  Max Norm :", "  Max Norm:"), anchor="w"); _gc_norm_lbl.pack(side="left", padx=(8, 2))
+        ToolTip(_gc_norm_lbl, get_tooltip("grad_clip_max_norm"))
+        _gc_entry = ctk.CTkEntry(f_gc, width=70); _gc_entry.insert(0, "100"); _gc_entry.pack(side="left", padx=4)
+        ToolTip(_gc_entry, get_tooltip("grad_clip_max_norm"))
+        self.widgets["grad_clip_max_norm"] = _gc_entry
         f_sam = ctk.CTkFrame(f, fg_color="transparent"); f_sam.pack(fill="x", pady=2)
         self.add_label_tip(f_sam, "Mode SAM :", "sam"); self.widgets["sam"] = ctk.CTkOptionMenu(f_sam, values=["none", "sam", "fsam"]); self.widgets["sam"].pack(side="left")
         self.add_label_tip(f_sam, "Init :", "sam_init"); self.widgets["sam_init"] = ctk.CTkEntry(f_sam, width=60); self.widgets["sam_init"].insert(0, "-1"); self.widgets["sam_init"].pack(side="left")

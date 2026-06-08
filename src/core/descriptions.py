@@ -68,6 +68,7 @@ TOOLTIPS = {
     "use_amp": "Automatic Mixed Precision.\n\n--- NeoSR ---\n[!] False OBLIGATOIRE sur GTX 1080 Ti (Pascal) — FP16 instable/crashs.\n[+] FP16 accélère sur RTX 2000/3000/4000.\n\n--- TraiNNer-Redux ---\n[+] AMP FP16 FONCTIONNE sur Pascal (sm_61) + PyTorch 2.7 (testé ✅ 9.4 it/s).\n[+] BF16 donne +30% boost sur RTX 3000+ (Tensor Cores).\n[+] BF16 fonctionne aussi sur Pascal sans compile (mode bf16_nocl).\n[!] Différence NeoSR vs Redux : Redux gère mieux l'AMP FP16 sur les vieilles cartes.",
     "bfloat16": "Format BF16 (Brain Float).\n[+] True : Meilleure stabilité que FP16.\n[+] RTX 3070 Ti Laptop bench : ultracompact 7.15 it/s (fp16) → 9.33 it/s (bf16) = +30% via Tensor Cores.\n[-] Ne fonctionne QUE sur RTX 3000/4000 (Ampere+) en mode natif.\n[i] Sur Pascal : bf16_nocl (sans compile) fonctionne à vitesse normale.",
     "grad_clip": "Gradient Clipping.\nCoupe les valeurs extrêmes pour éviter les erreurs NaN (Not a Number).\nIndispensable pour les GANs instables.",
+    "grad_clip_max_norm": "Seuil Max Norm du Gradient Clipping.\nLes gradients dont la norme dépasse cette valeur sont réduits proportionnellement.\n→ 100 : standard, protège contre les pics violents (SparkLoss, GAN multi-loss).\n→ 1.0 : très agressif, adapté aux modèles très instables.\n→ Plus élevé = moins restrictif, plus permissif.\nDéfaut : 100.",
     "deterministic": (
         "Mode Déterministe (torch.use_deterministic_algorithms).\n\n"
         "[+] Reproductibilité exacte : même seed → même résultat à chaque run.\n"
@@ -406,6 +407,9 @@ TOOLTIPS = {
     "figsr_n_blocks": "Nombre de GatedCNNBlocks (corps Fourier-Inception-Gated).\nRépartis en deux moitiés autour d'une unité de Fourier.\n[+] Plus de blocs → meilleure reconstruction.\n[-] Plus lent, +VRAM.\nDéfaut : 24.",
     "figsr_expansion_ratio": "Ratio d'expansion des canaux dans les blocs Gated.\nEx: 2.667 (8/3) → largeur intermédiaire = dim × 2.667.\nPlus élevé = plus large, meilleure capacité, +VRAM.\nDéfaut : 2.667 (8/3).",
     "figsr_mid_dim": "Dimension intermédiaire du module d'upsample.\nUtilisé pour pixelshuffle et dysample.\nDéfaut : 32.",
+    "figsr_gc": "Nombre de groupes de canaux dans les convolutions Gated.\nDivise les canaux en groupes indépendants (grouped conv).\n[+] Plus élevé = plus de diversité de features, légèrement +VRAM.\n[-] Doit diviser exactement 'Dim'.\nDéfaut : 8.",
+    "figsr_square_kernel_size": "Taille du kernel carré dans les blocs GatedCNN.\nCapture les structures spatiales locales (textures, bords).\n[+] Kernel plus grand → contexte spatial plus large.\n[-] +VRAM, légèrement plus lent.\nDéfaut : 13.",
+    "figsr_band_kernel_size": "Taille du kernel bande (directionnel) dans les blocs GatedCNN.\nCapture les structures linéaires et fréquences directionnelles.\n→ Critique pour micro-lignes et deband.\n[+] Kernel plus grand → meilleure capture des bandes fréquentielles.\nDéfaut : 17.",
     # ================= AetherNet =================
     "aether_mlp_ratio": "Ratio d'expansion FFN (GatedConvFFN).\nContrôle la largeur intermédiaire des blocs : hidden = dim × mlp_ratio.\n[+] Plus élevé (ex: 2.0) : Meilleure capacité de représentation.\n[-] Plus lent, légèrement +VRAM.\n[i] Les canaux (embed_dim) et profondeurs (depths) sont fixes selon le variant sélectionné.\nDéfaut : 1.5",
 }
@@ -461,6 +465,7 @@ TOOLTIPS_EN = {
     "use_amp": "Automatic Mixed Precision.\n\n--- NeoSR ---\n[!] False MANDATORY on GTX 1080 Ti (Pascal) — FP16 unstable/crashes.\n[+] FP16 accelerates on RTX 2000/3000/4000.\n\n--- TraiNNer-Redux ---\n[+] AMP FP16 WORKS on Pascal (sm_61) + PyTorch 2.7 (tested ✅ 9.4 it/s).\n[+] BF16 gives +30% boost on RTX 3000+ (Tensor Cores).\n[+] BF16 also works on Pascal without compile (bf16_nocl mode).\n[!] Difference NeoSR vs Redux: Redux handles AMP FP16 better on older GPUs.",
     "bfloat16": "BF16 (Brain Float) format.\n[+] True: Better stability than FP16.\n[+] RTX 3070 Ti Laptop bench: ultracompact 7.15 it/s (fp16) → 9.33 it/s (bf16) = +30% via Tensor Cores.\n[-] Only works on RTX 3000/4000 (Ampere+) in native mode.\n[i] On Pascal: bf16_nocl (without compile) works at normal speed.",
     "grad_clip": "Gradient Clipping.\nCuts extreme values to avoid NaN (Not a Number) errors.\nEssential for unstable GANs.",
+    "grad_clip_max_norm": "Gradient Clipping Max Norm threshold.\nGradients whose norm exceeds this value are scaled down proportionally.\n→ 100: standard, protects against violent spikes (SparkLoss, multi-loss GAN).\n→ 1.0: very aggressive, suited for highly unstable models.\n→ Higher = less restrictive, more permissive.\nDefault: 100.",
     "deterministic": (
         "Deterministic mode (torch.use_deterministic_algorithms).\n\n"
         "[+] Exact reproducibility: same seed → same result on every run.\n"
@@ -796,6 +801,9 @@ TOOLTIPS_EN = {
     "figsr_n_blocks": "Number of GatedCNNBlocks (Fourier-Inception-Gated body).\nSplit into two halves around a Fourier unit.\n[+] More blocks → better reconstruction.\n[-] Slower, +VRAM.\nDefault: 24.",
     "figsr_expansion_ratio": "Channel expansion ratio in Gated blocks.\nEx: 2.667 (8/3) → intermediate width = dim × 2.667.\nHigher = wider, better capacity, +VRAM.\nDefault: 2.667 (8/3).",
     "figsr_mid_dim": "Intermediate dimension of the upsampling module.\nUsed for pixelshuffle and dysample.\nDefault: 32.",
+    "figsr_gc": "Number of channel groups in Gated convolutions.\nDivides channels into independent groups (grouped conv).\n[+] Higher = more feature diversity, slightly +VRAM.\n[-] Must evenly divide 'Dim'.\nDefault: 8.",
+    "figsr_square_kernel_size": "Square kernel size in GatedCNN blocks.\nCaptures local spatial structures (textures, edges).\n[+] Larger kernel → wider spatial context.\n[-] +VRAM, slightly slower.\nDefault: 13.",
+    "figsr_band_kernel_size": "Band (directional) kernel size in GatedCNN blocks.\nCaptures linear structures and directional frequencies.\n→ Critical for micro-lines and debanding.\n[+] Larger kernel → better frequency band capture.\nDefault: 17.",
     # ================= AetherNet =================
     "aether_mlp_ratio": "FFN expansion ratio (GatedConvFFN).\nControls intermediate width: hidden = dim × mlp_ratio.\n[+] Higher (e.g. 2.0): Better representation capacity.\n[-] Slower, slightly +VRAM.\n[i] Channels (embed_dim) and depths are fixed per selected variant.\nDefault: 1.5",
 }
@@ -1897,6 +1905,9 @@ REDUX_ARCH_FIELDS = {
          "choices": ["pixelshuffledirect", "pixelshuffle", "nearest+conv", "dysample", "transpose+conv", "pa_up", "lda"],
          "tip_key": "upsampler"},
         {"label": "Mid Dim", "key": "mid_dim", "default": 32, "tip_key": "figsr_mid_dim"},
+        {"label": "GC (Groups)", "key": "gc", "default": 8, "tip_key": "figsr_gc"},
+        {"label": "Square Kernel", "key": "square_kernel_size", "default": 13, "tip_key": "figsr_square_kernel_size"},
+        {"label": "Band Kernel", "key": "band_kernel_size", "default": 17, "tip_key": "figsr_band_kernel_size"},
     ],
 
     # ── ParagonSR v1 (Phhofm) — conv-first, Magic Kernel Sharp upsampler ──────────────────

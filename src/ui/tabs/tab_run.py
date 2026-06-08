@@ -386,6 +386,12 @@ class RunTab(ctk.CTkFrame):
         if not hasattr(self, "_redux_buf"):
             self._reset_redux_buf()
 
+        # Filtrer les messages Intel Fortran/MKL (forrtl: error 200 = control-BREAK reçu par threads MKL)
+        # Ces messages sont du bruit : la sauvegarde est déjà faite avant qu'ils arrivent.
+        stripped_line = line.strip()
+        if stripped_line.startswith("forrtl:") or re.match(r'^(KERNELBASE|KERNEL32|ntdll)\.dll', stripped_line):
+            return []
+
         # Suppress raw tqdm validation progress lines; track image names for summary box
         # Format 1: "Test luminouswitches018: 71%  ---- 5/7 [0:00:05 < 0:00:02, 1 images/s]"
         if re.match(r'^Test\s+\S+:\s+\d+%', line):
@@ -525,8 +531,13 @@ class RunTab(ctk.CTkFrame):
             self._redux_buf_lines += 1
             self._redux_buf += " " + stripped
             if self._redux_buf_kind == "iter":
-                has_complete = bool(re.search(r"scale_g:\s*[0-9.eE+\-]+", self._redux_buf))
-                if has_complete or self._redux_buf_lines > 14:
+                # Flush UNIQUEMENT sur scale_d: (présent seulement quand D a tourné).
+                # Pour les iters sans D (adaptive_d skip) : pas de scale_d → le buffer attend
+                # et sera flushé par le mécanisme next-timestamp (ligne ~476).
+                # NE PAS utiliser scale_g: comme trigger : scale_g peut arriver sur la ligne
+                # 4+ de continuation → flush prématuré AVANT l_d_real → d_real perdu.
+                has_scale_d = bool(re.search(r"scale_d:\s*[0-9.eE+\-]+", self._redux_buf))
+                if has_scale_d or self._redux_buf_lines > 14:
                     flushed = self._flush_redux_buf()
                     self._redux_draining = True  # absorb tail continuation lines until next timestamp
                     return [flushed] if flushed else []
