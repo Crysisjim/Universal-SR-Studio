@@ -547,6 +547,7 @@ class TrainingRunner:
             child_env = os.environ.copy()
             child_env["PYTHONIOENCODING"] = "utf-8"
             child_env["PYTHONUTF8"] = "1"
+            child_env["PYTHONWARNINGS"] = "ignore::FutureWarning:pynvml"
             # Tell rich/click etc. that the terminal supports unicode.
             child_env.setdefault("FORCE_COLOR", "1")
             # Sentinel file pour arrêt propre — traiNNer poll ce fichier à chaque iter.

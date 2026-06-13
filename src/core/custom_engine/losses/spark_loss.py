@@ -54,6 +54,7 @@ class SparkLoss(nn.Module):
         spark_pad=True,
         phase_weight=1.0,
         loss_weight=1.0,
+        max_score: float | None = 50.0,
     ) -> None:
         super().__init__()
 
@@ -61,6 +62,7 @@ class SparkLoss(nn.Module):
 
         self.phase_weight = phase_weight
         self.loss_weight = loss_weight
+        self.max_score = max_score
         self.stride = stride
         if criterion == "fd":
             for i in range(len(self.model.chns)):
@@ -123,4 +125,6 @@ class SparkLoss(nn.Module):
         x = self.model(x)
         y = self.model(y)
         score = self.criterion(x, y)
+        if self.max_score is not None and self.max_score > 0:
+            score = torch.clamp(score, max=self.max_score)
         return score * self.loss_weight

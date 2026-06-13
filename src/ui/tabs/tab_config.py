@@ -422,7 +422,7 @@ class ConfigTab(ctk.CTkFrame):
             "loss_gv",    "weight_loss_gv",    "gv_patch_size",    "gv_criterion",
             "loss_luma",  "weight_loss_luma",  "luma_criterion",
             "loss_contextual", "weight_loss_contextual", "ctx_distance_type", "ctx_band_width",
-            "loss_spark", "weight_loss_spark", "spark_criterion", "spark_path",
+            "loss_spark", "weight_loss_spark", "spark_criterion", "spark_path", "spark_max_score",
             "loss_percep_anime", "weight_loss_percep_anime", "percep_anime_criterion",
             "eco_mode", "eco_pretrain_path",
         ]
@@ -1172,8 +1172,8 @@ class ConfigTab(ctk.CTkFrame):
         # Gauche : losses normales (transparent sur fond sombre)
         f_loss_left = ctk.CTkFrame(_f_inner, fg_color="transparent")
         f_loss_left.pack(side="left", fill="y", padx=(0, 12))
-        # Droite : Redux uniquement — largeur fixe 430px, fond légèrement plus clair
-        f_loss_right = ctk.CTkFrame(_f_inner, fg_color=("#DEDEDE", "#111827"), corner_radius=6, width=510)
+        # Droite : Redux uniquement — largeur fixe 720px, fond légèrement plus clair
+        f_loss_right = ctk.CTkFrame(_f_inner, fg_color=("#DEDEDE", "#111827"), corner_radius=6, width=720)
         f_loss_right.pack(side="left", fill="y")
         f_loss_right.pack_propagate(False)
         ctk.CTkLabel(f_loss_right, text=_t("⚡ Redux uniquement", "⚡ Redux only"), text_color="#3B8ED0",
@@ -1184,20 +1184,20 @@ class ConfigTab(ctk.CTkFrame):
         def add_weighted_loss(parent, key, label, default_w=1.0, has_reduction=False, has_type=None):
             row = ctk.CTkFrame(parent, fg_color="transparent"); row.pack(fill="x", pady=2)
             chk = ctk.CTkCheckBox(row, text=label, width=140, onvalue="true", offvalue="false"); chk.pack(side="left"); self.widgets[key] = chk; ToolTip(chk, get_tooltip(key))
-            lbl_w = ctk.CTkLabel(row, text="W:", width=20); lbl_w.pack(side="left")
-            e = ctk.CTkEntry(row, width=50); e.insert(0, str(default_w)); e.pack(side="left", padx=5); self.widgets[f"weight_{key}"] = e
+            lbl_w = ctk.CTkLabel(row, text="Weight:", width=52); lbl_w.pack(side="left")
+            e = ctk.CTkEntry(row, width=50); e.insert(0, str(default_w)); e.pack(side="left", padx=10); self.widgets[f"weight_{key}"] = e
             if has_reduction:
                 lbl_r = ctk.CTkLabel(row, text="Mode:", width=40); lbl_r.pack(side="left")
                 opt = ctk.CTkOptionMenu(row, values=["mean", "sum"], width=80); opt.pack(side="left"); opt.set("mean"); self.widgets["pixel_reduction"] = opt; ToolTip(opt, get_tooltip("pixel_reduction"))
             if has_type is not None:
                 lbl_t = ctk.CTkLabel(row, text="Type:", width=40); lbl_t.pack(side="left")
-                opt_t = ctk.CTkOptionMenu(row, values=has_type, width=130); opt_t.pack(side="left", padx=5); opt_t.set(has_type[0]); self.widgets["pixel_criterion"] = opt_t; ToolTip(opt_t, get_tooltip("pixel_criterion"))
+                opt_t = ctk.CTkOptionMenu(row, values=has_type, width=130); opt_t.pack(side="left", padx=10); opt_t.set(has_type[0]); self.widgets["pixel_criterion"] = opt_t; ToolTip(opt_t, get_tooltip("pixel_criterion"))
 
         add_weighted_loss(f_loss_adv, "loss_pixel", "Pixel L1 / Charbonnier", 1.0, has_reduction=True, has_type=["L1Loss", "MSELoss", "HuberLoss", "chc_loss"]); self.widgets["loss_pixel"].select()
         f_perc = ctk.CTkFrame(f_loss_adv, fg_color="transparent"); f_perc.pack(fill="x", pady=2)
         chk_p = ctk.CTkCheckBox(f_perc, text="Perceptual (VGG)", width=140, onvalue="true", offvalue="false"); chk_p.pack(side="left"); self.widgets["loss_percep"] = chk_p; chk_p.select(); ToolTip(chk_p, get_tooltip("loss_percep"))
-        lbl_w = ctk.CTkLabel(f_perc, text="W:", width=20); lbl_w.pack(side="left"); self.widgets["weight_loss_percep"] = ctk.CTkEntry(f_perc, width=50); self.widgets["weight_loss_percep"].insert(0, "1.0"); self.widgets["weight_loss_percep"].pack(side="left", padx=5)
-        self.widgets["percep_criterion"] = ctk.CTkOptionMenu(f_perc, values=["huber", "l1", "l2", "charbonnier", "chc_loss"], width=110); self.widgets["percep_criterion"].pack(side="left", padx=5); self.widgets["percep_criterion"].set("huber"); ToolTip(self.widgets["percep_criterion"], get_tooltip("percep_criterion"))
+        lbl_w = ctk.CTkLabel(f_perc, text="Weight:", width=52); lbl_w.pack(side="left"); self.widgets["weight_loss_percep"] = ctk.CTkEntry(f_perc, width=50); self.widgets["weight_loss_percep"].insert(0, "1.0"); self.widgets["weight_loss_percep"].pack(side="left", padx=10)
+        self.widgets["percep_criterion"] = ctk.CTkOptionMenu(f_perc, values=["huber", "l1", "l2", "charbonnier", "chc_loss"], width=110); self.widgets["percep_criterion"].pack(side="left", padx=10); self.widgets["percep_criterion"].set("huber"); ToolTip(self.widgets["percep_criterion"], get_tooltip("percep_criterion"))
         # VGG layers — CTkToplevel popup à droite du bouton
         _VGG_LAYERS = [("conv1_2","0.0"),("conv2_2","0.0"),("conv3_2","0.0"),("conv3_4","0.0"),
                        ("conv4_2","0.0"),("conv4_4","0.0"),("conv5_2","0.0"),("conv5_4","1.0")]
@@ -1283,13 +1283,13 @@ class ConfigTab(ctk.CTkFrame):
                 btn_vgg.configure(text=_t("▲ Couches VGG", "▲ VGG Layers"))
 
         btn_vgg = ctk.CTkButton(f_perc, text=_t("▾ Couches VGG", "▾ VGG Layers"), width=115, fg_color="#2c3e50",
-                                command=_toggle_vgg); btn_vgg.pack(side="left", padx=5)
+                                command=_toggle_vgg); btn_vgg.pack(side="left", padx=10)
         ToolTip(btn_vgg, _t("Sélection individuelle des couches VGG et leur poids.\nPoids > 0 = couche active.\nconv5_4=1.0 par défaut.\nconv1_2/conv2_2 = détails fins  |  conv3_4/conv4_4 = style/texture  |  conv5_4 = sémantique",
                              "Individual VGG layer selection and weights.\nWeight > 0 = active layer.\nconv5_4=1.0 by default.\nconv1_2/conv2_2 = fine details  |  conv3_4/conv4_4 = style/texture  |  conv5_4 = semantics"))
 
         f_fdl = ctk.CTkFrame(f_loss_adv, fg_color="transparent"); f_fdl.pack(fill="x", pady=2)
         chk_fdl = ctk.CTkCheckBox(f_fdl, text="FDL (Freq)", width=140, onvalue="true", offvalue="false"); chk_fdl.pack(side="left"); self.widgets["loss_fdl"] = chk_fdl; ToolTip(chk_fdl, get_tooltip("loss_fdl"))
-        lbl_w = ctk.CTkLabel(f_fdl, text="W:", width=20); lbl_w.pack(side="left"); self.widgets["weight_loss_fdl"] = ctk.CTkEntry(f_fdl, width=50); self.widgets["weight_loss_fdl"].insert(0, "1.0"); self.widgets["weight_loss_fdl"].pack(side="left", padx=5)
+        lbl_w = ctk.CTkLabel(f_fdl, text="Weight:", width=52); lbl_w.pack(side="left"); self.widgets["weight_loss_fdl"] = ctk.CTkEntry(f_fdl, width=50); self.widgets["weight_loss_fdl"].insert(0, "1.0"); self.widgets["weight_loss_fdl"].pack(side="left", padx=10)
         self.widgets["fdl_model"] = ctk.CTkOptionMenu(f_fdl, values=["vgg", "dinov2", "resnet", "effnet"], width=90); self.widgets["fdl_model"].pack(side="left"); self.widgets["fdl_model"].set("vgg"); ToolTip(self.widgets["fdl_model"], get_tooltip("fdl_model"))
 
 
@@ -1341,14 +1341,14 @@ class ConfigTab(ctk.CTkFrame):
         # --- MS-SSIM ---
         f_mssim = ctk.CTkFrame(f_loss_adv, fg_color="transparent"); f_mssim.pack(fill="x", pady=2)
         chk_mssim = ctk.CTkCheckBox(f_mssim, text="MS-SSIM", width=140, onvalue="true", offvalue="false"); chk_mssim.pack(side="left"); self.widgets["loss_mssim"] = chk_mssim; ToolTip(chk_mssim, get_tooltip("loss_mssim"))
-        ctk.CTkLabel(f_mssim, text="W:", width=20).pack(side="left"); self.widgets["weight_loss_mssim"] = ctk.CTkEntry(f_mssim, width=50); self.widgets["weight_loss_mssim"].insert(0, "1.0"); self.widgets["weight_loss_mssim"].pack(side="left", padx=5)
+        ctk.CTkLabel(f_mssim, text="Weight:", width=52).pack(side="left"); self.widgets["weight_loss_mssim"] = ctk.CTkEntry(f_mssim, width=50); self.widgets["weight_loss_mssim"].insert(0, "1.0"); self.widgets["weight_loss_mssim"].pack(side="left", padx=10)
         _, _mssim_toggle = _loss_popup("MS-SSIM Options (NeoSR)", [
             ("mssim_window_size", "Window Size", "11",   "entry",  None, "Taille de la fenêtre Gaussienne.\nDéfaut : 11 (NeoSR)"),
             ("mssim_sigma",       "Sigma",       "1.5",  "entry",  None, "Écart-type Gaussien.\nDéfaut : 1.5 (NeoSR)"),
             ("mssim_k1",          "K1",          "0.01", "entry",  None, "Constante de stabilité K1.\nDéfaut : 0.01"),
             ("mssim_k2",          "K2",          "0.03", "entry",  None, "Constante de stabilité K2.\nDéfaut : 0.03"),
         ])
-        _btn_mssim = ctk.CTkButton(f_mssim, text="⚙", width=30, fg_color="#2c3e50", command=lambda: _mssim_toggle(_btn_mssim)); _btn_mssim.pack(side="left", padx=5)
+        _btn_mssim = ctk.CTkButton(f_mssim, text="⚙", width=30, fg_color="#2c3e50", command=lambda: _mssim_toggle(_btn_mssim)); _btn_mssim.pack(side="left", padx=10)
         ToolTip(_btn_mssim, _t("Paramètres avancés MS-SSIM (NeoSR).", "Advanced MS-SSIM parameters (NeoSR)."))
 
         # --- DISTS ---
@@ -1360,15 +1360,15 @@ class ConfigTab(ctk.CTkFrame):
         # --- Focal Freq ---
         f_ff = ctk.CTkFrame(f_loss_adv, fg_color="transparent"); f_ff.pack(fill="x", pady=2)
         chk_ff = ctk.CTkCheckBox(f_ff, text="Focal Freq", width=140, onvalue="true", offvalue="false"); chk_ff.pack(side="left"); self.widgets["loss_ff"] = chk_ff; ToolTip(chk_ff, get_tooltip("loss_ff"))
-        ctk.CTkLabel(f_ff, text="W:", width=20).pack(side="left"); self.widgets["weight_loss_ff"] = ctk.CTkEntry(f_ff, width=50); self.widgets["weight_loss_ff"].insert(0, "1.0"); self.widgets["weight_loss_ff"].pack(side="left", padx=5)
-        ctk.CTkLabel(f_ff, text="α:", width=20).pack(side="left"); self.widgets["ff_alpha"] = ctk.CTkEntry(f_ff, width=50); self.widgets["ff_alpha"].insert(0, "1.0"); self.widgets["ff_alpha"].pack(side="left", padx=5)
+        ctk.CTkLabel(f_ff, text="Weight:", width=52).pack(side="left"); self.widgets["weight_loss_ff"] = ctk.CTkEntry(f_ff, width=50); self.widgets["weight_loss_ff"].insert(0, "1.0"); self.widgets["weight_loss_ff"].pack(side="left", padx=10)
+        ctk.CTkLabel(f_ff, text="α:", width=20).pack(side="left"); self.widgets["ff_alpha"] = ctk.CTkEntry(f_ff, width=50); self.widgets["ff_alpha"].insert(0, "1.0"); self.widgets["ff_alpha"].pack(side="left", padx=10)
         ToolTip(self.widgets["ff_alpha"], _t("Alpha — poids des fréquences hautes.\n1.0 = équilibré. >1 = accent hautes fréquences.\nDéfaut : 1.0",
                                               "Alpha — high frequency weight.\n1.0 = balanced. >1 = emphasis on high frequencies.\nDefault: 1.0"))
 
         # --- Consistency (NeoSR only) ---
         f_cst = ctk.CTkFrame(f_loss_adv, fg_color="transparent"); f_cst.pack(fill="x", pady=2)
         chk_cst = ctk.CTkCheckBox(f_cst, text="Consistency", width=140, onvalue="true", offvalue="false"); chk_cst.pack(side="left"); self.widgets["loss_consistency"] = chk_cst; ToolTip(chk_cst, get_tooltip("loss_consistency"))
-        ctk.CTkLabel(f_cst, text="W:", width=20).pack(side="left"); self.widgets["weight_loss_consistency"] = ctk.CTkEntry(f_cst, width=50); self.widgets["weight_loss_consistency"].insert(0, "1.0"); self.widgets["weight_loss_consistency"].pack(side="left", padx=5)
+        ctk.CTkLabel(f_cst, text="Weight:", width=52).pack(side="left"); self.widgets["weight_loss_consistency"] = ctk.CTkEntry(f_cst, width=50); self.widgets["weight_loss_consistency"].insert(0, "1.0"); self.widgets["weight_loss_consistency"].pack(side="left", padx=10)
         _, _cst_toggle = _loss_popup("Consistency Options (NeoSR)", [
             ("consistency_blur",       "Blur",       True, "check", None,
              "Contrainte de cohérence par flou.\nApplique un filtre gaussien aux deux images avant comparaison.\nRéduit la sensibilité aux micro-décalages sub-pixel.\nRecommandé : actif."),
@@ -1379,7 +1379,7 @@ class ConfigTab(ctk.CTkFrame):
             ("consistency_brightness", "Brightness", True, "check", None,
              "Contrainte de luminosité.\nPénalise les écarts de luminosité perçue (canal L* CIE).\nÉvite que l'image sortie soit plus sombre ou plus claire que la cible.\nRecommandé : actif."),
         ])
-        _btn_cst = ctk.CTkButton(f_cst, text="⚙", width=30, fg_color="#2c3e50", command=lambda: _cst_toggle(_btn_cst)); _btn_cst.pack(side="left", padx=5)
+        _btn_cst = ctk.CTkButton(f_cst, text="⚙", width=30, fg_color="#2c3e50", command=lambda: _cst_toggle(_btn_cst)); _btn_cst.pack(side="left", padx=10)
         ToolTip(_btn_cst, _t("Activer/désactiver les contraintes de consistance (NeoSR).", "Enable/disable consistency constraints (NeoSR)."))
 
         # --- NCC (NeoSR only) ---
@@ -1391,84 +1391,86 @@ class ConfigTab(ctk.CTkFrame):
         # --- LDL — criterion + ksize ---
         f_ldl = ctk.CTkFrame(f_loss_adv, fg_color="transparent"); f_ldl.pack(fill="x", pady=2)
         chk_ldl = ctk.CTkCheckBox(f_ldl, text="LDL", width=140, onvalue="true", offvalue="false"); chk_ldl.pack(side="left"); self.widgets["loss_ldl"] = chk_ldl; ToolTip(chk_ldl, get_tooltip("loss_ldl"))
-        ctk.CTkLabel(f_ldl, text="W:", width=20).pack(side="left"); self.widgets["weight_loss_ldl"] = ctk.CTkEntry(f_ldl, width=50); self.widgets["weight_loss_ldl"].insert(0, "1.0"); self.widgets["weight_loss_ldl"].pack(side="left", padx=5)
-        self.widgets["ldl_criterion"] = ctk.CTkOptionMenu(f_ldl, values=["charbonnier", "l1", "l2", "huber"], width=105); self.widgets["ldl_criterion"].pack(side="left", padx=5); self.widgets["ldl_criterion"].set("charbonnier"); ToolTip(self.widgets["ldl_criterion"], _t("Critère LDL.\nRedux : charbonnier (défaut), l1, l2, huber.\nNeoSR : l1 (défaut), l2, huber, chc (pas charbonnier).", "LDL criterion.\nRedux: charbonnier (default), l1, l2, huber.\nNeoSR: l1 (default), l2, huber, chc (charbonnier not supported)."))
-        ctk.CTkLabel(f_ldl, text="ksize:", width=45).pack(side="left"); self.widgets["ldl_ksize"] = ctk.CTkEntry(f_ldl, width=45); self.widgets["ldl_ksize"].insert(0, "7"); self.widgets["ldl_ksize"].pack(side="left", padx=5)
+        ctk.CTkLabel(f_ldl, text="Weight:", width=52).pack(side="left"); self.widgets["weight_loss_ldl"] = ctk.CTkEntry(f_ldl, width=50); self.widgets["weight_loss_ldl"].insert(0, "1.0"); self.widgets["weight_loss_ldl"].pack(side="left", padx=10)
+        self.widgets["ldl_criterion"] = ctk.CTkOptionMenu(f_ldl, values=["charbonnier", "l1", "l2", "huber"], width=105); self.widgets["ldl_criterion"].pack(side="left", padx=10); self.widgets["ldl_criterion"].set("charbonnier"); ToolTip(self.widgets["ldl_criterion"], _t("Critère LDL.\nRedux : charbonnier (défaut), l1, l2, huber.\nNeoSR : l1 (défaut), l2, huber, chc (pas charbonnier).", "LDL criterion.\nRedux: charbonnier (default), l1, l2, huber.\nNeoSR: l1 (default), l2, huber, chc (charbonnier not supported)."))
+        ctk.CTkLabel(f_ldl, text="ksize:", width=45).pack(side="left"); self.widgets["ldl_ksize"] = ctk.CTkEntry(f_ldl, width=45); self.widgets["ldl_ksize"].insert(0, "7"); self.widgets["ldl_ksize"].pack(side="left", padx=10)
         ToolTip(self.widgets["ldl_ksize"], _t("Taille du kernel LDL (entier impair).\n7 = défaut.", "LDL kernel size (odd integer).\n7 = default."))
 
         # --- Edge Loss (NeoSR only) ---
         f_edge = ctk.CTkFrame(f_loss_adv, fg_color="transparent"); f_edge.pack(fill="x", pady=2)
         chk_edge = ctk.CTkCheckBox(f_edge, text="Edge Loss", width=140, onvalue="true", offvalue="false"); chk_edge.pack(side="left"); self.widgets["loss_edge"] = chk_edge; ToolTip(chk_edge, get_tooltip("loss_edge"))
-        ctk.CTkLabel(f_edge, text="W:", width=20).pack(side="left"); self.widgets["weight_loss_edge"] = ctk.CTkEntry(f_edge, width=50); self.widgets["weight_loss_edge"].insert(0, "0.05"); self.widgets["weight_loss_edge"].pack(side="left", padx=5)
-        self.widgets["edge_criterion"] = ctk.CTkOptionMenu(f_edge, values=["l1", "l2", "huber", "chc"], width=80); self.widgets["edge_criterion"].pack(side="left", padx=5); self.widgets["edge_criterion"].set("l1"); ToolTip(self.widgets["edge_criterion"], _t("Critère Edge Loss.\nl1/l2/huber : Standards.\nchc : Clipped Huber+Cosine (NeoSR uniquement).", "Edge Loss criterion.\nl1/l2/huber: Standard.\nchc: Clipped Huber+Cosine (NeoSR only)."))
-        self.widgets["edge_corner"] = ctk.CTkCheckBox(f_edge, text="Corner", width=70, onvalue="true", offvalue="false"); self.widgets["edge_corner"].pack(side="left", padx=5); ToolTip(self.widgets["edge_corner"], _t("Activer la détection de coins.\nRenforce les angles et intersections.", "Enable corner detection.\nStrengthens angles and intersections."))
+        ctk.CTkLabel(f_edge, text="Weight:", width=52).pack(side="left"); self.widgets["weight_loss_edge"] = ctk.CTkEntry(f_edge, width=50); self.widgets["weight_loss_edge"].insert(0, "0.05"); self.widgets["weight_loss_edge"].pack(side="left", padx=10)
+        self.widgets["edge_criterion"] = ctk.CTkOptionMenu(f_edge, values=["l1", "l2", "huber", "chc"], width=80); self.widgets["edge_criterion"].pack(side="left", padx=10); self.widgets["edge_criterion"].set("l1"); ToolTip(self.widgets["edge_criterion"], _t("Critère Edge Loss.\nl1/l2/huber : Standards.\nchc : Clipped Huber+Cosine (NeoSR uniquement).", "Edge Loss criterion.\nl1/l2/huber: Standard.\nchc: Clipped Huber+Cosine (NeoSR only)."))
+        self.widgets["edge_corner"] = ctk.CTkCheckBox(f_edge, text="Corner", width=70, onvalue="true", offvalue="false"); self.widgets["edge_corner"].pack(side="left", padx=10); ToolTip(self.widgets["edge_corner"], _t("Activer la détection de coins.\nRenforce les angles et intersections.", "Enable corner detection.\nStrengthens angles and intersections."))
 
         # --- Wavelet Guided (NeoSR only) — dans le bloc normal ---
         row_wav = ctk.CTkFrame(f_loss_adv, fg_color="transparent"); row_wav.pack(fill="x", pady=2)
         chk_wav = ctk.CTkCheckBox(row_wav, text="Wavelet Guided", onvalue="true", offvalue="false", width=140); chk_wav.pack(side="left"); self.widgets["loss_wavelet"] = chk_wav; ToolTip(chk_wav, get_tooltip("loss_wavelet"))
-        lbl_w = ctk.CTkLabel(row_wav, text="W:", width=20); lbl_w.pack(side="left"); e_wav = ctk.CTkEntry(row_wav, width=40); e_wav.insert(0, "1.0"); e_wav.pack(side="left", padx=5); self.widgets["weight_loss_wavelet"] = e_wav
-        lbl_i = ctk.CTkLabel(row_wav, text="Init:", width=30); lbl_i.pack(side="left"); e_init = ctk.CTkEntry(row_wav, width=50); e_init.insert(0, "10000"); e_init.pack(side="left", padx=5); self.widgets["wavelet_init"] = e_init
+        lbl_w = ctk.CTkLabel(row_wav, text="Weight:", width=52); lbl_w.pack(side="left"); e_wav = ctk.CTkEntry(row_wav, width=40); e_wav.insert(0, "1.0"); e_wav.pack(side="left", padx=10); self.widgets["weight_loss_wavelet"] = e_wav
+        lbl_i = ctk.CTkLabel(row_wav, text="Init:", width=30); lbl_i.pack(side="left"); e_init = ctk.CTkEntry(row_wav, width=50); e_init.insert(0, "10000"); e_init.pack(side="left", padx=10); self.widgets["wavelet_init"] = e_init
 
         # ── Redux-only losses (colonne droite : f_loss_right) ──
 
         # HSLuv
         f_hsluv = ctk.CTkFrame(f_loss_right, fg_color="transparent"); f_hsluv.pack(fill="x", pady=2, padx=6)
         chk_hsluv = ctk.CTkCheckBox(f_hsluv, text="HSLuv", width=120, onvalue="true", offvalue="false"); chk_hsluv.pack(side="left"); self.widgets["loss_hsluv"] = chk_hsluv; ToolTip(chk_hsluv, get_tooltip("loss_hsluv", _t("HSLuv Loss — espace couleur perceptuellement uniforme.", "HSLuv Loss — perceptually uniform color space.")))
-        ctk.CTkLabel(f_hsluv, text="W:", width=20).pack(side="left"); self.widgets["weight_loss_hsluv"] = ctk.CTkEntry(f_hsluv, width=42); self.widgets["weight_loss_hsluv"].insert(0, "1.0"); self.widgets["weight_loss_hsluv"].pack(side="left", padx=3)
-        ctk.CTkLabel(f_hsluv, text="H:", width=16).pack(side="left"); self.widgets["hsluv_hue_weight"] = ctk.CTkEntry(f_hsluv, width=38); self.widgets["hsluv_hue_weight"].insert(0, "0.33"); self.widgets["hsluv_hue_weight"].pack(side="left", padx=2); ToolTip(self.widgets["hsluv_hue_weight"], _t("Poids Teinte (Hue).\nInfluence la correction de teinte.\nDéfaut : 0.33  |  Augmenter si la teinte dévie.", "Hue weight.\nInfluences hue correction.\nDefault: 0.33  |  Increase if hue drifts."))
-        ctk.CTkLabel(f_hsluv, text="S:", width=16).pack(side="left"); self.widgets["hsluv_sat_weight"] = ctk.CTkEntry(f_hsluv, width=38); self.widgets["hsluv_sat_weight"].insert(0, "0.33"); self.widgets["hsluv_sat_weight"].pack(side="left", padx=2); ToolTip(self.widgets["hsluv_sat_weight"], _t("Poids Saturation.\nInfluence la vivacité des couleurs.\nDéfaut : 0.33  |  Augmenter si les couleurs semblent ternes.", "Saturation weight.\nInfluences color vividness.\nDefault: 0.33  |  Increase if colors look dull."))
-        ctk.CTkLabel(f_hsluv, text="L:", width=16).pack(side="left"); self.widgets["hsluv_lum_weight"] = ctk.CTkEntry(f_hsluv, width=38); self.widgets["hsluv_lum_weight"].insert(0, "0.33"); self.widgets["hsluv_lum_weight"].pack(side="left", padx=2); ToolTip(self.widgets["hsluv_lum_weight"], _t("Poids Luminosité (Lightness).\nInfluence la correction de luminosité perçue.\nDéfaut : 0.33  |  Augmenter si la luminosité dévie.", "Lightness weight.\nInfluences perceived brightness correction.\nDefault: 0.33  |  Increase if brightness drifts."))
+        ctk.CTkLabel(f_hsluv, text="Weight:", width=52).pack(side="left"); self.widgets["weight_loss_hsluv"] = ctk.CTkEntry(f_hsluv, width=42); self.widgets["weight_loss_hsluv"].insert(0, "1.0"); self.widgets["weight_loss_hsluv"].pack(side="left", padx=8)
+        ctk.CTkLabel(f_hsluv, text="H:", width=16).pack(side="left"); self.widgets["hsluv_hue_weight"] = ctk.CTkEntry(f_hsluv, width=38); self.widgets["hsluv_hue_weight"].insert(0, "0.33"); self.widgets["hsluv_hue_weight"].pack(side="left", padx=5); ToolTip(self.widgets["hsluv_hue_weight"], _t("Poids Teinte (Hue).\nInfluence la correction de teinte.\nDéfaut : 0.33  |  Augmenter si la teinte dévie.", "Hue weight.\nInfluences hue correction.\nDefault: 0.33  |  Increase if hue drifts."))
+        ctk.CTkLabel(f_hsluv, text="S:", width=16).pack(side="left"); self.widgets["hsluv_sat_weight"] = ctk.CTkEntry(f_hsluv, width=38); self.widgets["hsluv_sat_weight"].insert(0, "0.33"); self.widgets["hsluv_sat_weight"].pack(side="left", padx=5); ToolTip(self.widgets["hsluv_sat_weight"], _t("Poids Saturation.\nInfluence la vivacité des couleurs.\nDéfaut : 0.33  |  Augmenter si les couleurs semblent ternes.", "Saturation weight.\nInfluences color vividness.\nDefault: 0.33  |  Increase if colors look dull."))
+        ctk.CTkLabel(f_hsluv, text="L:", width=16).pack(side="left"); self.widgets["hsluv_lum_weight"] = ctk.CTkEntry(f_hsluv, width=38); self.widgets["hsluv_lum_weight"].insert(0, "0.33"); self.widgets["hsluv_lum_weight"].pack(side="left", padx=5); ToolTip(self.widgets["hsluv_lum_weight"], _t("Poids Luminosité (Lightness).\nInfluence la correction de luminosité perçue.\nDéfaut : 0.33  |  Augmenter si la luminosité dévie.", "Lightness weight.\nInfluences perceived brightness correction.\nDefault: 0.33  |  Increase if brightness drifts."))
 
         # Cosim
         f_cosim = ctk.CTkFrame(f_loss_right, fg_color="transparent"); f_cosim.pack(fill="x", pady=2, padx=6)
         chk_cosim = ctk.CTkCheckBox(f_cosim, text="Cosim", width=120, onvalue="true", offvalue="false"); chk_cosim.pack(side="left"); self.widgets["loss_cosim"] = chk_cosim; ToolTip(chk_cosim, get_tooltip("loss_cosim", "Cosine Similarity Loss."))
-        ctk.CTkLabel(f_cosim, text="W:", width=20).pack(side="left"); self.widgets["weight_loss_cosim"] = ctk.CTkEntry(f_cosim, width=42); self.widgets["weight_loss_cosim"].insert(0, "1.0"); self.widgets["weight_loss_cosim"].pack(side="left", padx=3)
-        ctk.CTkLabel(f_cosim, text="λ:", width=18).pack(side="left"); self.widgets["cosim_lambda"] = ctk.CTkEntry(f_cosim, width=42); self.widgets["cosim_lambda"].insert(0, "5"); self.widgets["cosim_lambda"].pack(side="left", padx=3); ToolTip(self.widgets["cosim_lambda"], _t("Lambda cosim.\nFacteur d'échelle de la pénalité angulaire.\nDéfaut : 5  |  Augmenter → correction couleur plus agressive.", "Lambda cosim.\nAngular penalty scale factor.\nDefault: 5  |  Increase → more aggressive color correction."))
+        ctk.CTkLabel(f_cosim, text="Weight:", width=52).pack(side="left"); self.widgets["weight_loss_cosim"] = ctk.CTkEntry(f_cosim, width=42); self.widgets["weight_loss_cosim"].insert(0, "1.0"); self.widgets["weight_loss_cosim"].pack(side="left", padx=8)
+        ctk.CTkLabel(f_cosim, text="λ:", width=18).pack(side="left"); self.widgets["cosim_lambda"] = ctk.CTkEntry(f_cosim, width=42); self.widgets["cosim_lambda"].insert(0, "5"); self.widgets["cosim_lambda"].pack(side="left", padx=8); ToolTip(self.widgets["cosim_lambda"], _t("Lambda cosim.\nFacteur d'échelle de la pénalité angulaire.\nDéfaut : 5  |  Augmenter → correction couleur plus agressive.", "Lambda cosim.\nAngular penalty scale factor.\nDefault: 5  |  Increase → more aggressive color correction."))
 
         # Color
         f_color = ctk.CTkFrame(f_loss_right, fg_color="transparent"); f_color.pack(fill="x", pady=2, padx=6)
         chk_color = ctk.CTkCheckBox(f_color, text="Color", width=120, onvalue="true", offvalue="false"); chk_color.pack(side="left"); self.widgets["loss_color"] = chk_color; ToolTip(chk_color, get_tooltip("loss_color", _t("Color Loss — fidélité chromatique.", "Color Loss — chromatic fidelity.")))
-        ctk.CTkLabel(f_color, text="W:", width=20).pack(side="left"); self.widgets["weight_loss_color"] = ctk.CTkEntry(f_color, width=42); self.widgets["weight_loss_color"].insert(0, "1.0"); self.widgets["weight_loss_color"].pack(side="left", padx=3)
-        self.widgets["color_criterion"] = ctk.CTkOptionMenu(f_color, values=["l1", "l2", "huber", "charbonnier"], width=105); self.widgets["color_criterion"].pack(side="left", padx=3); self.widgets["color_criterion"].set("l1"); ToolTip(self.widgets["color_criterion"], _t("Critère Color Loss.\nl1 : Erreur absolue — standard, recommandé.\nl2 : Quadratique — plus lissé.\nhuber : Hybride — robuste aux outliers.\ncharbonnier : L1 lissé — stable, recommandé Redux.", "Color Loss criterion.\nl1: Absolute error — standard, recommended.\nl2: Quadratic — smoother.\nhuber: Hybrid — robust to outliers.\ncharbonnier: Smooth L1 — stable, recommended Redux."))
+        ctk.CTkLabel(f_color, text="Weight:", width=52).pack(side="left"); self.widgets["weight_loss_color"] = ctk.CTkEntry(f_color, width=42); self.widgets["weight_loss_color"].insert(0, "1.0"); self.widgets["weight_loss_color"].pack(side="left", padx=8)
+        self.widgets["color_criterion"] = ctk.CTkOptionMenu(f_color, values=["l1", "l2", "huber", "charbonnier"], width=105); self.widgets["color_criterion"].pack(side="left", padx=8); self.widgets["color_criterion"].set("l1"); ToolTip(self.widgets["color_criterion"], _t("Critère Color Loss.\nl1 : Erreur absolue — standard, recommandé.\nl2 : Quadratique — plus lissé.\nhuber : Hybride — robuste aux outliers.\ncharbonnier : L1 lissé — stable, recommandé Redux.", "Color Loss criterion.\nl1: Absolute error — standard, recommended.\nl2: Quadratic — smoother.\nhuber: Hybrid — robust to outliers.\ncharbonnier: Smooth L1 — stable, recommended Redux."))
 
         # Gradient Variance
         f_gv = ctk.CTkFrame(f_loss_right, fg_color="transparent"); f_gv.pack(fill="x", pady=2, padx=6)
         chk_gv = ctk.CTkCheckBox(f_gv, text="Grad Variance", width=120, onvalue="true", offvalue="false"); chk_gv.pack(side="left"); self.widgets["loss_gv"] = chk_gv; ToolTip(chk_gv, get_tooltip("loss_gv", "Gradient Variance Loss."))
-        ctk.CTkLabel(f_gv, text="W:", width=20).pack(side="left"); self.widgets["weight_loss_gv"] = ctk.CTkEntry(f_gv, width=42); self.widgets["weight_loss_gv"].insert(0, "1.0"); self.widgets["weight_loss_gv"].pack(side="left", padx=3)
-        ctk.CTkLabel(f_gv, text="P:", width=16).pack(side="left"); self.widgets["gv_patch_size"] = ctk.CTkEntry(f_gv, width=38); self.widgets["gv_patch_size"].insert(0, "16"); self.widgets["gv_patch_size"].pack(side="left", padx=2); ToolTip(self.widgets["gv_patch_size"], _t("Patch size (pixels).\nTaille des patches pour le calcul de variance de gradient.\nDéfaut : 16  |  Augmenter → contexte plus large.", "Patch size (pixels).\nPatch size for gradient variance computation.\nDefault: 16  |  Increase → larger context."))
-        self.widgets["gv_criterion"] = ctk.CTkOptionMenu(f_gv, values=["charbonnier", "l1", "l2", "huber"], width=105); self.widgets["gv_criterion"].pack(side="left", padx=3); self.widgets["gv_criterion"].set("charbonnier"); ToolTip(self.widgets["gv_criterion"], _t("Critère Gradient Variance.\ncharbonnier : Recommandé — L1 lissé, robuste.\nl1/l2/huber : alternatives standard.", "Gradient Variance criterion.\ncharbonnier: Recommended — smooth L1, robust.\nl1/l2/huber: standard alternatives."))
+        ctk.CTkLabel(f_gv, text="Weight:", width=52).pack(side="left"); self.widgets["weight_loss_gv"] = ctk.CTkEntry(f_gv, width=42); self.widgets["weight_loss_gv"].insert(0, "1.0"); self.widgets["weight_loss_gv"].pack(side="left", padx=8)
+        ctk.CTkLabel(f_gv, text="P:", width=16).pack(side="left"); self.widgets["gv_patch_size"] = ctk.CTkEntry(f_gv, width=38); self.widgets["gv_patch_size"].insert(0, "16"); self.widgets["gv_patch_size"].pack(side="left", padx=5); ToolTip(self.widgets["gv_patch_size"], _t("Patch size (pixels).\nTaille des patches pour le calcul de variance de gradient.\nDéfaut : 16  |  Augmenter → contexte plus large.", "Patch size (pixels).\nPatch size for gradient variance computation.\nDefault: 16  |  Increase → larger context."))
+        self.widgets["gv_criterion"] = ctk.CTkOptionMenu(f_gv, values=["charbonnier", "l1", "l2", "huber"], width=105); self.widgets["gv_criterion"].pack(side="left", padx=8); self.widgets["gv_criterion"].set("charbonnier"); ToolTip(self.widgets["gv_criterion"], _t("Critère Gradient Variance.\ncharbonnier : Recommandé — L1 lissé, robuste.\nl1/l2/huber : alternatives standard.", "Gradient Variance criterion.\ncharbonnier: Recommended — smooth L1, robust.\nl1/l2/huber: standard alternatives."))
 
         # Luma
         f_luma = ctk.CTkFrame(f_loss_right, fg_color="transparent"); f_luma.pack(fill="x", pady=2, padx=6)
         chk_luma = ctk.CTkCheckBox(f_luma, text="Luma", width=120, onvalue="true", offvalue="false"); chk_luma.pack(side="left"); self.widgets["loss_luma"] = chk_luma; ToolTip(chk_luma, get_tooltip("loss_luma", "Luma Loss — luminance."))
-        ctk.CTkLabel(f_luma, text="W:", width=20).pack(side="left"); self.widgets["weight_loss_luma"] = ctk.CTkEntry(f_luma, width=42); self.widgets["weight_loss_luma"].insert(0, "1.0"); self.widgets["weight_loss_luma"].pack(side="left", padx=3)
-        self.widgets["luma_criterion"] = ctk.CTkOptionMenu(f_luma, values=["l1", "l2", "huber", "charbonnier"], width=105); self.widgets["luma_criterion"].pack(side="left", padx=3); self.widgets["luma_criterion"].set("l1"); ToolTip(self.widgets["luma_criterion"], _t("Critère Luma Loss.\nl1 : Recommandé — erreur absolue sur la luminance.\ncharbonnier : Alternative lissée.", "Luma Loss criterion.\nl1: Recommended — absolute error on luminance.\ncharbonnier: Smooth alternative."))
+        ctk.CTkLabel(f_luma, text="Weight:", width=52).pack(side="left"); self.widgets["weight_loss_luma"] = ctk.CTkEntry(f_luma, width=42); self.widgets["weight_loss_luma"].insert(0, "1.0"); self.widgets["weight_loss_luma"].pack(side="left", padx=8)
+        self.widgets["luma_criterion"] = ctk.CTkOptionMenu(f_luma, values=["l1", "l2", "huber", "charbonnier"], width=105); self.widgets["luma_criterion"].pack(side="left", padx=8); self.widgets["luma_criterion"].set("l1"); ToolTip(self.widgets["luma_criterion"], _t("Critère Luma Loss.\nl1 : Recommandé — erreur absolue sur la luminance.\ncharbonnier : Alternative lissée.", "Luma Loss criterion.\nl1: Recommended — absolute error on luminance.\ncharbonnier: Smooth alternative."))
 
         # Contextual
         f_ctx = ctk.CTkFrame(f_loss_right, fg_color="transparent"); f_ctx.pack(fill="x", pady=2, padx=6)
         chk_ctx = ctk.CTkCheckBox(f_ctx, text="Contextual", width=120, onvalue="true", offvalue="false"); chk_ctx.pack(side="left"); self.widgets["loss_contextual"] = chk_ctx; ToolTip(chk_ctx, get_tooltip("loss_contextual", "Contextual Loss."))
-        ctk.CTkLabel(f_ctx, text="W:", width=20).pack(side="left"); self.widgets["weight_loss_contextual"] = ctk.CTkEntry(f_ctx, width=42); self.widgets["weight_loss_contextual"].insert(0, "1.0"); self.widgets["weight_loss_contextual"].pack(side="left", padx=3)
-        self.widgets["ctx_distance_type"] = ctk.CTkOptionMenu(f_ctx, values=["cosine", "l2"], width=82); self.widgets["ctx_distance_type"].pack(side="left", padx=3); self.widgets["ctx_distance_type"].set("cosine"); ToolTip(self.widgets["ctx_distance_type"], _t("Métrique de distance entre patches VGG.\ncosine : Angle entre vecteurs — plus robuste aux changements d'échelle. Recommandé.\nl2 : Distance euclidienne — plus sensible à la magnitude.", "Distance metric between VGG patches.\ncosine: Angle between vectors — more robust to scale changes. Recommended.\nl2: Euclidean distance — more sensitive to magnitude."))
-        ctk.CTkLabel(f_ctx, text="BW:", width=28).pack(side="left"); self.widgets["ctx_band_width"] = ctk.CTkEntry(f_ctx, width=42); self.widgets["ctx_band_width"].insert(0, "0.5"); self.widgets["ctx_band_width"].pack(side="left", padx=3); ToolTip(self.widgets["ctx_band_width"], _t("Bandwidth (largeur de bande contextuelle).\nContrôle la tolérance aux décalages spatiaux entre patches.\nDéfaut : 0.5  |  Plus haut → plus de tolérance, pénalité plus douce.", "Bandwidth (contextual bandwidth).\nControls tolerance to spatial shifts between patches.\nDefault: 0.5  |  Higher → more tolerance, softer penalty."))
+        ctk.CTkLabel(f_ctx, text="Weight:", width=52).pack(side="left"); self.widgets["weight_loss_contextual"] = ctk.CTkEntry(f_ctx, width=42); self.widgets["weight_loss_contextual"].insert(0, "1.0"); self.widgets["weight_loss_contextual"].pack(side="left", padx=8)
+        self.widgets["ctx_distance_type"] = ctk.CTkOptionMenu(f_ctx, values=["cosine", "l2"], width=82); self.widgets["ctx_distance_type"].pack(side="left", padx=8); self.widgets["ctx_distance_type"].set("cosine"); ToolTip(self.widgets["ctx_distance_type"], _t("Métrique de distance entre patches VGG.\ncosine : Angle entre vecteurs — plus robuste aux changements d'échelle. Recommandé.\nl2 : Distance euclidienne — plus sensible à la magnitude.", "Distance metric between VGG patches.\ncosine: Angle between vectors — more robust to scale changes. Recommended.\nl2: Euclidean distance — more sensitive to magnitude."))
+        ctk.CTkLabel(f_ctx, text="BW:", width=28).pack(side="left"); self.widgets["ctx_band_width"] = ctk.CTkEntry(f_ctx, width=42); self.widgets["ctx_band_width"].insert(0, "0.5"); self.widgets["ctx_band_width"].pack(side="left", padx=8); ToolTip(self.widgets["ctx_band_width"], _t("Bandwidth (largeur de bande contextuelle).\nContrôle la tolérance aux décalages spatiaux entre patches.\nDéfaut : 0.5  |  Plus haut → plus de tolérance, pénalité plus douce.", "Bandwidth (contextual bandwidth).\nControls tolerance to spatial shifts between patches.\nDefault: 0.5  |  Higher → more tolerance, softer penalty."))
         # Perceptual Anime Loss (ResNet50 — APISR, Redux only)
         f_percep_anime = ctk.CTkFrame(f_loss_right, fg_color="transparent"); f_percep_anime.pack(fill="x", pady=2, padx=6)
         chk_pa = ctk.CTkCheckBox(f_percep_anime, text="Percep. Anime", width=120, onvalue="true", offvalue="false"); chk_pa.pack(side="left"); self.widgets["loss_percep_anime"] = chk_pa; ToolTip(chk_pa, get_tooltip("loss_percep_anime"))
-        ctk.CTkLabel(f_percep_anime, text="W:", width=20).pack(side="left"); self.widgets["weight_loss_percep_anime"] = ctk.CTkEntry(f_percep_anime, width=42); self.widgets["weight_loss_percep_anime"].insert(0, "1.0"); self.widgets["weight_loss_percep_anime"].pack(side="left", padx=3)
-        self.widgets["percep_anime_criterion"] = ctk.CTkOptionMenu(f_percep_anime, values=["l1", "l2"], width=70); self.widgets["percep_anime_criterion"].pack(side="left", padx=3); self.widgets["percep_anime_criterion"].set("l1"); ToolTip(self.widgets["percep_anime_criterion"], _t("Critère Percep. Anime :\n- l1 : L1 loss (recommandé)\n- l2 : L2/MSE loss", "Percep. Anime criterion:\n- l1: L1 loss (recommended)\n- l2: L2/MSE loss"))
+        ctk.CTkLabel(f_percep_anime, text="Weight:", width=52).pack(side="left"); self.widgets["weight_loss_percep_anime"] = ctk.CTkEntry(f_percep_anime, width=42); self.widgets["weight_loss_percep_anime"].insert(0, "1.0"); self.widgets["weight_loss_percep_anime"].pack(side="left", padx=8)
+        self.widgets["percep_anime_criterion"] = ctk.CTkOptionMenu(f_percep_anime, values=["l1", "l2"], width=70); self.widgets["percep_anime_criterion"].pack(side="left", padx=8); self.widgets["percep_anime_criterion"].set("l1"); ToolTip(self.widgets["percep_anime_criterion"], _t("Critère Percep. Anime :\n- l1 : L1 loss (recommandé)\n- l2 : L2/MSE loss", "Percep. Anime criterion:\n- l1: L1 loss (recommended)\n- l2: L2/MSE loss"))
 
         # SparK Perceptual (Redux uniquement — InceptionNext features)
         f_spark = ctk.CTkFrame(f_loss_right, fg_color="transparent"); f_spark.pack(fill="x", pady=2, padx=6)
         chk_spark = ctk.CTkCheckBox(f_spark, text="SparK (Percep)", width=120, onvalue="true", offvalue="false"); chk_spark.pack(side="left"); self.widgets["loss_spark"] = chk_spark; ToolTip(chk_spark, get_tooltip("loss_spark"))
-        ctk.CTkLabel(f_spark, text="W:", width=20).pack(side="left"); self.widgets["weight_loss_spark"] = ctk.CTkEntry(f_spark, width=42); self.widgets["weight_loss_spark"].insert(0, "0.2"); self.widgets["weight_loss_spark"].pack(side="left", padx=3)
-        self.widgets["spark_criterion"] = ctk.CTkOptionMenu(f_spark, values=["fd", "charbonnier"], width=100); self.widgets["spark_criterion"].pack(side="left", padx=3); self.widgets["spark_criterion"].set("fd"); ToolTip(self.widgets["spark_criterion"], _t("Critère SparK :\n- fd : Fourier Domain (magnitude + phase, recommandé)\n- charbonnier : Charbonnier sur les features brutes", "SparK criterion:\n- fd: Fourier Domain (magnitude + phase, recommended)\n- charbonnier: Charbonnier on raw features"))
-        self.widgets["spark_path"] = ctk.CTkEntry(f_spark, width=100, placeholder_text=_t("epoch290.pth (opt)", "epoch290.pth (opt)")); self.widgets["spark_path"].pack(side="left", padx=3); ToolTip(self.widgets["spark_path"], _t("Chemin local vers les poids InceptionNext (epoch290.pth).\nLaissez vide pour téléchargement auto depuis GitHub.", "Local path to InceptionNext weights (epoch290.pth).\nLeave empty for automatic download from GitHub."))
+        ctk.CTkLabel(f_spark, text="Weight:", width=52).pack(side="left"); self.widgets["weight_loss_spark"] = ctk.CTkEntry(f_spark, width=42); self.widgets["weight_loss_spark"].insert(0, "0.2"); self.widgets["weight_loss_spark"].pack(side="left", padx=8)
+        self.widgets["spark_criterion"] = ctk.CTkOptionMenu(f_spark, values=["fd", "charbonnier"], width=100); self.widgets["spark_criterion"].pack(side="left", padx=8); self.widgets["spark_criterion"].set("fd"); ToolTip(self.widgets["spark_criterion"], _t("Critère SparK :\n- fd : Fourier Domain (magnitude + phase, recommandé)\n- charbonnier : Charbonnier sur les features brutes", "SparK criterion:\n- fd: Fourier Domain (magnitude + phase, recommended)\n- charbonnier: Charbonnier on raw features"))
+        self.widgets["spark_path"] = ctk.CTkEntry(f_spark, width=100, placeholder_text=_t("epoch290.pth (opt)", "epoch290.pth (opt)")); self.widgets["spark_path"].pack(side="left", padx=8); ToolTip(self.widgets["spark_path"], _t("Chemin local vers les poids InceptionNext (epoch290.pth).\nLaissez vide pour téléchargement auto depuis GitHub.", "Local path to InceptionNext weights (epoch290.pth).\nLeave empty for automatic download from GitHub."))
         def _browse_spark_path():
             import tkinter.filedialog as _fd
             p = _fd.askopenfilename(title=_t("Sélectionner epoch290.pth", "Select epoch290.pth"), filetypes=[("PTH files","*.pth"),("All files","*.*")])
             if p:
                 self.widgets["spark_path"].delete(0, "end")
                 self.widgets["spark_path"].insert(0, p)
-        ctk.CTkButton(f_spark, text="📂", width=28, command=_browse_spark_path).pack(side="left", padx=2)
+        ctk.CTkButton(f_spark, text="📂", width=28, command=_browse_spark_path).pack(side="left", padx=5)
+        ctk.CTkLabel(f_spark, text=_t("Clamp:", "Clamp:"), width=46).pack(side="left", padx=(6, 0))
+        self.widgets["spark_max_score"] = ctk.CTkEntry(f_spark, width=52, placeholder_text="50.0"); self.widgets["spark_max_score"].insert(0, "50.0"); self.widgets["spark_max_score"].pack(side="left", padx=8); ToolTip(self.widgets["spark_max_score"], get_tooltip("spark_max_score"))
 
         ctk.CTkLabel(f_loss_right, text="", height=4).pack()  # bottom padding
 
@@ -1537,6 +1539,18 @@ class ConfigTab(ctk.CTkFrame):
             "OpenAI (ChatGPT)": ["gpt-5", "gpt-5-mini", "gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano", "gpt-4o", "gpt-4o-mini", "o3", "o3-mini"],
             "xAI (Grok)": ["grok-4.3", "grok-4.3-fast", "grok-4.3-mini", "grok-3", "grok-3-fast", "grok-3-mini", "grok-3-mini-fast"],
             "DeepSeek": ["deepseek-chat", "deepseek-reasoner"],
+            "NVIDIA NIM": [
+                "meta/llama-3.3-70b-instruct",
+                "meta/llama-3.1-405b-instruct",
+                "nvidia/llama-3.1-nemotron-ultra-253b-v1",
+                "mistralai/mistral-large-2-instruct",
+                "mistralai/mixtral-8x7b-instruct-v0.1",
+                "microsoft/phi-3.5-mini-instruct",
+                "google/gemma-2-27b-it",
+                "deepseek-ai/deepseek-r1",
+                "qwen/qwen2.5-coder-32b-instruct",
+                "nvidia/nemotron-4-340b-instruct",
+            ],
         }
 
         # API Selection
@@ -2299,6 +2313,14 @@ class ConfigTab(ctk.CTkFrame):
             }).encode()
         elif "DeepSeek" in api_choice:
             url = "https://api.deepseek.com/chat/completions"
+            headers["Authorization"] = f"Bearer {api_key}"
+            body = _json.dumps({
+                "model": model,
+                "max_tokens": 2000,
+                "messages": [{"role": "user", "content": prompt}]
+            }).encode()
+        elif "NVIDIA" in api_choice:
+            url = "https://integrate.api.nvidia.com/v1/chat/completions"
             headers["Authorization"] = f"Bearer {api_key}"
             body = _json.dumps({
                 "model": model,

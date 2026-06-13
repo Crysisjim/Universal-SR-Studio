@@ -50,6 +50,7 @@ _device = None
 _tile_size: int = 0
 _tile_pad: int = 32
 _use_amp: bool = False
+_last_hw: "tuple | None" = None   # (H, W) of previous frame — detect resolution change
 
 
 def _emit(obj: dict) -> None:
@@ -195,7 +196,8 @@ def _tile_inference_dandere(
 
 
 def cmd_init(payload: dict) -> None:
-    global _model, _scale, _arch, _device, _tile_size, _tile_pad, _use_amp
+    global _model, _scale, _arch, _device, _tile_size, _tile_pad, _use_amp, _last_hw
+    _last_hw = None
     model_path = payload["model"]
     _tile_size = int(payload.get("tile_size", 256))
     _tile_pad  = int(payload.get("tile_pad", 32))
@@ -206,6 +208,16 @@ def cmd_init(payload: dict) -> None:
         return
 
     _device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # traiNNer/NeoSR force cudnn.benchmark=True on import (training speed).
+    # For variable-resolution INFERENCE batches this is harmful: every new
+    # input shape triggers a full cuDNN autotune (huge transient workspace →
+    # VRAM spike + long stall), then fragments the caching allocator and slows
+    # the rest of the batch. Disable it so mixed-resolution folders stay stable.
+    try:
+        torch.backends.cudnn.benchmark = False
+    except Exception:
+        pass
 
     try:
         sd = _load_state_dict(model_path)
@@ -573,7 +585,7 @@ def cmd_init(payload: dict) -> None:
 
 
 def cmd_infer(payload: dict) -> None:
-    global _model, _scale, _device, _tile_size, _tile_pad, _use_amp
+    global _model, _scale, _device, _tile_size, _tile_pad, _use_amp, _last_hw
     if _model is None:
         _emit({"status": "error", "msg": "Model not loaded — send init first"})
         return
@@ -592,6 +604,14 @@ def cmd_infer(payload: dict) -> None:
         img = Image.open(input_path).convert("RGB")
         arr = np.array(img).astype(np.float32) / 255.0
         t   = torch.from_numpy(arr).permute(2, 0, 1).unsqueeze(0).to(_device)
+
+        # Resolution change → defragment caching allocator before inference.
+        # Prevents reserved-VRAM buildup + cudaMalloc thrashing when frame
+        # sizes vary within a batch (e.g. 1080p clip + a 480p outlier).
+        cur_hw = (t.shape[2], t.shape[3])
+        if _device.type == "cuda" and _last_hw is not None and cur_hw != _last_hw:
+            torch.cuda.empty_cache()
+        _last_hw = cur_hw
 
         amp_ok = _use_amp and _device.type == "cuda"
 

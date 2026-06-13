@@ -23,6 +23,11 @@ venv/
 env/
 ENV/
 .env
+runtimes/
+
+# ─── Local build / debug artifacts ───────────────────────────────────────────
+build_log.txt
+frame_*.png
 
 # ─── Build / distribution ─────────────────────────────────────────────────────
 build/

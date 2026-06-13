@@ -122,8 +122,8 @@ class ToolsTab(ctk.CTkFrame):
         self.frame_nav = ctk.CTkFrame(self, width=200, corner_radius=0)
         self.frame_nav.grid(row=0, column=0, sticky="nsew")
         # Give weight to the row AFTER the last button so all buttons stay grouped at top
-        # (row 13 is the first row after the 12 nav buttons)
-        self.frame_nav.grid_rowconfigure(13, weight=1)
+        # (row 14 is the first row after the 13 nav buttons — v2.5.8 added Post Processing)
+        self.frame_nav.grid_rowconfigure(14, weight=1)
 
         ctk.CTkLabel(self.frame_nav, text=_t("BOÎTE À OUTILS", "TOOLBOX"), font=("Roboto", 20, "bold")).grid(row=0, column=0, padx=20, pady=20)
 
@@ -144,6 +144,8 @@ class ToolsTab(ctk.CTkFrame):
         self.create_nav_btn(_t("📦 Publier Modèle", "📦 Publish Model"), 11, "export")
         # ── Section 5: Performance ──
         self.create_nav_btn("📈 Benchmark", 12, "bench")
+        # ── Section 6: Post-processing standalone ──
+        self.create_nav_btn(_t("⚗ Post Processing", "⚗ Post Processing"), 13, "postproc")
 
         # 2. CONTENT AREA
         self.right_panel = ctk.CTkFrame(self, fg_color="transparent")
@@ -164,6 +166,7 @@ class ToolsTab(ctk.CTkFrame):
             "model_info": self.create_page_model_info(),
             "export": self.create_page_export(),
             "bench": self.create_page_benchmark(),
+            "postproc": self.create_page_postproc(),
         }
         self.show_frame("upscale")
 
@@ -600,7 +603,7 @@ class ToolsTab(ctk.CTkFrame):
         """Active/désactive les contrôles Color Fix selon la checkbox."""
         enabled = bool(self.widgets.get("ups_colorfix") and self.widgets["ups_colorfix"].get())
         state = "normal" if enabled else "disabled"
-        for key in ("ups_colorfix_method", "ups_colorfix_settings_btn", "ups_colorfix_strength"):
+        for key in ("ups_colorfix_method", "ups_colorfix_settings_btn"):
             w = self.widgets.get(key)
             if w:
                 try:
@@ -628,6 +631,854 @@ class ToolsTab(ctk.CTkFrame):
                     self.widgets[key].configure(state=state)
                 except Exception:
                     pass
+
+    def _ups_on_tempfix_toggle(self):
+        """Met à jour l'info latence TF. Bouton ⚙ toujours accessible (contient aussi Undistort)."""
+        enabled = "ups_tempfix" in self.widgets and bool(self.widgets["ups_tempfix"].get())
+        if "ups_tempfix_info" in self.widgets:
+            try:
+                if enabled:
+                    s = getattr(self, "_tf_settings", {})
+                    w = int(s.get("window", 7))
+                    lat = w // 2
+                    prec = s.get("precision", "float32")
+                    strength = float(s.get("strength", 0.5))
+                    txt = _t(
+                        f"win={w}  lat={lat}f  str={strength:.2f}  {prec}",
+                        f"win={w}  lat={lat}f  str={strength:.2f}  {prec}")
+                    self.widgets["ups_tempfix_info"].configure(text=txt)
+                else:
+                    self.widgets["ups_tempfix_info"].configure(text="")
+            except Exception:
+                pass
+
+    def _ups_on_undistort_toggle(self):
+        """Syncs UD checkbox → _tf_settings."""
+        enabled = "ups_undistort" in self.widgets and bool(self.widgets["ups_undistort"].get())
+        if not hasattr(self, "_tf_settings"):
+            self._tf_settings = {}
+        self._tf_settings["undistort_enabled"] = enabled
+        self.settings.set("ups_undistort", enabled)
+
+    def _ups_open_tf_settings(self):
+        """Popup TF uniquement (séparé de UD — v2.5.9)."""
+        popup = getattr(self, "_tf_popup", None)
+        if popup and popup.winfo_exists():
+            popup.lift()
+            return
+
+        s = getattr(self, "_tf_settings", {
+            "strength": 0.5, "window": 7, "precision": "float32",
+            "tempfix_mode": "classic"})
+
+        popup = ctk.CTkToplevel(self)
+        popup.title(_t("Réglages Temporal Fix", "Temporal Fix Settings"))
+        popup.resizable(False, False)
+        popup.grab_set()
+        self._tf_popup = popup
+
+        ctk.CTkLabel(popup, text="Temporal Fix — Post-processing",
+                     font=("Roboto", 14, "bold"), text_color="#9B59B6").pack(
+                     padx=20, pady=(15, 5))
+        ctk.CTkLabel(popup,
+                     text=_t(
+                         "Réduction du scintillement SR sur séquences vidéo.\n"
+                         "Blend adaptatif : zones statiques lissées, zones mobiles conservées.",
+                         "SR flickering reduction on video sequences.\n"
+                         "Adaptive blend: static regions smoothed, moving regions preserved."),
+                     font=("Arial", 10), text_color="gray").pack(padx=20, pady=(0, 8))
+
+        body = ctk.CTkFrame(popup, fg_color="transparent")
+        body.pack(fill="x", padx=20, pady=4)
+
+        ctk.CTkLabel(body, text=_t("Intensité (0 = désactivé, 1 = maximum) :",
+                                   "Strength (0 = off, 1 = maximum):"),
+                     anchor="w").pack(fill="x", pady=(0, 2))
+        ctk.CTkLabel(body,
+                     text=_t(
+                         "0.4-0.6 = recommandé pour anime SR. 0.8+ = effet fort (risque de flou).",
+                         "0.4-0.6 = recommended for anime SR. 0.8+ = strong effect (blur risk)."),
+                     font=("Arial", 10), text_color="gray", anchor="w").pack(fill="x", pady=(0, 6))
+        str_row = ctk.CTkFrame(body, fg_color="transparent")
+        str_row.pack(fill="x", pady=(0, 10))
+        str_lbl = ctk.CTkLabel(str_row, text=f"{s.get('strength', 0.5):.2f}", width=38, anchor="w")
+        str_sld = ctk.CTkSlider(str_row, from_=0.0, to=1.0, number_of_steps=20, width=220)
+        str_sld.set(s.get("strength", 0.5))
+        str_sld.pack(side="left")
+        str_lbl.pack(side="left", padx=6)
+        str_sld.configure(command=lambda v: str_lbl.configure(text=f"{float(v):.2f}"))
+
+        ctk.CTkLabel(body, text=_t("Taille fenêtre (frames) :", "Window size (frames):"),
+                     anchor="w").pack(fill="x", pady=(4, 2))
+        win_row = ctk.CTkFrame(body, fg_color="transparent")
+        win_row.pack(fill="x", pady=(0, 6))
+        win_var = ctk.StringVar(value=str(s.get("window", 7)))
+        win_menu = ctk.CTkOptionMenu(win_row, values=["5", "7", "9"], variable=win_var, width=90)
+        win_menu.pack(side="left")
+        lat_lbl = ctk.CTkLabel(win_row,
+                               text=_t(f"→ latence {int(s.get('window', 7)) // 2} frames",
+                                       f"→ latency {int(s.get('window', 7)) // 2} frames"),
+                               font=("Consolas", 10), text_color="gray60")
+        lat_lbl.pack(side="left", padx=(10, 0))
+        win_menu.configure(command=lambda v: lat_lbl.configure(
+            text=_t(f"→ latence {int(v) // 2} frames", f"→ latency {int(v) // 2} frames")))
+
+        ctk.CTkLabel(body, text=_t("Précision :", "Precision:"),
+                     anchor="w").pack(fill="x", pady=(4, 2))
+        ctk.CTkLabel(body,
+                     text=_t(
+                         "float16 = 2× moins de VRAM, qualité identique.\n"
+                         "float32 = sûr sur toutes les cartes (défaut).",
+                         "float16 = 2× less VRAM, same quality.\n"
+                         "float32 = safe on all cards (default)."),
+                     font=("Arial", 10), text_color="gray", anchor="w").pack(fill="x", pady=(0, 6))
+        prec_var = ctk.StringVar(value=s.get("precision", "float32"))
+        ctk.CTkOptionMenu(body, values=["float32", "float16"],
+                          variable=prec_var, width=120).pack(anchor="w", pady=(0, 10))
+
+        ctk.CTkFrame(body, height=1, fg_color="gray35").pack(fill="x", pady=(2, 8))
+        ctk.CTkLabel(body, text=_t("Algorithme Temporal Fix :", "TemporalFix Algorithm:"),
+                     font=("Roboto", 12, "bold"), anchor="w").pack(fill="x", pady=(0, 2))
+        ctk.CTkLabel(body,
+                     text=_t(
+                         "Variante : s1 léger / s2★ recommandé / s3 fort.\n"
+                         "Backend : PyTorch CUDA | OnnxRuntime ⚡ (recommandé GPU) | TRT ⚡⚡ | CPU.",
+                         "Variant: s1 light / s2★ recommended / s3 strong.\n"
+                         "Backend: PyTorch CUDA | OnnxRuntime ⚡ (recommended GPU) | TRT ⚡⚡ | CPU."),
+                     font=("Arial", 10), text_color="gray", anchor="w").pack(fill="x", pady=(0, 4))
+
+        def _tf_parse_mode(m: str):
+            if m == "classic":              return "classic", "pytorch"
+            if m.startswith("model_"):      return m[6:], "pytorch"
+            if m.startswith("ort_"):        return m[4:],  "ort"
+            if m.startswith("trt_"):        return m[4:],  "trt"
+            if m.startswith("cpu_"):        return m[4:],  "cpu"
+            return "classic", "pytorch"
+
+        def _tf_build_mode(variant: str, backend: str) -> str:
+            if variant == "classic":
+                return "classic"
+            pfx = {"pytorch": "model_", "ort": "ort_", "trt": "trt_", "cpu": "cpu_"}.get(backend, "model_")
+            return pfx + variant
+
+        _tf_v_init, _tf_b_init = _tf_parse_mode(s.get("tempfix_mode", "classic"))
+        _tf_variants = {"classic": _t("Classic (rapide / fallback)", "Classic (fast / fallback)"),
+                        "s1": "s1  (~2 MB, léger)", "s2": "s2 ★ (~2 MB, recommandé)", "s3": "s3  (~2 MB, fort)"}
+        _tf_variants_rev = {v: k for k, v in _tf_variants.items()}
+        _tf_backends = {"pytorch": "PyTorch CUDA", "ort": "OnnxRuntime ⚡ (CUDA)",
+                        "trt": "TRT + OnnxRuntime ⚡⚡", "cpu": "CPU (PyTorch)"}
+        _tf_backends_rev = {v: k for k, v in _tf_backends.items()}
+
+        tf_sel_row = ctk.CTkFrame(body, fg_color="transparent")
+        tf_sel_row.pack(fill="x", pady=(0, 4))
+        ctk.CTkLabel(tf_sel_row, text=_t("Variante:", "Variant:"), width=65, anchor="w").pack(side="left")
+        tf_var_var = ctk.StringVar(value=_tf_variants.get(_tf_v_init, _tf_variants["classic"]))
+        tf_var_menu = ctk.CTkOptionMenu(tf_sel_row, values=list(_tf_variants.values()),
+                                        variable=tf_var_var, width=200)
+        tf_var_menu.pack(side="left")
+
+        tf_bck_row = ctk.CTkFrame(body, fg_color="transparent")
+        tf_bck_row.pack(fill="x", pady=(0, 6))
+        ctk.CTkLabel(tf_bck_row, text="Backend:", width=65, anchor="w").pack(side="left")
+        tf_bck_var = ctk.StringVar(value=_tf_backends.get(_tf_b_init, _tf_backends["pytorch"]))
+        tf_bck_menu = ctk.CTkOptionMenu(tf_bck_row, values=list(_tf_backends.values()),
+                                        variable=tf_bck_var, width=200)
+        tf_bck_menu.pack(side="left")
+
+        tf_dl_row = ctk.CTkFrame(body, fg_color="transparent")
+        tf_dl_row.pack(fill="x", pady=(0, 10))
+        tf_dl_status = ctk.CTkLabel(tf_dl_row, text="", font=("Consolas", 10),
+                                    text_color="gray60", anchor="w", width=200)
+        tf_dl_status.pack(side="left")
+
+        def _tf_current_model_key() -> str:
+            variant = _tf_variants_rev.get(tf_var_var.get(), "classic")
+            backend = _tf_backends_rev.get(tf_bck_var.get(), "pytorch")
+            if variant == "classic":
+                return ""
+            if backend in ("ort", "trt"):
+                return f"temporalfix_{variant}_onnx"
+            return f"temporalfix_{variant}"
+
+        def _tf_update_dl_status(*_):
+            from src.core.model_manager import get_manager, MODELS
+            variant = _tf_variants_rev.get(tf_var_var.get(), "classic")
+            tf_bck_menu.configure(state="normal" if variant != "classic" else "disabled")
+            model_key = _tf_current_model_key()
+            if not model_key:
+                tf_dl_status.configure(text=_t("Classic — aucun poids nécessaire.",
+                                                "Classic — no weights needed."), text_color="gray60")
+                tf_dl_btn.configure(state="disabled")
+            else:
+                mgr = get_manager()
+                if mgr.is_ready(model_key):
+                    info = MODELS[model_key]
+                    tf_dl_status.configure(text=f"✓ {info['filename']} ({info['size_mb']:.1f} MB)",
+                                           text_color="#2ecc71")
+                    tf_dl_btn.configure(state="disabled", text=_t("Téléchargé ✓", "Downloaded ✓"))
+                else:
+                    info = MODELS[model_key]
+                    tf_dl_status.configure(text=f"⬇ {info['filename']} ({info['size_mb']:.1f} MB)",
+                                           text_color="#e67e22")
+                    tf_dl_btn.configure(state="normal", text=_t("Télécharger", "Download"))
+
+        def _tf_download():
+            import threading as _thr
+            from src.core.model_manager import get_manager
+            model_key = _tf_current_model_key()
+            if not model_key:
+                return
+            tf_dl_btn.configure(state="disabled", text=_t("Téléchargement…", "Downloading…"))
+            tf_dl_status.configure(text="0 %", text_color="#3498db")
+            def _run():
+                try:
+                    mgr = get_manager()
+                    def _progress(dl, total):
+                        pct = int(dl * 100 / total) if total else 0
+                        popup.after(0, lambda: tf_dl_status.configure(
+                            text=f"{pct}%  ({dl//1024}KB / {total//1024}KB)"))
+                    mgr.download(model_key, progress_cb=_progress)
+                    popup.after(0, _tf_update_dl_status)
+                except Exception as e:
+                    popup.after(0, lambda: (
+                        tf_dl_status.configure(text=f"Erreur: {e}", text_color="#e74c3c"),
+                        tf_dl_btn.configure(state="normal", text=_t("Réessayer", "Retry"))))
+            _thr.Thread(target=_run, daemon=True).start()
+
+        tf_dl_btn = ctk.CTkButton(tf_dl_row, text=_t("Télécharger", "Download"),
+                                  width=110, height=26, command=_tf_download)
+        tf_dl_btn.pack(side="right")
+        tf_var_menu.configure(command=lambda _v: _tf_update_dl_status())
+        tf_bck_menu.configure(command=lambda _v: _tf_update_dl_status())
+        _tf_update_dl_status()
+
+        btn_row = ctk.CTkFrame(popup, fg_color="transparent")
+        btn_row.pack(fill="x", padx=20, pady=(0, 15))
+
+        def _apply():
+            self._tf_settings["strength"]     = round(float(str_sld.get()), 2)
+            self._tf_settings["window"]       = int(win_var.get())
+            self._tf_settings["precision"]    = prec_var.get()
+            _tf_v = _tf_variants_rev.get(tf_var_var.get(), "classic")
+            _tf_b = _tf_backends_rev.get(tf_bck_var.get(), "pytorch")
+            self._tf_settings["tempfix_mode"] = _tf_build_mode(_tf_v, _tf_b)
+            self.settings.set("ups_tempfix_strength",  str(self._tf_settings["strength"]))
+            self.settings.set("ups_tempfix_window",    str(self._tf_settings["window"]))
+            self.settings.set("ups_tempfix_precision", self._tf_settings["precision"])
+            self.settings.set("ups_tempfix_mode",      self._tf_settings["tempfix_mode"])
+            self._ups_on_tempfix_toggle()
+            popup.destroy()
+
+        ctk.CTkButton(btn_row, text=_t("Appliquer", "Apply"), fg_color="#2ecc71",
+                      command=_apply).pack(side="left", fill="x", expand=True, padx=(0, 5))
+        ctk.CTkButton(btn_row, text=_t("Annuler", "Cancel"), fg_color="#e74c3c",
+                      command=popup.destroy).pack(side="left", fill="x", expand=True)
+
+    def _ups_open_ud_settings(self):
+        """Popup Undistort uniquement (séparé de TF — v2.5.9)."""
+        popup = getattr(self, "_ud_popup", None)
+        if popup and popup.winfo_exists():
+            popup.lift()
+            return
+
+        s = getattr(self, "_tf_settings", {
+            "undistort_strength": 0.35, "undistort_window": 5,
+            "undistort_mode": "classic"})
+
+        popup = ctk.CTkToplevel(self)
+        popup.title(_t("Réglages Undistort", "Undistort Settings"))
+        popup.resizable(False, False)
+        popup.grab_set()
+        self._ud_popup = popup
+
+        ctk.CTkLabel(popup, text="Undistort — Correction de jitter HF",
+                     font=("Roboto", 14, "bold"), text_color="#27AE60").pack(
+                     padx=20, pady=(15, 5))
+        ctk.CTkLabel(popup,
+                     text=_t(
+                         "Réduit le 'shimmer' sur les contours (jitter haute fréquence).\n"
+                         "Médiane temporelle du composant HF (frame − flou gaussien).\n"
+                         "Complémentaire à Temporal Fix. Fenêtre plus petite = moins de latence.",
+                         "Reduces edge 'shimmer' (high-frequency temporal jitter).\n"
+                         "Method: temporal median of HF component (frame − Gaussian blur).\n"
+                         "Complementary to Temporal Fix. Smaller window = less latency."),
+                     font=("Arial", 10), text_color="gray").pack(padx=20, pady=(0, 8))
+
+        body = ctk.CTkFrame(popup, fg_color="transparent")
+        body.pack(fill="x", padx=20, pady=4)
+
+        ctk.CTkLabel(body, text=_t("Intensité Undistort :", "Undistort Strength:"),
+                     anchor="w").pack(fill="x", pady=(4, 2))
+        ctk.CTkLabel(body,
+                     text=_t(
+                         "0.3–0.5 = recommandé. Plus élevé = correction plus forte (risque de flou HF).",
+                         "0.3–0.5 = recommended. Higher = stronger correction (HF blur risk)."),
+                     font=("Arial", 10), text_color="gray", anchor="w").pack(fill="x", pady=(0, 4))
+        undist_str_row = ctk.CTkFrame(body, fg_color="transparent")
+        undist_str_row.pack(fill="x", pady=(0, 8))
+        _ud_str_init = float(s.get("undistort_strength", 0.35))
+        undist_str_lbl = ctk.CTkLabel(undist_str_row, text=f"{_ud_str_init:.2f}", width=38, anchor="w")
+        undist_str_sld = ctk.CTkSlider(undist_str_row, from_=0.0, to=1.0, number_of_steps=20, width=220)
+        undist_str_sld.set(_ud_str_init)
+        undist_str_sld.pack(side="left")
+        undist_str_lbl.pack(side="left", padx=6)
+        undist_str_sld.configure(command=lambda v: undist_str_lbl.configure(text=f"{float(v):.2f}"))
+
+        ctk.CTkLabel(body, text=_t("Fenêtre Undistort (frames) :", "Undistort Window (frames):"),
+                     anchor="w").pack(fill="x", pady=(4, 2))
+        udist_win_var = ctk.StringVar(value=str(s.get("undistort_window", 5)))
+        ctk.CTkOptionMenu(body, values=["3", "5", "7"], variable=udist_win_var, width=90).pack(
+            anchor="w", pady=(0, 8))
+
+        ctk.CTkLabel(body, text=_t("Algorithme Undistort :", "Undistort Algorithm:"),
+                     anchor="w", font=("Roboto", 11, "bold")).pack(fill="x", pady=(4, 2))
+        ctk.CTkLabel(body,
+                     text=_t(
+                         "Classic : médiane HF, rapide, sans poids.\n"
+                         "TMT : réseau xg416/pifroggi. Backend : ORT ⚡ recommandé GPU.",
+                         "Classic: HF median, fast, no weights.\n"
+                         "TMT: xg416/pifroggi network. Backend: ORT ⚡ recommended GPU."),
+                     font=("Arial", 10), text_color="gray", anchor="w").pack(fill="x", pady=(0, 4))
+
+        def _ud_parse_mode(m: str):
+            if m == "classic":          return "classic", "pytorch"
+            if m.startswith("model_"):  return m[6:], "pytorch"
+            if m.startswith("ort_"):    return m[4:],  "ort"
+            if m.startswith("trt_"):    return m[4:],  "trt"
+            if m.startswith("cpu_"):    return m[4:],  "cpu"
+            return "classic", "pytorch"
+
+        def _ud_build_mode(variant: str, backend: str) -> str:
+            if variant == "classic":
+                return "classic"
+            pfx = {"pytorch": "model_", "ort": "ort_", "trt": "trt_", "cpu": "cpu_"}.get(backend, "model_")
+            return pfx + variant
+
+        _ud_v_init, _ud_b_init = _ud_parse_mode(s.get("undistort_mode", "classic"))
+        _ud_variants = {"classic": _t("Classic (rapide / fallback)", "Classic (fast / fallback)"),
+                        "tmt": "TMT (~8 MB PTH / ~5 MB ONNX)"}
+        _ud_variants_rev = {v: k for k, v in _ud_variants.items()}
+        _ud_backends = {"pytorch": "PyTorch CUDA", "ort": "OnnxRuntime ⚡ (CUDA)",
+                        "trt": "TRT + OnnxRuntime ⚡⚡", "cpu": "CPU (PyTorch)"}
+        _ud_backends_rev = {v: k for k, v in _ud_backends.items()}
+
+        ud_sel_row = ctk.CTkFrame(body, fg_color="transparent")
+        ud_sel_row.pack(fill="x", pady=(0, 4))
+        ctk.CTkLabel(ud_sel_row, text=_t("Variante:", "Variant:"), width=65, anchor="w").pack(side="left")
+        ud_var_var = ctk.StringVar(value=_ud_variants.get(_ud_v_init, _ud_variants["classic"]))
+        ud_var_menu = ctk.CTkOptionMenu(ud_sel_row, values=list(_ud_variants.values()),
+                                        variable=ud_var_var, width=200)
+        ud_var_menu.pack(side="left")
+
+        ud_bck_row = ctk.CTkFrame(body, fg_color="transparent")
+        ud_bck_row.pack(fill="x", pady=(0, 6))
+        ctk.CTkLabel(ud_bck_row, text="Backend:", width=65, anchor="w").pack(side="left")
+        ud_bck_var = ctk.StringVar(value=_ud_backends.get(_ud_b_init, _ud_backends["pytorch"]))
+        ud_bck_menu = ctk.CTkOptionMenu(ud_bck_row, values=list(_ud_backends.values()),
+                                        variable=ud_bck_var, width=200)
+        ud_bck_menu.pack(side="left")
+
+        ud_dl_row = ctk.CTkFrame(body, fg_color="transparent")
+        ud_dl_row.pack(fill="x", pady=(0, 12))
+        ud_dl_status = ctk.CTkLabel(ud_dl_row, text="", font=("Consolas", 10),
+                                    text_color="gray60", anchor="w", width=200)
+        ud_dl_status.pack(side="left")
+
+        def _ud_current_model_key() -> str:
+            variant = _ud_variants_rev.get(ud_var_var.get(), "classic")
+            backend = _ud_backends_rev.get(ud_bck_var.get(), "pytorch")
+            if variant == "classic":
+                return ""
+            if backend in ("ort", "trt"):
+                return "undistort_tmt_onnx"
+            return "undistort_tmt"
+
+        def _ud_update_dl_status(*_):
+            from src.core.model_manager import get_manager, MODELS
+            variant = _ud_variants_rev.get(ud_var_var.get(), "classic")
+            ud_bck_menu.configure(state="normal" if variant != "classic" else "disabled")
+            model_key = _ud_current_model_key()
+            if not model_key:
+                ud_dl_status.configure(text=_t("Classic — aucun poids nécessaire.",
+                                                "Classic — no weights needed."), text_color="gray60")
+                ud_dl_btn.configure(state="disabled")
+            else:
+                mgr = get_manager()
+                if mgr.is_ready(model_key):
+                    info = MODELS[model_key]
+                    ud_dl_status.configure(text=f"✓ {info['filename']} ({info['size_mb']:.1f} MB)",
+                                           text_color="#2ecc71")
+                    ud_dl_btn.configure(state="disabled", text=_t("Téléchargé ✓", "Downloaded ✓"))
+                else:
+                    info = MODELS[model_key]
+                    ud_dl_status.configure(text=f"⬇ {info['filename']} ({info['size_mb']:.1f} MB)",
+                                           text_color="#e67e22")
+                    ud_dl_btn.configure(state="normal", text=_t("Télécharger", "Download"))
+
+        def _ud_download():
+            import threading as _thr
+            from src.core.model_manager import get_manager
+            model_key = _ud_current_model_key()
+            if not model_key:
+                return
+            ud_dl_btn.configure(state="disabled", text=_t("Téléchargement…", "Downloading…"))
+            ud_dl_status.configure(text="0 %", text_color="#3498db")
+            def _run():
+                try:
+                    mgr = get_manager()
+                    def _progress(dl, total):
+                        pct = int(dl * 100 / total) if total else 0
+                        popup.after(0, lambda: ud_dl_status.configure(
+                            text=f"{pct}%  ({dl//1024}KB / {total//1024}KB)"))
+                    mgr.download(model_key, progress_cb=_progress)
+                    popup.after(0, _ud_update_dl_status)
+                except Exception as e:
+                    popup.after(0, lambda: (
+                        ud_dl_status.configure(text=f"Erreur: {e}", text_color="#e74c3c"),
+                        ud_dl_btn.configure(state="normal", text=_t("Réessayer", "Retry"))))
+            _thr.Thread(target=_run, daemon=True).start()
+
+        ud_dl_btn = ctk.CTkButton(ud_dl_row, text=_t("Télécharger", "Download"),
+                                   width=110, height=26, command=_ud_download)
+        ud_dl_btn.pack(side="right")
+        ud_var_menu.configure(command=lambda _v: _ud_update_dl_status())
+        ud_bck_menu.configure(command=lambda _v: _ud_update_dl_status())
+        _ud_update_dl_status()
+
+        btn_row = ctk.CTkFrame(popup, fg_color="transparent")
+        btn_row.pack(fill="x", padx=20, pady=(0, 15))
+
+        def _apply():
+            self._tf_settings["undistort_strength"] = round(float(undist_str_sld.get()), 2)
+            self._tf_settings["undistort_window"]   = int(udist_win_var.get())
+            _ud_v = _ud_variants_rev.get(ud_var_var.get(), "classic")
+            _ud_b = _ud_backends_rev.get(ud_bck_var.get(), "pytorch")
+            self._tf_settings["undistort_mode"]     = _ud_build_mode(_ud_v, _ud_b)
+            self.settings.set("ups_undistort_strength", str(self._tf_settings["undistort_strength"]))
+            self.settings.set("ups_undistort_window",   str(self._tf_settings["undistort_window"]))
+            self.settings.set("ups_undistort_mode",     self._tf_settings["undistort_mode"])
+            popup.destroy()
+
+        ctk.CTkButton(btn_row, text=_t("Appliquer", "Apply"), fg_color="#2ecc71",
+                      command=_apply).pack(side="left", fill="x", expand=True, padx=(0, 5))
+        ctk.CTkButton(btn_row, text=_t("Annuler", "Cancel"), fg_color="#e74c3c",
+                      command=popup.destroy).pack(side="left", fill="x", expand=True)
+
+    def _ups_open_tempfix_settings(self):
+        """Ouvre la fenêtre de réglages Temporal Fix (popup modale)."""
+        popup = getattr(self, "_tf_popup", None)
+        if popup and popup.winfo_exists():
+            popup.lift()
+            return
+
+        s = getattr(self, "_tf_settings", {
+            "strength": 0.5, "window": 7, "precision": "float32",
+            "tempfix_mode": "classic"})
+
+        popup = ctk.CTkToplevel(self)
+        popup.title(_t("Réglages Temporal Fix", "Temporal Fix Settings"))
+        popup.resizable(False, False)
+        popup.grab_set()
+        self._tf_popup = popup
+
+        ctk.CTkLabel(popup, text="Temporal Fix — Post-processing",
+                     font=("Roboto", 14, "bold"), text_color="#9B59B6").pack(
+                     padx=20, pady=(15, 5))
+
+        ctk.CTkLabel(popup,
+                     text=_t(
+                         "Réduction du scintillement SR sur séquences vidéo.\n"
+                         "Blend adaptatif : zones statiques lissées, zones mobiles conservées.",
+                         "SR flickering reduction on video sequences.\n"
+                         "Adaptive blend: static regions smoothed, moving regions preserved."),
+                     font=("Arial", 10), text_color="gray").pack(padx=20, pady=(0, 8))
+
+        body = ctk.CTkFrame(popup, fg_color="transparent")
+        body.pack(fill="x", padx=20, pady=4)
+
+        # ── Intensité ──
+        ctk.CTkLabel(body, text=_t("Intensité (0 = désactivé, 1 = maximum) :",
+                                   "Strength (0 = off, 1 = maximum):"),
+                     anchor="w").pack(fill="x", pady=(0, 2))
+        ctk.CTkLabel(body,
+                     text=_t(
+                         "0.4-0.6 = recommandé pour anime SR. 0.8+ = effet fort (risque de flou).",
+                         "0.4-0.6 = recommended for anime SR. 0.8+ = strong effect (blur risk)."),
+                     font=("Arial", 10), text_color="gray", anchor="w").pack(fill="x", pady=(0, 6))
+        str_row = ctk.CTkFrame(body, fg_color="transparent")
+        str_row.pack(fill="x", pady=(0, 10))
+        str_lbl = ctk.CTkLabel(str_row, text=f"{s['strength']:.2f}", width=38, anchor="w")
+        str_sld = ctk.CTkSlider(str_row, from_=0.0, to=1.0, number_of_steps=20, width=220)
+        str_sld.set(s["strength"])
+        str_sld.pack(side="left")
+        str_lbl.pack(side="left", padx=6)
+        str_sld.configure(command=lambda v: str_lbl.configure(text=f"{float(v):.2f}"))
+
+        # ── Fenêtre ──
+        ctk.CTkLabel(body, text=_t("Taille fenêtre (frames) :", "Window size (frames):"),
+                     anchor="w").pack(fill="x", pady=(4, 2))
+        win_row = ctk.CTkFrame(body, fg_color="transparent")
+        win_row.pack(fill="x", pady=(0, 6))
+        _win_opts = ["5", "7", "9"]
+        win_var = ctk.StringVar(value=str(s.get("window", 7)))
+        win_menu = ctk.CTkOptionMenu(win_row, values=_win_opts, variable=win_var, width=90)
+        win_menu.pack(side="left")
+        lat_lbl = ctk.CTkLabel(win_row,
+                               text=_t(f"→ latence {int(s.get('window', 7)) // 2} frames",
+                                       f"→ latency {int(s.get('window', 7)) // 2} frames"),
+                               font=("Consolas", 10), text_color="gray60")
+        lat_lbl.pack(side="left", padx=(10, 0))
+
+        def _on_win_change(v):
+            lat_lbl.configure(text=_t(f"→ latence {int(v) // 2} frames",
+                                      f"→ latency {int(v) // 2} frames"))
+        win_menu.configure(command=_on_win_change)
+
+        # ── Précision ──
+        ctk.CTkLabel(body, text=_t("Précision :", "Precision:"),
+                     anchor="w").pack(fill="x", pady=(4, 2))
+        ctk.CTkLabel(body,
+                     text=_t(
+                         "float16 = 2× moins de VRAM, qualité identique pour le blend.\n"
+                         "float32 = sûr sur toutes les cartes (défaut).",
+                         "float16 = 2× less VRAM, same quality for blending.\n"
+                         "float32 = safe on all cards (default)."),
+                     font=("Arial", 10), text_color="gray", anchor="w").pack(fill="x", pady=(0, 6))
+        prec_var = ctk.StringVar(value=s.get("precision", "float32"))
+        prec_menu = ctk.CTkOptionMenu(body, values=["float32", "float16"],
+                                      variable=prec_var, width=120)
+        prec_menu.pack(anchor="w", pady=(0, 10))
+
+        # ── Mode algorithme TemporalFix ────────────────────────────────────────
+        ctk.CTkFrame(body, height=1, fg_color="gray35").pack(fill="x", pady=(2, 8))
+        ctk.CTkLabel(body, text=_t("Algorithme Temporal Fix :", "TemporalFix Algorithm:"),
+                     font=("Roboto", 12, "bold"), anchor="w").pack(fill="x", pady=(0, 2))
+        ctk.CTkLabel(body,
+                     text=_t(
+                         "Variante : s1 léger / s2★ recommandé / s3 fort.\n"
+                         "Backend : PyTorch CUDA | OnnxRuntime ⚡ (recommandé GPU) | TRT ⚡⚡ | CPU.",
+                         "Variant: s1 light / s2★ recommended / s3 strong.\n"
+                         "Backend: PyTorch CUDA | OnnxRuntime ⚡ (recommended GPU) | TRT ⚡⚡ | CPU."),
+                     font=("Arial", 10), text_color="gray", anchor="w").pack(fill="x", pady=(0, 4))
+
+        # ── Parse stored mode → (variant, backend) ────────────────────────────
+        def _tf_parse_mode(m: str):
+            if m == "classic":              return "classic", "pytorch"
+            if m.startswith("model_"):      return m[6:], "pytorch"
+            if m.startswith("ort_"):        return m[4:],  "ort"
+            if m.startswith("trt_"):        return m[4:],  "trt"
+            if m.startswith("cpu_"):        return m[4:],  "cpu"
+            return "classic", "pytorch"
+
+        def _tf_build_mode(variant: str, backend: str) -> str:
+            if variant == "classic":        return "classic"
+            pfx = {"pytorch": "model_", "ort": "ort_", "trt": "trt_", "cpu": "cpu_"}.get(backend, "model_")
+            return pfx + variant
+
+        _tf_v_init, _tf_b_init = _tf_parse_mode(s.get("tempfix_mode", "classic"))
+
+        _tf_variants = {"classic": _t("Classic (rapide / fallback)", "Classic (fast / fallback)"),
+                        "s1": "s1  (~2 MB, léger)", "s2": "s2 ★ (~2 MB, recommandé)", "s3": "s3  (~2 MB, fort)"}
+        _tf_variants_rev = {v: k for k, v in _tf_variants.items()}
+        _tf_backends = {"pytorch": "PyTorch CUDA", "ort": "OnnxRuntime ⚡ (CUDA)",
+                        "trt": "TRT + OnnxRuntime ⚡⚡", "cpu": "CPU (PyTorch)"}
+        _tf_backends_rev = {v: k for k, v in _tf_backends.items()}
+
+        tf_sel_row = ctk.CTkFrame(body, fg_color="transparent")
+        tf_sel_row.pack(fill="x", pady=(0, 4))
+        ctk.CTkLabel(tf_sel_row, text=_t("Variante:", "Variant:"), width=65, anchor="w").pack(side="left")
+        tf_var_var = ctk.StringVar(value=_tf_variants.get(_tf_v_init, _tf_variants["classic"]))
+        tf_var_menu = ctk.CTkOptionMenu(tf_sel_row, values=list(_tf_variants.values()),
+                                        variable=tf_var_var, width=200)
+        tf_var_menu.pack(side="left")
+
+        tf_bck_row = ctk.CTkFrame(body, fg_color="transparent")
+        tf_bck_row.pack(fill="x", pady=(0, 6))
+        ctk.CTkLabel(tf_bck_row, text="Backend:", width=65, anchor="w").pack(side="left")
+        tf_bck_var = ctk.StringVar(value=_tf_backends.get(_tf_b_init, _tf_backends["pytorch"]))
+        tf_bck_menu = ctk.CTkOptionMenu(tf_bck_row, values=list(_tf_backends.values()),
+                                        variable=tf_bck_var, width=200)
+        tf_bck_menu.pack(side="left")
+
+        # Download row for TF models
+        tf_dl_row = ctk.CTkFrame(body, fg_color="transparent")
+        tf_dl_row.pack(fill="x", pady=(0, 10))
+        tf_dl_status = ctk.CTkLabel(tf_dl_row, text="", font=("Consolas", 10),
+                                    text_color="gray60", anchor="w", width=200)
+        tf_dl_status.pack(side="left")
+
+        def _tf_current_model_key() -> str:
+            """Return model_manager key for current variant+backend selection, or ''."""
+            variant = _tf_variants_rev.get(tf_var_var.get(), "classic")
+            backend = _tf_backends_rev.get(tf_bck_var.get(), "pytorch")
+            if variant == "classic":
+                return ""
+            if backend in ("ort", "trt"):
+                return f"temporalfix_{variant}_onnx"
+            return f"temporalfix_{variant}"
+
+        def _tf_update_dl_status(*_):
+            from src.core.model_manager import get_manager, MODELS
+            variant = _tf_variants_rev.get(tf_var_var.get(), "classic")
+            backend = _tf_backends_rev.get(tf_bck_var.get(), "pytorch")
+            # Enable/disable backend menu
+            tf_bck_menu.configure(state="normal" if variant != "classic" else "disabled")
+            model_key = _tf_current_model_key()
+            if not model_key:
+                tf_dl_status.configure(text=_t("Classic — aucun poids nécessaire.",
+                                                "Classic — no weights needed."), text_color="gray60")
+                tf_dl_btn.configure(state="disabled")
+            else:
+                mgr = get_manager()
+                if mgr.is_ready(model_key):
+                    info = MODELS[model_key]
+                    tf_dl_status.configure(
+                        text=f"✓ {info['filename']} ({info['size_mb']:.1f} MB)",
+                        text_color="#2ecc71")
+                    tf_dl_btn.configure(state="disabled", text=_t("Téléchargé ✓", "Downloaded ✓"))
+                else:
+                    info = MODELS[model_key]
+                    tf_dl_status.configure(
+                        text=f"⬇ {info['filename']} ({info['size_mb']:.1f} MB)",
+                        text_color="#e67e22")
+                    tf_dl_btn.configure(state="normal", text=_t("Télécharger", "Download"))
+
+        def _tf_download():
+            import threading as _thr
+            from src.core.model_manager import get_manager
+            model_key = _tf_current_model_key()
+            if not model_key:
+                return
+            tf_dl_btn.configure(state="disabled", text=_t("Téléchargement…", "Downloading…"))
+            tf_dl_status.configure(text="0 %", text_color="#3498db")
+
+            def _run():
+                try:
+                    mgr = get_manager()
+                    def _progress(dl, total):
+                        pct = int(dl * 100 / total) if total else 0
+                        popup.after(0, lambda: tf_dl_status.configure(
+                            text=f"{pct}%  ({dl//1024}KB / {total//1024}KB)"))
+                    mgr.download(model_key, progress_cb=_progress)
+                    popup.after(0, _tf_update_dl_status)
+                except Exception as e:
+                    popup.after(0, lambda: (
+                        tf_dl_status.configure(text=f"Erreur: {e}", text_color="#e74c3c"),
+                        tf_dl_btn.configure(state="normal", text=_t("Réessayer", "Retry"))))
+            _thr.Thread(target=_run, daemon=True).start()
+
+        tf_dl_btn = ctk.CTkButton(tf_dl_row, text=_t("Télécharger", "Download"),
+                                  width=110, height=26, command=_tf_download)
+        tf_dl_btn.pack(side="right")
+        tf_var_menu.configure(command=lambda _v: _tf_update_dl_status())
+        tf_bck_menu.configure(command=lambda _v: _tf_update_dl_status())
+        _tf_update_dl_status()
+
+        # ── Undistort ─────────────────────────────────────────────────────────
+        ctk.CTkFrame(body, height=1, fg_color="gray35").pack(fill="x", pady=(6, 10))
+        ctk.CTkLabel(body, text="Undistort — Correction de jitter HF",
+                     font=("Roboto", 12, "bold"), text_color="#27AE60").pack(
+                     anchor="w", pady=(0, 2))
+        ctk.CTkLabel(body,
+                     text=_t(
+                         "Réduit le 'shimmer' sur les contours (jitter haute fréquence).\n"
+                         "Calcul : médiane temporelle du composant HF (frame - flou gaussien).\n"
+                         "Complémentaire à Temporal Fix. Fenêtre plus petite = moins de latence.",
+                         "Reduces edge 'shimmer' (high-frequency temporal jitter).\n"
+                         "Method: temporal median of HF component (frame - Gaussian blur).\n"
+                         "Complementary to Temporal Fix. Smaller window = less latency."),
+                     font=("Arial", 10), text_color="gray", anchor="w").pack(fill="x", pady=(0, 6))
+
+        undist_enabled_var = ctk.BooleanVar(value=bool(s.get("undistort_enabled", False)))
+        undist_chk = ctk.CTkCheckBox(
+            body,
+            text=_t("Activer Undistort", "Enable Undistort"),
+            variable=undist_enabled_var)
+        undist_chk.pack(anchor="w", pady=(0, 6))
+        if s.get("undistort_enabled", False):
+            undist_chk.select()
+        ToolTip(undist_chk, _t(
+            "Active la correction de jitter HF post-upscale.\n"
+            "Fonctionne en parallèle du Temporal Fix.",
+            "Enable HF jitter correction post-upscale.\n"
+            "Works in parallel with Temporal Fix."))
+
+        ctk.CTkLabel(body, text=_t("Intensité Undistort :", "Undistort Strength:"),
+                     anchor="w").pack(fill="x", pady=(4, 2))
+        ctk.CTkLabel(body,
+                     text=_t(
+                         "0.3–0.5 = recommandé. Plus élevé = correction plus forte (risque de flou HF).",
+                         "0.3–0.5 = recommended. Higher = stronger correction (HF blur risk)."),
+                     font=("Arial", 10), text_color="gray", anchor="w").pack(fill="x", pady=(0, 4))
+        undist_str_row = ctk.CTkFrame(body, fg_color="transparent")
+        undist_str_row.pack(fill="x", pady=(0, 8))
+        _ud_str_init = float(s.get("undistort_strength", 0.35))
+        undist_str_lbl = ctk.CTkLabel(undist_str_row, text=f"{_ud_str_init:.2f}", width=38, anchor="w")
+        undist_str_sld = ctk.CTkSlider(undist_str_row, from_=0.0, to=1.0, number_of_steps=20, width=220)
+        undist_str_sld.set(_ud_str_init)
+        undist_str_sld.pack(side="left")
+        undist_str_lbl.pack(side="left", padx=6)
+        undist_str_sld.configure(command=lambda v: undist_str_lbl.configure(text=f"{float(v):.2f}"))
+
+        ctk.CTkLabel(body, text=_t("Fenêtre Undistort (frames) :", "Undistort Window (frames):"),
+                     anchor="w").pack(fill="x", pady=(4, 2))
+        _ud_win_opts = ["3", "5", "7"]
+        udist_win_var = ctk.StringVar(value=str(s.get("undistort_window", 5)))
+        ctk.CTkOptionMenu(body, values=_ud_win_opts, variable=udist_win_var, width=90).pack(
+            anchor="w", pady=(0, 8))
+
+        # ── Mode algorithme Undistort ──────────────────────────────────────────
+        ctk.CTkLabel(body, text=_t("Algorithme Undistort :", "Undistort Algorithm:"),
+                     anchor="w", font=("Roboto", 11, "bold")).pack(fill="x", pady=(4, 2))
+        ctk.CTkLabel(body,
+                     text=_t(
+                         "Classic : médiane HF, rapide, sans poids.\n"
+                         "TMT : réseau xg416/pifroggi. Backend : ORT ⚡ recommandé GPU.",
+                         "Classic: HF median, fast, no weights.\n"
+                         "TMT: xg416/pifroggi network. Backend: ORT ⚡ recommended GPU."),
+                     font=("Arial", 10), text_color="gray", anchor="w").pack(fill="x", pady=(0, 4))
+
+        # ── Parse stored undistort mode → (variant, backend) ──────────────────
+        def _ud_parse_mode(m: str):
+            if m == "classic":          return "classic", "pytorch"
+            if m.startswith("model_"):  return m[6:], "pytorch"
+            if m.startswith("ort_"):    return m[4:],  "ort"
+            if m.startswith("trt_"):    return m[4:],  "trt"
+            if m.startswith("cpu_"):    return m[4:],  "cpu"
+            return "classic", "pytorch"
+
+        def _ud_build_mode(variant: str, backend: str) -> str:
+            if variant == "classic":    return "classic"
+            pfx = {"pytorch": "model_", "ort": "ort_", "trt": "trt_", "cpu": "cpu_"}.get(backend, "model_")
+            return pfx + variant
+
+        _ud_v_init, _ud_b_init = _ud_parse_mode(s.get("undistort_mode", "classic"))
+
+        _ud_variants = {"classic": _t("Classic (rapide / fallback)", "Classic (fast / fallback)"),
+                        "tmt": "TMT (~8 MB PTH / ~5 MB ONNX)"}
+        _ud_variants_rev = {v: k for k, v in _ud_variants.items()}
+        _ud_backends = {"pytorch": "PyTorch CUDA", "ort": "OnnxRuntime ⚡ (CUDA)",
+                        "trt": "TRT + OnnxRuntime ⚡⚡", "cpu": "CPU (PyTorch)"}
+        _ud_backends_rev = {v: k for k, v in _ud_backends.items()}
+
+        ud_sel_row = ctk.CTkFrame(body, fg_color="transparent")
+        ud_sel_row.pack(fill="x", pady=(0, 4))
+        ctk.CTkLabel(ud_sel_row, text=_t("Variante:", "Variant:"), width=65, anchor="w").pack(side="left")
+        ud_var_var = ctk.StringVar(value=_ud_variants.get(_ud_v_init, _ud_variants["classic"]))
+        ud_var_menu = ctk.CTkOptionMenu(ud_sel_row, values=list(_ud_variants.values()),
+                                        variable=ud_var_var, width=200)
+        ud_var_menu.pack(side="left")
+
+        ud_bck_row = ctk.CTkFrame(body, fg_color="transparent")
+        ud_bck_row.pack(fill="x", pady=(0, 6))
+        ctk.CTkLabel(ud_bck_row, text="Backend:", width=65, anchor="w").pack(side="left")
+        ud_bck_var = ctk.StringVar(value=_ud_backends.get(_ud_b_init, _ud_backends["pytorch"]))
+        ud_bck_menu = ctk.CTkOptionMenu(ud_bck_row, values=list(_ud_backends.values()),
+                                        variable=ud_bck_var, width=200)
+        ud_bck_menu.pack(side="left")
+
+        ud_dl_row = ctk.CTkFrame(body, fg_color="transparent")
+        ud_dl_row.pack(fill="x", pady=(0, 12))
+        ud_dl_status = ctk.CTkLabel(ud_dl_row, text="", font=("Consolas", 10),
+                                    text_color="gray60", anchor="w", width=200)
+        ud_dl_status.pack(side="left")
+
+        def _ud_current_model_key() -> str:
+            variant = _ud_variants_rev.get(ud_var_var.get(), "classic")
+            backend = _ud_backends_rev.get(ud_bck_var.get(), "pytorch")
+            if variant == "classic":
+                return ""
+            if backend in ("ort", "trt"):
+                return "undistort_tmt_onnx"
+            return "undistort_tmt"
+
+        def _ud_update_dl_status(*_):
+            from src.core.model_manager import get_manager, MODELS
+            variant = _ud_variants_rev.get(ud_var_var.get(), "classic")
+            ud_bck_menu.configure(state="normal" if variant != "classic" else "disabled")
+            model_key = _ud_current_model_key()
+            if not model_key:
+                ud_dl_status.configure(text=_t("Classic — aucun poids nécessaire.",
+                                                "Classic — no weights needed."), text_color="gray60")
+                ud_dl_btn.configure(state="disabled")
+            else:
+                mgr = get_manager()
+                if mgr.is_ready(model_key):
+                    info = MODELS[model_key]
+                    ud_dl_status.configure(
+                        text=f"✓ {info['filename']} ({info['size_mb']:.1f} MB)",
+                        text_color="#2ecc71")
+                    ud_dl_btn.configure(state="disabled", text=_t("Téléchargé ✓", "Downloaded ✓"))
+                else:
+                    info = MODELS[model_key]
+                    ud_dl_status.configure(
+                        text=f"⬇ {info['filename']} ({info['size_mb']:.1f} MB)",
+                        text_color="#e67e22")
+                    ud_dl_btn.configure(state="normal", text=_t("Télécharger", "Download"))
+
+        def _ud_download():
+            import threading as _thr
+            from src.core.model_manager import get_manager
+            model_key = _ud_current_model_key()
+            if not model_key:
+                return
+            ud_dl_btn.configure(state="disabled", text=_t("Téléchargement…", "Downloading…"))
+            ud_dl_status.configure(text="0 %", text_color="#3498db")
+
+            def _run():
+                try:
+                    mgr = get_manager()
+                    def _progress(dl, total):
+                        pct = int(dl * 100 / total) if total else 0
+                        popup.after(0, lambda: ud_dl_status.configure(
+                            text=f"{pct}%  ({dl//1024}KB / {total//1024}KB)"))
+                    mgr.download(model_key, progress_cb=_progress)
+                    popup.after(0, _ud_update_dl_status)
+                except Exception as e:
+                    popup.after(0, lambda: (
+                        ud_dl_status.configure(text=f"Erreur: {e}", text_color="#e74c3c"),
+                        ud_dl_btn.configure(state="normal", text=_t("Réessayer", "Retry"))))
+            _thr.Thread(target=_run, daemon=True).start()
+
+        ud_dl_btn = ctk.CTkButton(ud_dl_row, text=_t("Télécharger", "Download"),
+                                   width=110, height=26, command=_ud_download)
+        ud_dl_btn.pack(side="right")
+        ud_var_menu.configure(command=lambda _v: _ud_update_dl_status())
+        ud_bck_menu.configure(command=lambda _v: _ud_update_dl_status())
+        _ud_update_dl_status()
+
+        # ── Boutons ──
+        btn_row = ctk.CTkFrame(popup, fg_color="transparent")
+        btn_row.pack(fill="x", padx=20, pady=(0, 15))
+
+        def _apply():
+            self._tf_settings["strength"]           = round(float(str_sld.get()), 2)
+            self._tf_settings["window"]             = int(win_var.get())
+            self._tf_settings["precision"]          = prec_var.get()
+            _tf_v = _tf_variants_rev.get(tf_var_var.get(), "classic")
+            _tf_b = _tf_backends_rev.get(tf_bck_var.get(), "pytorch")
+            self._tf_settings["tempfix_mode"]       = _tf_build_mode(_tf_v, _tf_b)
+            self._tf_settings["undistort_enabled"]  = bool(undist_enabled_var.get())
+            self._tf_settings["undistort_strength"] = round(float(undist_str_sld.get()), 2)
+            self._tf_settings["undistort_window"]   = int(udist_win_var.get())
+            _ud_v = _ud_variants_rev.get(ud_var_var.get(), "classic")
+            _ud_b = _ud_backends_rev.get(ud_bck_var.get(), "pytorch")
+            self._tf_settings["undistort_mode"]     = _ud_build_mode(_ud_v, _ud_b)
+            self.settings.set("ups_tempfix_strength",       str(self._tf_settings["strength"]))
+            self.settings.set("ups_tempfix_window",         str(self._tf_settings["window"]))
+            self.settings.set("ups_tempfix_precision",      self._tf_settings["precision"])
+            self.settings.set("ups_tempfix_mode",           self._tf_settings["tempfix_mode"])
+            self.settings.set("ups_undistort",              self._tf_settings["undistort_enabled"])
+            self.settings.set("ups_undistort_strength",     str(self._tf_settings["undistort_strength"]))
+            self.settings.set("ups_undistort_window",       str(self._tf_settings["undistort_window"]))
+            self.settings.set("ups_undistort_mode",         self._tf_settings["undistort_mode"])
+            self._ups_on_tempfix_toggle()  # rafraîchit info label
+            popup.destroy()
+
+        ctk.CTkButton(btn_row, text=_t("Appliquer", "Apply"), fg_color="#2ecc71",
+                      command=_apply).pack(side="left", fill="x", expand=True, padx=(0, 5))
+        ctk.CTkButton(btn_row, text=_t("Annuler", "Cancel"), fg_color="#e74c3c",
+                      command=popup.destroy).pack(side="left", fill="x", expand=True)
 
     def _ups_on_colorfix_method_change(self, method: str):
         """Sauvegarde méthode et rafraîchit le popup si ouvert."""
@@ -659,6 +1510,25 @@ class ToolsTab(ctk.CTkFrame):
 
         body = ctk.CTkFrame(popup, fg_color="transparent")
         body.pack(fill="x", padx=20, pady=8)
+
+        # ── Intensité (déplacé depuis la ligne principale) ─────────────────────
+        ctk.CTkLabel(body, text=_t("Intensité (0 = désactivé, 1 = correction complète) :",
+                                   "Intensity (0 = off, 1 = full correction):"),
+                     anchor="w").pack(fill="x", pady=(0, 2))
+        _cf_str_init = float(s.get("strength", 1.0))
+        _cf_str_row = ctk.CTkFrame(body, fg_color="transparent")
+        _cf_str_row.pack(fill="x", pady=(0, 8))
+        cf_str_lbl = ctk.CTkLabel(_cf_str_row, text=f"{_cf_str_init:.1f}", width=28, anchor="w")
+        cf_str_sld = ctk.CTkSlider(_cf_str_row, from_=0.0, to=1.0, number_of_steps=20, width=220)
+        cf_str_sld.set(_cf_str_init)
+        cf_str_sld.pack(side="left")
+        cf_str_lbl.pack(side="left", padx=6)
+        cf_str_sld.configure(command=lambda v: cf_str_lbl.configure(text=f"{float(v):.1f}"))
+        ToolTip(cf_str_sld, _t(
+            "Intensité de la correction couleur (0 = aucune, 1 = complète).",
+            "Color correction intensity (0 = none, 1 = full)."))
+
+        ctk.CTkFrame(body, height=1, fg_color="gray35").pack(fill="x", pady=(0, 8))
 
         if method == "wavelet":
             # ── WAVELET ──
@@ -814,6 +1684,9 @@ class ToolsTab(ctk.CTkFrame):
             planes = [c for c, v in ((0, r_var), (1, g_var), (2, b_var)) if v.get()]
             if not planes:
                 planes = [0, 1, 2]
+            # Intensité (slider in popup)
+            self._cf_settings["strength"] = round(float(cf_str_sld.get()), 2)
+            self.settings.set("ups_colorfix_strength", str(self._cf_settings["strength"]))
             if method == "wavelet" and wav_sld is not None:
                 self._cf_settings["wavelets"] = int(wav_sld.get())
                 self.settings.set("ups_colorfix_wavelets", str(self._cf_settings["wavelets"]))
@@ -1091,31 +1964,75 @@ class ToolsTab(ctk.CTkFrame):
             "colormap (v2.0): 64-point quantile LUT — fast, lightweight, global correction."))
 
         self.widgets["ups_colorfix_settings_btn"] = ctk.CTkButton(
-            opts, text=_t("⚙ Réglages", "⚙ Settings"), width=95,
+            opts, text=_t("⚙ ColorFix…", "⚙ ColorFix…"), width=100,
             command=self._ups_open_colorfix_settings)
         self.widgets["ups_colorfix_settings_btn"].pack(side="left", padx=(6, 0))
         ToolTip(self.widgets["ups_colorfix_settings_btn"], _t(
-            "Réglages avancés : wavelets/radius, mode fast, canaux R/G/B.",
-            "Advanced settings: wavelets/radius, fast mode, R/G/B channels."))
+            "Réglages Color Fix : intensité, méthode, wavelets/radius, canaux R/G/B, device.",
+            "Color Fix settings: intensity, method, wavelets/radius, R/G/B channels, device."))
 
-        ctk.CTkLabel(opts, text=_t("Force :", "Strength:")).pack(side="left", padx=(10, 4))
-        self.widgets["ups_colorfix_strength"] = ctk.CTkSlider(
-            opts, from_=0.0, to=1.0, width=80, number_of_steps=20)
-        self.widgets["ups_colorfix_strength"].pack(side="left")
-        try:
-            self.widgets["ups_colorfix_strength"].set(
-                float(self.settings.get("ups_colorfix_strength", "1.0")))
-        except Exception:
-            self.widgets["ups_colorfix_strength"].set(1.0)
-        self._ups_cf_str_lbl = ctk.CTkLabel(opts, text="1.0", width=28, anchor="w")
-        self._ups_cf_str_lbl.pack(side="left", padx=(2, 0))
-        self.widgets["ups_colorfix_strength"].configure(
-            command=lambda v: self._ups_cf_str_lbl.configure(text=f"{v:.1f}"))
-        ToolTip(self.widgets["ups_colorfix_strength"], _t(
-            "Intensité (0 = désactivé, 1 = correction complète).",
-            "Intensity (0 = off, 1 = full correction)."))
+        # ── Temporal Fix (même ligne que Color Fix — v2.5.7) ──────────────────
+        ctk.CTkFrame(opts, width=1, fg_color="gray40").pack(
+            side="left", fill="y", padx=(10, 10), pady=4)
 
-        _sp2 = ctk.CTkFrame(opts, fg_color="transparent", width=1, height=1); _sp2.pack_propagate(False); _sp2.pack(side="left", fill="x", expand=True)
+        self.widgets["ups_tempfix"] = ctk.CTkCheckBox(
+            opts,
+            text=_t("Temporal Fix", "Temporal Fix"),
+            width=120,
+            command=self._ups_on_tempfix_toggle)
+        self.widgets["ups_tempfix"].pack(side="left")
+        if self.settings.get("ups_tempfix", False):
+            self.widgets["ups_tempfix"].select()
+        ToolTip(self.widgets["ups_tempfix"], _t(
+            "Réduction du scintillement temporel (vidéo / séquences d'images).\n"
+            "Fenêtre glissante N frames → blend adaptatif selon le mouvement.\n"
+            "Zones statiques = lissées, zones mobiles = conservées.\n"
+            "Latence = fenêtre÷2 frames. Nécessite PyTorch.",
+            "Temporal flickering reduction (video / image sequences).\n"
+            "Sliding window N frames → motion-adaptive blend.\n"
+            "Static regions = smoothed, moving regions = preserved.\n"
+            "Latency = window÷2 frames. Requires PyTorch."))
+
+        self.widgets["ups_tempfix_btn"] = ctk.CTkButton(
+            opts,
+            text=_t("⚙ TF…", "⚙ TF…"),
+            width=80,
+            command=self._ups_open_tf_settings)
+        self.widgets["ups_tempfix_btn"].pack(side="left", padx=(6, 0))
+
+        # ── Undistort (v2.5.9 : bouton séparé) ───────────────────────────────
+        ctk.CTkFrame(opts, width=1, fg_color="gray40").pack(
+            side="left", fill="y", padx=(10, 10), pady=4)
+
+        self.widgets["ups_undistort"] = ctk.CTkCheckBox(
+            opts,
+            text="Undistort",
+            width=100,
+            command=self._ups_on_undistort_toggle)
+        self.widgets["ups_undistort"].pack(side="left")
+        if self.settings.get("ups_undistort", False):
+            self.widgets["ups_undistort"].select()
+        ToolTip(self.widgets["ups_undistort"], _t(
+            "Correction du jitter haute fréquence (shimmer sur les contours).\n"
+            "Médiane temporelle du composant HF. Complémentaire au Temporal Fix.",
+            "High-frequency jitter correction (shimmer on edges).\n"
+            "Temporal median of HF component. Complements Temporal Fix."))
+
+        self.widgets["ups_undistort_btn"] = ctk.CTkButton(
+            opts,
+            text=_t("⚙ UD…", "⚙ UD…"),
+            width=80,
+            command=self._ups_open_ud_settings)
+        self.widgets["ups_undistort_btn"].pack(side="left", padx=(6, 0))
+
+        self.widgets["ups_tempfix_info"] = ctk.CTkLabel(
+            opts, text="", font=("Consolas", 10), text_color="gray60", width=130, anchor="w")
+        self.widgets["ups_tempfix_info"].pack(side="left", padx=(8, 0))
+
+        # Trailing spacer (centrage)
+        _sp_end = ctk.CTkFrame(opts, fg_color="transparent", width=1, height=1)
+        _sp_end.pack_propagate(False)
+        _sp_end.pack(side="left", fill="x", expand=True)
 
         # Initialise le dict de réglages internes (persisté entre sessions)
         try:
@@ -1131,6 +2048,17 @@ class ToolsTab(ctk.CTkFrame):
             "planes":   _cf_planes,
             "device":   str(self.settings.get("ups_colorfix_device",   "auto")),
             "ref":      str(self.settings.get("ups_colorfix_ref",      "")),
+            "strength": float(self.settings.get("ups_colorfix_strength", 1.0)),
+        }
+        self._tf_settings = {
+            "strength":           float(self.settings.get("ups_tempfix_strength",    0.5)),
+            "window":             int(self.settings.get("ups_tempfix_window",        7)),
+            "precision":          str(self.settings.get("ups_tempfix_precision",     "float32")),
+            "tempfix_mode":       str(self.settings.get("ups_tempfix_mode",          "classic")),
+            "undistort_enabled":  bool(self.settings.get("ups_undistort",            False)),
+            "undistort_strength": float(self.settings.get("ups_undistort_strength",  0.35)),
+            "undistort_window":   int(self.settings.get("ups_undistort_window",      5)),
+            "undistort_mode":     str(self.settings.get("ups_undistort_mode",        "classic")),
         }
         self._ups_on_colorfix_toggle()
 
@@ -1217,6 +2145,8 @@ class ToolsTab(ctk.CTkFrame):
         _sp_v255.pack(side="left", fill="x", expand=True)
 
         self._ups_on_dandere_toggle()  # état initial
+
+        self._ups_on_tempfix_toggle()  # état initial (widgets maintenant dans opts)
 
         # --- Run / Stop / progress / log ---
         run_row = ctk.CTkFrame(f, fg_color="transparent")
@@ -1445,8 +2375,8 @@ class ToolsTab(ctk.CTkFrame):
         # Color Fix
         _cf_enabled        = bool(self.widgets["ups_colorfix"].get())
         color_fix          = self.widgets["ups_colorfix_method"].get() if _cf_enabled else "none"
-        color_fix_strength = float(self.widgets["ups_colorfix_strength"].get())
         _cfs               = getattr(self, "_cf_settings", {})
+        color_fix_strength = float(_cfs.get("strength", 1.0))
         color_fix_wavelets = int(_cfs.get("wavelets", 4))
         color_fix_radius   = int(_cfs.get("radius",   32))
         color_fix_fast     = bool(_cfs.get("fast",    False))
@@ -1475,6 +2405,20 @@ class ToolsTab(ctk.CTkFrame):
         self.settings.set("ups_dandere",            use_dandere)
         self.settings.set("ups_dandere_threshold",  str(dandere_threshold))
         self.settings.set("ups_dandere_block_size", str(dandere_block_size))
+
+        # Temporal Fix + Undistort (v2.5.7)
+        use_tempfix = bool(self.widgets.get("ups_tempfix", type("_D", (), {"get": lambda s: False})()).get())
+        _tfs = getattr(self, "_tf_settings", {})
+        tempfix_strength  = float(_tfs.get("strength",  0.5))
+        tempfix_window    = int(_tfs.get("window",    7))
+        tempfix_precision = str(_tfs.get("precision", "float32"))
+        tempfix_mode         = str(_tfs.get("tempfix_mode",      "classic"))
+        use_undistort        = bool(_tfs.get("undistort_enabled",  False))
+        undistort_strength   = float(_tfs.get("undistort_strength", 0.35))
+        undistort_window     = int(_tfs.get("undistort_window",     5))
+        undistort_mode       = str(_tfs.get("undistort_mode",      "classic"))
+        self.settings.set("ups_tempfix",           use_tempfix)
+        self.settings.set("ups_undistort",         use_undistort)
 
         # Format / bit depth / quality
         out_format = self.widgets["ups_format"].get()          # "PNG", "JPEG", etc.
@@ -1651,6 +2595,53 @@ class ToolsTab(ctk.CTkFrame):
                     _prev_in_path  = None   # path of previous LQ input
                     _prev_out_path = None   # path of previous SR output
 
+                    # ── v2.5.7: Post-proc subprocess (TF + UD) ───────────────────
+                    # Worker runs with venv Python → correct torch + CUDA.
+                    # Frames passed as file paths on disk (same pattern as PersistentBatch).
+                    from src.core.post_proc_session import PostProcSession
+                    _pp = PostProcSession(venv_py=_TRAINNER_VENV_PY, log=callback)
+                    _pp_started = _pp.start()
+                    _pp_tf_latency = 0
+                    _pp_ud_latency = 0
+                    _tf_active = False  # TF effectively enabled in worker
+                    _ud_active = False  # UD effectively enabled in worker
+
+                    if use_tempfix and _pp_started:
+                        try:
+                            _pp_tf_latency = _pp.init_tf(
+                                mode=tempfix_mode, strength=tempfix_strength,
+                                window=tempfix_window, precision=tempfix_precision,
+                            )
+                            _tf_active = True
+                            _tf_mode_lbl = (f"mode={tempfix_mode}" if tempfix_mode == "classic"
+                                            else f"mode={tempfix_mode} (neural)")
+                            callback(_t(
+                                f"[TemporalFix] Activé — {_tf_mode_lbl} fenêtre={tempfix_window} "
+                                f"str={tempfix_strength:.2f} {tempfix_precision} "
+                                f"(latence {_pp_tf_latency} frames)",
+                                f"[TemporalFix] Enabled — {_tf_mode_lbl} window={tempfix_window} "
+                                f"str={tempfix_strength:.2f} {tempfix_precision} "
+                                f"(latency {_pp_tf_latency} frames)"))
+                        except Exception as _tfe0:
+                            callback(f"[TemporalFix] Init échoué ({_tfe0}) — désactivé")
+
+                    if use_undistort and _pp_started:
+                        try:
+                            _pp_ud_latency = _pp.init_ud(
+                                mode=undistort_mode, strength=undistort_strength,
+                                window=undistort_window, precision=tempfix_precision,
+                            )
+                            _ud_active = True
+                            _ud_mode_lbl = (f"mode={undistort_mode}" if undistort_mode == "classic"
+                                            else f"mode={undistort_mode} (neural)")
+                            callback(_t(
+                                f"[Undistort] Activé — {_ud_mode_lbl} fenêtre={undistort_window} "
+                                f"str={undistort_strength:.2f} (latence {_pp_ud_latency} frames)",
+                                f"[Undistort] Enabled — {_ud_mode_lbl} window={undistort_window} "
+                                f"str={undistort_strength:.2f} (latency {_pp_ud_latency} frames)"))
+                        except Exception as _ude0:
+                            callback(f"[Undistort] Init échoué ({_ude0}) — désactivé")
+
                     try:
                         for i, fname in enumerate(files):
                             if self._ups_stop_flag.is_set():
@@ -1746,6 +2737,21 @@ class ToolsTab(ctk.CTkFrame):
                                         _prev_sr_arr = _curr_sr_arr
                                     except Exception as _de:
                                         callback(f"  [Skip frames] Erreur cache : {_de}")
+
+                                # ── Undistort + TemporalFix (subprocess worker) ────────
+                                if _ud_active:
+                                    try:
+                                        _pp.push_ud(out_path)
+                                    except Exception as _ude2:
+                                        callback(f"  [Undistort] Erreur frame {i}: {_ude2}")
+                                        _ud_active = False
+
+                                if _tf_active:
+                                    try:
+                                        _pp.push_tf(out_path)
+                                    except Exception as _tfe2:
+                                        callback(f"  [TemporalFix] Erreur frame {i}: {_tfe2}")
+                                        _tf_active = False
                             else:
                                 errors.append(f"{fname}: {msg}")
                                 self._play_sound("warning", "sound_warning_enabled")
@@ -1758,6 +2764,23 @@ class ToolsTab(ctk.CTkFrame):
                     finally:
                         if _session is not None:
                             _session.stop()
+                        # ── Post-proc flush + stop (subprocess worker) ─────────────
+                        if _pp_started:
+                            if _ud_active and _pp_ud_latency > 0:
+                                callback(_t("[Undistort] Flush des dernières frames…",
+                                            "[Undistort] Flushing remaining frames…"))
+                                try:
+                                    _pp.flush_ud()
+                                except Exception as _udf:
+                                    callback(f"[Undistort] Erreur flush : {_udf}")
+                            if _tf_active and _pp_tf_latency > 0:
+                                callback(_t("[TemporalFix] Flush des dernières frames…",
+                                            "[TemporalFix] Flushing remaining frames…"))
+                                try:
+                                    _pp.flush_tf()
+                                except Exception as _tff:
+                                    callback(f"[TemporalFix] Erreur flush : {_tff}")
+                            _pp.stop()
 
                     # Skip frames — résumé final dans le log
                     if use_dandere:
@@ -1820,22 +2843,28 @@ class ToolsTab(ctk.CTkFrame):
     def create_page_generator(self):
         _ensure_pil()
         f = ctk.CTkFrame(self.right_panel, fg_color="transparent")
-        self.add_header(f, _t("Générateur Dataset (LQ)", "Dataset Generator (LQ)"), _t("Créez des données basse qualité avec dégradations optionnelles.", "Create low-quality data with optional degradations."))
+        self.add_header(
+            f,
+            _t("Générateur Dataset LQ", "LQ Dataset Generator"),
+            _t("Générez des données basse qualité avec toutes les dégradations connues.",
+               "Generate low-quality data with all known degradation types."),
+        )
+
+        # ── Chemins HQ / LQ ───────────────────────────────────────────────────
         self.add_path_row(f, _t("Source (HQ) :", "Source (HQ):"), "gen_hq", save_key="gen_hq")
         self.add_path_row(f, _t("Destination (LQ) :", "Destination (LQ):"), "gen_lq", save_key="gen_lq")
-        # Charger les chemins mémorisés
         for _k in ("gen_hq", "gen_lq"):
             _v = self.settings.get(_k, "")
-            if _v: self.widgets[_k].insert(0, _v)
+            if _v:
+                self.widgets[_k].insert(0, _v)
 
-        # Scale + méthode de resize
+        # ── Scale + méthode ────────────────────────────────────────────────────
         p = ctk.CTkFrame(f, fg_color="transparent")
-        p.pack(fill="x", pady=5)
+        p.pack(fill="x", pady=(5, 2))
         ctk.CTkLabel(p, text="Scale :").pack(side="left")
         self.widgets["gen_scale"] = ctk.CTkOptionMenu(p, values=["1", "2", "3", "4", "6", "8"], width=60)
         self.widgets["gen_scale"].pack(side="left", padx=5)
         self.widgets["gen_scale"].set("4")
-
         ctk.CTkLabel(p, text=_t("Méthode :", "Method:")).pack(side="left", padx=(15, 0))
         self.widgets["gen_method"] = ctk.CTkOptionMenu(
             p, values=["BICUBIC", "BILINEAR", "LANCZOS", "NEAREST", "BOX"], width=100
@@ -1843,173 +2872,491 @@ class ToolsTab(ctk.CTkFrame):
         self.widgets["gen_method"].pack(side="left", padx=5)
         self.widgets["gen_method"].set("BICUBIC")
 
-        # Dégradations optionnelles
-        self.add_header(f, _t("Dégradations (optionnel)", "Degradations (optional)"))
-        deg = ctk.CTkFrame(f, fg_color="transparent")
-        deg.pack(fill="x", pady=5)
-
-        self.widgets["gen_blur"] = ctk.CTkCheckBox(deg, text=_t("Flou gaussien", "Gaussian Blur"), width=130)
-        self.widgets["gen_blur"].pack(side="left", padx=5)
-        ctk.CTkLabel(deg, text="σ:").pack(side="left")
-        self.gen_slider_val(deg, "gen_blur_sigma", 1.0, 0.1, 5.0, 0.1)
-
-        self.widgets["gen_noise"] = ctk.CTkCheckBox(deg, text=_t("Bruit gaussien", "Gaussian Noise"), width=130)
-        self.widgets["gen_noise"].pack(side="left", padx=(10, 5))
-        ctk.CTkLabel(deg, text="σ:").pack(side="left")
-        self.gen_slider_val(deg, "gen_noise_sigma", 10, 1, 50, 1)
-
-        deg2 = ctk.CTkFrame(f, fg_color="transparent")
-        deg2.pack(fill="x", pady=5)
-        self.widgets["gen_jpeg"] = ctk.CTkCheckBox(deg2, text="Compression JPEG", width=130)
-        self.widgets["gen_jpeg"].pack(side="left", padx=5)
-        ctk.CTkLabel(deg2, text=_t("Qualité:", "Quality:")).pack(side="left")
-        self.gen_slider_val(deg2, "gen_jpeg_q", 50, 1, 99, 1)
-
-        self.widgets["gen_color_jitter"] = ctk.CTkCheckBox(deg2, text="Color Jitter (±)")
-        self.widgets["gen_color_jitter"].pack(side="left", padx=(15, 5))
-
-        # Banding & Posterize (advanced)
-        deg3 = ctk.CTkFrame(f, fg_color="transparent")
-        deg3.pack(fill="x", pady=5)
-
-        self.widgets["gen_posterize"] = ctk.CTkCheckBox(deg3, text=_t("Posterisation", "Posterization"), width=130)
-        self.widgets["gen_posterize"].pack(side="left", padx=5)
-        ctk.CTkLabel(deg3, text="bits:").pack(side="left")
-        self.gen_slider_val(deg3, "gen_posterize_bits", 4, 2, 8, 1)
-        ToolTip(self.widgets["gen_posterize"],
-            _t("Reduit la profondeur de bits par canal (1-8).\n"
-               "8 = aucun effet, 6 = leger, 4 = visible, 2 = severe.\n"
-               "Cree des paliers de couleur.",
-               "Reduces bit depth per channel (1-8).\n"
-               "8 = no effect, 6 = light, 4 = visible, 2 = severe.\n"
-               "Creates color banding steps."))
-        ToolTip(self.widgets["gen_posterize_bits"],
-            _t("Bits par canal RGB :\n"
-               "  8 = aucun effet (256 niveaux)\n"
-               "  6 = leger (64 niveaux)\n"
-               "  5 = visible (32 niveaux)\n"
-               "  4 = marque (16 niveaux) — typique compression video\n"
-               "  3 = severe (8 niveaux)\n"
-               "  2 = extreme (4 niveaux)",
-               "Bits per RGB channel:\n"
-               "  8 = no effect (256 levels)\n"
-               "  6 = light (64 levels)\n"
-               "  5 = visible (32 levels)\n"
-               "  4 = marked (16 levels) — typical video compression\n"
-               "  3 = severe (8 levels)\n"
-               "  2 = extreme (4 levels)"))
-
-        self.widgets["gen_banding"] = ctk.CTkCheckBox(deg3, text="Banding", width=100)
-        self.widgets["gen_banding"].pack(side="left", padx=(10, 5))
-        ctk.CTkLabel(deg3, text=_t("niveaux:", "levels:")).pack(side="left")
-        self.gen_slider_val(deg3, "gen_banding_levels", 32, 8, 256, 8)
-        ToolTip(self.widgets["gen_banding"],
-            _t("Quantification couleur via dithering reduit.\n"
-               "Cree des bandes visibles dans les degrades (ciels, ombres).\n"
-               "Simule la compression video aggressive (H.264/HEVC bas bitrate).",
-               "Color quantization via reduced dithering.\n"
-               "Creates visible bands in gradients (skies, shadows).\n"
-               "Simulates aggressive video compression (H.264/HEVC low bitrate)."))
-        ToolTip(self.widgets["gen_banding_levels"],
-            _t("Nombre de niveaux totaux de couleur (palette) :\n"
-               "  256 = peu visible\n"
-               "  128 = leger\n"
-               "   64 = visible\n"
-               "   32 = marque (recommande)\n"
-               "   16 = severe\n"
-               "    8 = extreme",
-               "Total color levels (palette):\n"
-               "  256 = barely visible\n"
-               "  128 = light\n"
-               "   64 = visible\n"
-               "   32 = marked (recommended)\n"
-               "   16 = severe\n"
-               "    8 = extreme"))
-
-        # Custom degradations with intensity controls
-        def _deg_row(parent, chk_key, chk_text, chk_tip,
-                     params):
-            """Helper: checkbox + N labeled entry/slider pairs on one row.
-            params items: (lbl, key, default, tip) for plain entry
-                       or (lbl, key, default, tip, min_v, max_v, step) for slider."""
+        # ── Helper: checkbox + slider row ─────────────────────────────────────
+        def _row(parent, chk_key, label, tip, params):
             row = ctk.CTkFrame(parent, fg_color="transparent")
-            row.pack(fill="x", pady=3)
-            chk = ctk.CTkCheckBox(row, text=chk_text, width=130)
+            row.pack(fill="x", pady=2)
+            chk = ctk.CTkCheckBox(row, text=label, width=145)
             chk.pack(side="left", padx=5)
-            if chk_tip:
-                ToolTip(chk, chk_tip)
+            if tip:
+                ToolTip(chk, tip)
             self.widgets[chk_key] = chk
             for item in params:
-                lbl, key, default, tip = item[0], item[1], item[2], item[3]
-                ctk.CTkLabel(row, text=lbl, width=30, anchor="e").pack(side="left", padx=(8, 0))
+                lbl_t, key, default, item_tip = item[0], item[1], item[2], item[3]
+                ctk.CTkLabel(row, text=lbl_t, width=85, anchor="e").pack(side="left", padx=(6, 0))
                 if len(item) == 7:
-                    # Slider + entry compact
-                    min_v, max_v, step = item[4], item[5], item[6]
-                    self.gen_slider_val(row, key, default, min_v, max_v, step, tip)
+                    self.gen_slider_val(row, key, default, item[4], item[5], item[6], item_tip)
                 else:
-                    e = ctk.CTkEntry(row, width=48)
-                    e.insert(0, default)
+                    e = ctk.CTkEntry(row, width=46)
+                    e.insert(0, str(default))
                     e.pack(side="left", padx=(2, 0))
                     self.widgets[key] = e
-                    if tip:
-                        ToolTip(e, tip)
+                    if item_tip:
+                        ToolTip(e, item_tip)
             return row
 
-        _deg_row(f, "gen_aliasing", "Aliasing",
-                 _t("Nearest-neighbor downscale+upscale → artefacts escalier sur les bords diagonaux.", "Nearest-neighbor downscale+upscale → staircase artifacts on diagonal edges."),
-                 [(_t("force:", "strength:"), "gen_aliasing_str", "0.75",
-                   _t("Force 0.0-1.0 (0.65=léger, 0.85=fort)", "Strength 0.0-1.0 (0.65=light, 0.85=strong)"),
-                   0.1, 1.0, 0.05)])
+        # ── Onglets dégradations ───────────────────────────────────────────────
+        tabs = ctk.CTkTabview(f, height=340)
+        tabs.pack(fill="x", pady=5)
 
-        _deg_row(f, "gen_interlace_weave", "Interlace weave",
-                 _t("Entrelacement weave : dents de peigne sur les bords (artefact VHS/DVD).", "Weave interlacing: comb teeth on edges (VHS/DVD artifact)."),
-                 [(_t("force:", "strength:"), "gen_weave_str", "0.8",
-                   _t("Force 0.0-1.0 (0.6=léger, 1.0=fort)", "Strength 0.0-1.0 (0.6=light, 1.0=strong)"),
-                   0.1, 1.0, 0.05)])
+        tb = tabs.add(_t("🔧 Basique", "🔧 Basic"))
+        tc = tabs.add(_t("🎨 Couleur", "🎨 Colour"))
+        tv = tabs.add(_t("📺 Vidéo", "📺 Video"))
+        ta = tabs.add(_t("⚙ Avancé", "⚙ Advanced"))
+        tp = tabs.add(_t("🎲 Pipeline", "🎲 Pipeline"))
 
-        _deg_row(f, "gen_interlace_flicker", "Flicker",
-                 _t("Flicker de champ : lignes paires/impaires à luminosité alternée (CRT).", "Field flicker: alternating brightness on even/odd lines (CRT)."),
-                 [(_t("amp:", "amp:"), "gen_flicker_amp", "0.22",
-                   _t("Amplitude 0.0-0.5 (0.1=subtil, 0.35=visible)", "Amplitude 0.0-0.5 (0.1=subtle, 0.35=visible)"),
-                   0.01, 0.5, 0.01)])
+        # ── Tab Basique ────────────────────────────────────────────────────────
+        sb = ctk.CTkScrollableFrame(tb, fg_color="transparent", height=280)
+        sb.pack(fill="both", expand=True)
 
-        _deg_row(f, "gen_interlace_blend", "Field blend",
-                 _t("Ghosting entre champs : flou de mouvement par mélange de fields interlacés.", "Field ghosting: motion blur by blending interlaced fields."),
-                 [(_t("mix:", "mix:"), "gen_blend_mix", "0.55",
-                   _t("Mélange 0.0-1.0 (0.3=léger, 0.8=fort)", "Mix 0.0-1.0 (0.3=light, 0.8=strong)"),
-                   0.1, 1.0, 0.05)])
+        _row(sb, "gen_blur", _t("Flou gaussien", "Gaussian Blur"), None,
+             [("σ:", "gen_blur_sigma", 1.0, _t("σ 0.1-8.0", "σ 0.1-8.0"), 0.1, 8.0, 0.1)])
+        _row(sb, "gen_noise", _t("Bruit gaussien", "Gaussian Noise"), None,
+             [("σ:", "gen_noise_sigma", 10, _t("σ 1-50", "σ 1-50"), 1, 50, 1)])
+        _row(sb, "gen_jpeg", "Compression JPEG", None,
+             [(_t("Qualité :", "Qualité :"), "gen_jpeg_q", 50, _t("Qualité 1-99", "Quality 1-99"), 1, 99, 1)])
+        _row(sb, "gen_color_jitter", "Color Jitter (±10%)",
+             _t("Variation aléatoire luminosité/contraste/couleur ±10%.", "Random brightness/contrast/colour ±10%."), [])
+        _row(sb, "gen_sharpen", _t("Netteté", "Sharpening"),
+             _t("Légère netteté PIL avant dégradation.", "Mild PIL sharpening before degradation."),
+             [(_t("Intensité :", "Intensité :"), "gen_sharpen_amt", 1.5, _t("1.0=neutre, 2.0=fort", "1.0=neutral, 2.0=strong"), 1.0, 3.0, 0.1)])
 
-        _deg_row(f, "gen_film_grain", "Film Grain",
-                 _t("Grain cinéma luminance-dépendant (fort sur tons moyens, faible sur hautes lumières).", "Luminance-dependent film grain (strong on midtones, weak on highlights)."),
-                 [("σ:", "gen_grain_sigma", "0.08",
-                   _t("Écart-type 0.02-0.20 (0.04=subtil, 0.12=fort)", "Std dev 0.02-0.20 (0.04=subtle, 0.12=strong)"),
-                   0.01, 0.3, 0.01),
-                  (_t("sz:", "sz:"), "gen_grain_size", "1",
-                   _t("Taille grain 1-3 (1=fin, 2=moyen, 3=grossier)", "Grain size 1-3 (1=fine, 2=medium, 3=coarse)"),
-                   1, 3, 1)])
+        # ── Tab Couleur — 2 colonnes ───────────────────────────────────────────
+        _cc = ctk.CTkFrame(tc, fg_color="transparent")
+        _cc.pack(fill="both", expand=True, padx=4, pady=4)
+        _cc.columnconfigure(0, weight=1)
+        _cc.columnconfigure(1, weight=1)
+        sc_l = ctk.CTkFrame(_cc, fg_color="transparent")
+        sc_l.grid(row=0, column=0, sticky="new", padx=(0, 8))
+        ctk.CTkFrame(_cc, width=1, fg_color="gray30").grid(row=0, column=1, sticky="ns", padx=(0, 8))
+        sc_r = ctk.CTkFrame(_cc, fg_color="transparent")
+        sc_r.grid(row=0, column=2, sticky="new")
+        _cc.columnconfigure(2, weight=1)
 
-        _deg_row(f, "gen_oversharp", "Oversharpening",
-                 _t("Halos USM (sur-netteté), artefact typique des caméras consommateur / vidéo compressée.", "USM halos (oversharpening), typical artifact of consumer cameras / compressed video."),
-                 [(_t("force:", "amount:"), "gen_oversharp_amt", "1.4",
-                   _t("Facteur USM 0.5-3.0 (0.8=léger, 2.0=fort)", "USM factor 0.5-3.0 (0.8=light, 2.0=strong)"),
-                   0.5, 3.0, 0.1)])
+        _row(sc_l, "gen_posterize", _t("Postérisation", "Posterization"),
+             _t("Réduit profondeur bits/canal (2-8).", "Reduces bit depth per channel (2-8)."),
+             [("bits:", "gen_posterize_bits", 4, _t("8=nul, 4=visible, 2=extrême", "8=none, 4=visible, 2=extreme"), 2, 8, 1)])
+        _row(sc_l, "gen_banding", "Banding",
+             _t("Quantification couleur → bandes dans les dégradés.", "Colour quantization → bands in gradients."),
+             [(_t("Niveaux :", "Niveaux :"), "gen_banding_levels", 32, _t("8-256 niveaux palette", "8-256 palette levels"), 8, 256, 8)])
+        _row(sc_l, "gen_ca", _t("Aberration chrom.", "Chromatic Aberr."),
+             _t("Décale canaux R/B horizontalement (frange de couleur).", "Shifts R/B channels horizontally (colour fringing)."),
+             [(_t("Pixels :", "Pixels :"), "gen_ca_shift", 2, _t("1-10 px", "1-10 px"), 1, 10, 1)])
+        _row(sc_l, "gen_disc_blur", _t("Flou disque (bokeh)", "Disc Blur (bokeh)"),
+             _t("Simule le flou de défocalisation (bokeh). Lent sur grandes images.", "Simulates defocus bokeh. Slow on large images."),
+             [(_t("Rayon :", "Rayon :"), "gen_disc_blur_r", 4.0, _t("Rayon 1-12", "Radius 1-12"), 1.0, 12.0, 0.5)])
+        _row(sc_l, "gen_vignette", "Vignette",
+             _t("Assombrit les bords (objectif).", "Darkens edges (lens effect)."),
+             [(_t("Force :", "Force :"), "gen_vignette_str", 0.4, _t("Force 0.1-1.0", "Strength 0.1-1.0"), 0.1, 1.0, 0.05)])
 
-        _deg_row(f, "gen_scanlines", "Scanlines CRT",
-                 _t("Lignes sombres CRT : assombrit une ligne sur 2-4 (retro games, émulateurs, captures TV).", "Dark CRT scanlines: darkens every 2-4 lines (retro games, emulators, TV captures)."),
-                 [(_t("pér:", "per:"), "gen_scanlines_period", "3",
-                   _t("Période 2-8 (2=dense, 4=espacé)", "Period 2-8 (2=dense, 4=sparse)"),
-                   2, 8, 1),
-                  (_t("norc:", "dark:"), "gen_scanlines_dark", "0.35",
-                   _t("Assombrissement 0.1-0.6 (0.25=subtil, 0.45=fort)", "Darkness 0.1-0.6 (0.25=subtle, 0.45=strong)"),
-                   0.1, 0.6, 0.05)])
+        _row(sc_r, "gen_halo", _t("Halo (wtp_halo)", "Halo (wtp_halo)"),
+             _t("Renforcement des bords haute fréquence (ringing).", "High-frequency edge ringing."),
+             [(_t("Force :", "Force :"), "gen_halo_str", 0.3, _t("Force 0.1-1.0", "Strength 0.1-1.0"), 0.1, 1.0, 0.05),
+              (_t("Rayon :", "Rayon :"), "gen_halo_r", 6, _t("Rayon 2-15", "Radius 2-15"), 2, 15, 1)])
+        _row(sc_r, "gen_saturation", "Saturation",
+             _t("Ajuste la saturation globale (désaturation ou hypersaturation).", "Global saturation adjustment."),
+             [(_t("Facteur :", "Facteur :"), "gen_sat_factor", 0.8, _t("0=gris, 1=neutre, 2=hyper", "0=grey, 1=neutral, 2=hyper"), 0.0, 2.0, 0.05)])
+        _row(sc_r, "gen_color_levels", _t("Niveaux couleur", "Colour Levels"),
+             _t("Compresse la plage dynamique (écrase hautes/basses lumières).", "Compresses dynamic range."),
+             [(_t("Seuil haut :", "Seuil haut :"), "gen_col_high", 230, _t("Seuil haut 200-255", "High threshold 200-255"), 200, 255, 5),
+              (_t("Seuil bas :", "Seuil bas :"), "gen_col_low", 10, _t("Seuil bas 0-40", "Low threshold 0-40"), 0, 40, 2)])
+        _row(sc_r, "gen_quantize_depth", _t("Quantize depth", "Quantize depth"),
+             _t("Quantification uniforme à N bits (4-8).", "Uniform N-bit quantization (4-8)."),
+             [("bits:", "gen_qdepth_bits", 6, _t("4-8 bits", "4-8 bits"), 4, 8, 1)])
 
-        ctk.CTkButton(f, text=_t("Lancer Génération", "Run Generation"), fg_color="#E67E22", command=self.run_gen).pack(fill="x", pady=15)
+        # ── Tab Vidéo — 2 colonnes ─────────────────────────────────────────────
+        _cv = ctk.CTkFrame(tv, fg_color="transparent")
+        _cv.pack(fill="both", expand=True, padx=4, pady=4)
+        _cv.columnconfigure(0, weight=1)
+        _cv.columnconfigure(2, weight=1)
+        sv_l = ctk.CTkFrame(_cv, fg_color="transparent")
+        sv_l.grid(row=0, column=0, sticky="new", padx=(0, 8))
+        ctk.CTkFrame(_cv, width=1, fg_color="gray30").grid(row=0, column=1, sticky="ns", padx=(0, 8))
+        sv_r = ctk.CTkFrame(_cv, fg_color="transparent")
+        sv_r.grid(row=0, column=2, sticky="new")
+
+        _row(sv_l, "gen_chroma_sub", _t("Sous-éch. chroma", "Chroma Subsampling"),
+             _t("Simule 4:2:0 (MPEG/H.264) : réduit la résolution couleur 2×.", "Simulates 4:2:0 (MPEG/H.264): halves colour resolution."), [])
+        _row(sv_l, "gen_aliasing", "Aliasing",
+             _t("Nearest-neighbor ↓↑ → artefacts escalier sur diagonales.", "Nearest-neighbour ↓↑ → staircase on diagonals."),
+             [(_t("Force :", "Force :"), "gen_aliasing_str", 0.75, _t("0.5-1.0", "0.5-1.0"), 0.5, 1.0, 0.05)])
+        _row(sv_l, "gen_interlace_weave", "Interlace weave",
+             _t("Dents de peigne sur les bords (artefact VHS/DVD).", "Comb teeth on edges (VHS/DVD artifact)."),
+             [(_t("Force :", "Force :"), "gen_weave_str", 0.8, _t("0.1-1.0", "0.1-1.0"), 0.1, 1.0, 0.05)])
+        _row(sv_l, "gen_interlace_flicker", "Flicker",
+             _t("Luminosité alternée lignes paires/impaires (CRT).", "Alternating brightness on even/odd lines (CRT)."),
+             [(_t("Amplitude :", "Amplitude :"), "gen_flicker_amp", 0.22, _t("0.01-0.5", "0.01-0.5"), 0.01, 0.5, 0.01)])
+        _row(sv_l, "gen_interlace_blend", "Field blend",
+             _t("Ghosting entre champs entrelacés (flou de mouvement).", "Ghosting between interlaced fields (motion blur)."),
+             [(_t("Mélange :", "Mélange :"), "gen_blend_mix", 0.55, _t("0.1-1.0", "0.1-1.0"), 0.1, 1.0, 0.05)])
+        _row(sv_l, "gen_scanlines", "Scanlines CRT",
+             _t("Assombrit une ligne sur 2-8 (CRT, émulateurs).", "Darkens every 2-8 lines (CRT, emulators)."),
+             [(_t("Période :", "Période :"), "gen_scanlines_period", 3, _t("2-8", "2-8"), 2, 8, 1),
+              (_t("Noirceur :", "Noirceur :"), "gen_scanlines_dark", 0.35, _t("0.1-0.6", "0.1-0.6"), 0.1, 0.6, 0.05)])
+
+        _row(sv_r, "gen_vhs", "VHS / Analog",
+             _t("Saignée chroma + dropout de lignes (artefact VHS).", "Chroma bleeding + scanline dropout (VHS artifact)."),
+             [(_t("Force :", "Force :"), "gen_vhs_str", 0.3, _t("0.1-1.0", "0.1-1.0"), 0.1, 1.0, 0.05)])
+        _row(sv_r, "gen_screentone", "Screentone",
+             _t("Trame halftone (manga, presse imprimée).", "Halftone dot screen (manga, print)."),
+             [(_t("Taille :", "Taille :"), "gen_screen_sz", 6, _t("Cellule 3-20 px", "Cell 3-20 px"), 3, 20, 1)])
+        _row(sv_r, "gen_dithering", _t("Dithering", "Dithering"),
+             _t("Floyd-Steinberg avec palette réduite.", "Floyd-Steinberg with reduced palette."),
+             [(_t("Couleurs :", "Couleurs :"), "gen_dither_col", 4, _t("4-64 couleurs", "4-64 colours"), 4, 64, 4)])
+        _row(sv_r, "gen_sinusoidal", _t("Sinusoïdal", "Sinusoidal"),
+             _t("Distorsion sinusoïdale horizontale (interférence).", "Horizontal sinusoidal distortion (interference)."),
+             [(_t("Période :", "Période :"), "gen_sin_period", 300, _t("50-600", "50-600"), 50, 600, 10),
+              (_t("Amplitude :", "Amplitude :"), "gen_sin_alpha", 0.2, _t("0.05-0.5", "0.05-0.5"), 0.05, 0.5, 0.05)])
+        _row(sv_r, "gen_pixel_shift", _t("Pixel Shift", "Pixel Shift"),
+             _t("Décalage global horizontal ou vertical (glitch).", "Global horizontal or vertical pixel shift (glitch)."),
+             [(_t("Pixels :", "Pixels :"), "gen_pxsh_amt", 3, _t("1-20 px", "1-20 px"), 1, 20, 1)])
+
+        # ── Tab Avancé ─────────────────────────────────────────────────────────
+        sa = ctk.CTkScrollableFrame(ta, fg_color="transparent", height=280)
+        sa.pack(fill="both", expand=True)
+
+        _row(sa, "gen_film_grain", "Film Grain",
+             _t("Grain luminance-dépendant (fort sur midtones).", "Luminance-dependent grain (strong on midtones)."),
+             [("σ:", "gen_grain_sigma", 0.08, _t("0.01-0.3", "0.01-0.3"), 0.01, 0.3, 0.01),
+              (_t("Taille :", "Taille :"), "gen_grain_size", 1, _t("1-3 px", "1-3 px"), 1, 3, 1)])
+        _row(sa, "gen_oversharp", "Oversharpening",
+             _t("Halos USM (caméras consommateur, vidéo compressée).", "USM halos (consumer cameras, compressed video)."),
+             [(_t("Force :", "Force :"), "gen_oversharp_amt", 1.4, _t("0.5-3.0", "0.5-3.0"), 0.5, 3.0, 0.1)])
+        _row(sa, "gen_motion_blur", _t("Motion Blur", "Motion Blur"),
+             _t("Flou de mouvement horizontal (caméra en déplacement).", "Horizontal motion blur (camera movement)."),
+             [(_t("Pixels :", "Pixels :"), "gen_mb_px", 7, _t("3-31 px (impair)", "3-31 px (odd)"), 3, 31, 2)])
+        _row(sa, "gen_codec", _t("Artefacts codec H.264", "H.264 Codec Artifacts"),
+             _t("Simule les artefacts de bloc MPEG via double-JPEG.", "Simulates MPEG block artifacts via double-JPEG."),
+             [(_t("JPEG 1 :", "JPEG 1 :"), "gen_codec_q1", 30, _t("JPEG pass 1 (1-70)", "JPEG pass 1 (1-70)"), 1, 70, 1),
+              (_t("JPEG 2 :", "JPEG 2 :"), "gen_codec_q2", 60, _t("JPEG pass 2 (1-99)", "JPEG pass 2 (1-99)"), 1, 99, 1)])
+        _row(sa, "gen_salt_pepper", _t("Sel & Poivre", "Salt & Pepper"),
+             _t("Pixels noirs/blancs aléatoires (capteur défectueux).", "Random black/white pixels (faulty sensor)."),
+             [(_t("Quantité :", "Quantité :"), "gen_sp_amt", 0.01, _t("0.001-0.1", "0.001-0.1"), 0.001, 0.1, 0.001)])
+        _row(sa, "gen_halation", _t("Halation (film)", "Halation (film)"),
+             _t("Saignée lumineuse dans les hautes lumières (film argentique).", "Light bloom from highlights (analog film)."),
+             [(_t("Force :", "Force :"), "gen_hal_str", 0.2, _t("0.05-0.8", "0.05-0.8"), 0.05, 0.8, 0.05)])
+        _row(sa, "gen_autocrop", _t("Auto-crop patches", "Auto-crop patches"),
+             _t("Crop aléatoire avant dégradation (simule wtp_dataset_destroyer).", "Random crop before degradation (mimics wtp_dataset_destroyer)."),
+             [(_t("Taille :", "Taille :"), "gen_crop_sz", 256, _t("Taille patch 64-512", "Patch size 64-512"), 64, 512, 32)])
+
+        # ── Tab Pipeline ───────────────────────────────────────────────────────
+        spipe = ctk.CTkScrollableFrame(tp, fg_color="transparent", height=280)
+        spipe.pack(fill="both", expand=True)
+
+        ctk.CTkLabel(spipe, text=_t("Répétitions du pipeline", "Pipeline repetitions"),
+                     font=("Roboto", 12, "bold"), anchor="w").pack(fill="x", padx=8, pady=(8, 2))
+        pr = ctk.CTkFrame(spipe, fg_color="transparent")
+        pr.pack(fill="x", padx=8, pady=2)
+        ctk.CTkLabel(pr, text=_t("Passes :", "Passes:")).pack(side="left")
+        self.widgets["gen_passes"] = ctk.CTkOptionMenu(pr, values=["1", "2", "3", "4", "5"], width=60)
+        self.widgets["gen_passes"].pack(side="left", padx=5)
+        self.widgets["gen_passes"].set("1")
+        ToolTip(self.widgets["gen_passes"],
+                _t("Applique le pipeline complet N fois sur chaque image.\n"
+                   "Chaque passe dégrade davantage (accumulation réaliste).",
+                   "Applies the full pipeline N times per image.\n"
+                   "Each pass degrades further (realistic accumulation)."))
+
+        ctk.CTkLabel(spipe, text=_t("Probabilité par dégradation", "Per-degradation probability"),
+                     font=("Roboto", 12, "bold"), anchor="w").pack(fill="x", padx=8, pady=(12, 2))
+        ctk.CTkLabel(spipe,
+                     text=_t("Probabilité globale d'appliquer chaque dégradation activée (0=jamais, 1=toujours).\n"
+                              "Utile pour créer de la variété : même config → résultats différents.",
+                              "Global probability of applying each enabled degradation (0=never, 1=always).\n"
+                              "Useful for variety: same config → different results."),
+                     text_color="#888", font=("Roboto", 10), justify="left", anchor="w",
+                     wraplength=580).pack(fill="x", padx=12, pady=(0, 4))
+        pp = ctk.CTkFrame(spipe, fg_color="transparent")
+        pp.pack(fill="x", padx=8)
+        ctk.CTkLabel(pp, text=_t("Probabilité :", "Probability:")).pack(side="left")
+        self.gen_slider_val(pp, "gen_prob", 1.0, 0.0, 1.0, 0.05,
+                            _t("1.0 = déterministe, 0.5 = 50% chance par dégradation",
+                               "1.0 = deterministic, 0.5 = 50% chance per degradation"))
+
+        ctk.CTkLabel(spipe, text=_t("Mode probabiliste", "Probabilistic mode"),
+                     font=("Roboto", 12, "bold"), anchor="w").pack(fill="x", padx=8, pady=(12, 2))
+        pm = ctk.CTkFrame(spipe, fg_color="transparent")
+        pm.pack(fill="x", padx=8)
+        self.widgets["gen_prob_mode"] = ctk.CTkOptionMenu(
+            pm,
+            values=[
+                _t("Indépendant (par dégradation)", "Independent (per degradation)"),
+                _t("Par image (1 tirage)", "Per image (1 draw)"),
+            ],
+            width=280,
+        )
+        self.widgets["gen_prob_mode"].pack(side="left", padx=5)
+        ToolTip(self.widgets["gen_prob_mode"],
+                _t("Indépendant : chaque dégradation tirée séparément.\n"
+                   "Par image : 1 tirage décide si TOUTES les dégradations s'appliquent.",
+                   "Independent: each degradation drawn separately.\n"
+                   "Per image: 1 draw decides if ALL degradations apply."))
+
+        # ── Bouton Run + progress ──────────────────────────────────────────────
+        ctk.CTkButton(
+            f, text=_t("▶  Lancer la Génération", "▶  Run Generation"),
+            fg_color="#E67E22", font=("Roboto", 14, "bold"), height=38,
+            command=self.run_gen,
+        ).pack(fill="x", pady=(8, 4))
         self.widgets["prog_gen"] = ctk.CTkProgressBar(f)
         self.widgets["prog_gen"].pack(fill="x")
         self.widgets["prog_gen"].set(0)
-        self.widgets["lbl_gen"] = ctk.CTkLabel(f, text=_t("En attente...", "Waiting..."))
+        self.widgets["lbl_gen"] = ctk.CTkLabel(f, text=_t("En attente…", "Waiting…"))
         self.widgets["lbl_gen"].pack()
+
+        # ── Aperçu Avant / Après ───────────────────────────────────────────────
+        self.add_header(f, _t("Aperçu Avant / Après", "Before / After Preview"))
+        prev_frame = ctk.CTkFrame(f, fg_color="transparent")
+        prev_frame.pack(fill="x", pady=4)
+
+        btn_load_prev = ctk.CTkButton(
+            prev_frame,
+            text=_t("📂 Charger image de test", "📂 Load test image"),
+            fg_color="#2980b9", width=180,
+            command=self._gen_load_preview,
+        )
+        btn_load_prev.pack(side="left", padx=5)
+        btn_apply_prev = ctk.CTkButton(
+            prev_frame,
+            text=_t("⚡ Appliquer dégradations", "⚡ Apply degradations"),
+            fg_color="#16a085", width=180,
+            command=self._gen_apply_preview,
+        )
+        btn_apply_prev.pack(side="left", padx=5)
+        self.widgets["lbl_gen_prev_status"] = ctk.CTkLabel(prev_frame, text="", text_color="#888")
+        self.widgets["lbl_gen_prev_status"].pack(side="left", padx=5)
+
+        # ── Contrôle hauteur canvas ────────────────────────────────────────────
+        h_ctrl = ctk.CTkFrame(f, fg_color="transparent")
+        h_ctrl.pack(fill="x", pady=(0, 2))
+        ctk.CTkLabel(h_ctrl, text=_t("Hauteur aperçu :", "Preview height:"), anchor="w").pack(side="left", padx=(5, 4))
+        _prev_h_lbl = ctk.CTkLabel(h_ctrl, text="280 px", width=55, anchor="w")
+        _prev_h_lbl.pack(side="left")
+        _prev_h_slider = ctk.CTkSlider(h_ctrl, from_=120, to=700, width=220, number_of_steps=58)
+        _prev_h_slider.set(280)
+        _prev_h_slider.pack(side="left", padx=6)
+
+        import tkinter as _tk
+
+        panels = ctk.CTkFrame(f, fg_color="transparent")
+        panels.pack(fill="x", pady=4)
+        panels.columnconfigure(0, weight=1)
+        panels.columnconfigure(1, weight=1)
+
+        lbl_before = ctk.CTkLabel(panels, text=_t("Avant (HQ original)", "Before (HQ original)"),
+                                  font=("Roboto", 11, "bold"), text_color="#3498db")
+        lbl_before.grid(row=0, column=0, pady=(0, 2))
+        lbl_after = ctk.CTkLabel(panels, text=_t("Après (LQ dégradé)", "After (LQ degraded)"),
+                                 font=("Roboto", 11, "bold"), text_color="#e67e22")
+        lbl_after.grid(row=0, column=1, pady=(0, 2))
+
+        canvas_before = _tk.Canvas(panels, bg="#1e1e2e", highlightthickness=1,
+                                   highlightbackground="#3498db", height=280)
+        canvas_before.grid(row=1, column=0, padx=4, sticky="nsew")
+        canvas_before._zoom = 1.0
+        canvas_before._pil = None
+        canvas_before._photo = None
+
+        canvas_after = _tk.Canvas(panels, bg="#1e1e2e", highlightthickness=1,
+                                  highlightbackground="#e67e22", height=280)
+        canvas_after.grid(row=1, column=1, padx=4, sticky="nsew")
+        canvas_after._zoom = 1.0
+        canvas_after._pil = None
+        canvas_after._photo = None
+
+        def _on_prev_height(v):
+            h = int(float(v))
+            _prev_h_lbl.configure(text=f"{h} px")
+            canvas_before.configure(height=h)
+            canvas_after.configure(height=h)
+            _canvas_draw(canvas_before)
+            _canvas_draw(canvas_after)
+
+        _prev_h_slider.configure(command=_on_prev_height)
+
+        def _canvas_draw(cv):
+            if cv._pil is None:
+                return
+            cw = max(50, cv.winfo_width())
+            ch = max(50, cv.winfo_height())
+            auto = min(cw / cv._pil.width, ch / cv._pil.height)
+            scale = auto * cv._zoom
+            nw = max(1, int(cv._pil.width * scale))
+            nh = max(1, int(cv._pil.height * scale))
+            from PIL import ImageTk as _ITK
+            resample = Image.LANCZOS if scale < 1 else Image.NEAREST
+            thumb = cv._pil.resize((nw, nh), resample)
+            photo = _ITK.PhotoImage(thumb)
+            cv._photo = photo
+            cv.delete("all")
+            cv.create_image(cw // 2, ch // 2, anchor="center", image=photo)
+
+        def _bind_zoom(cv):
+            def _wheel(e):
+                cv._zoom = max(0.05, min(20.0, cv._zoom * (1.15 if e.delta > 0 else 1 / 1.15)))
+                _canvas_draw(cv)
+            cv.bind("<MouseWheel>", _wheel)
+            cv.bind("<Configure>", lambda e, c=cv: _canvas_draw(c))
+
+        _bind_zoom(canvas_before)
+        _bind_zoom(canvas_after)
+        self._canvas_draw = _canvas_draw
+        self.widgets["gen_canvas_before"] = canvas_before
+        self.widgets["gen_canvas_after"] = canvas_after
+
+        # Placeholder text initial
+        def _canvas_placeholder(cv, msg):
+            cv.delete("all")
+            cv.create_text(cv.winfo_width() // 2 or 190, cv.winfo_height() // 2 or 140,
+                           text=msg, fill="#555", font=("Roboto", 11))
+        canvas_before.after(100, lambda: _canvas_placeholder(
+            canvas_before, _t("Aucune image", "No image")))
+        canvas_after.after(100, lambda: _canvas_placeholder(
+            canvas_after, _t("Appuyer sur ⚡", "Press ⚡")))
+
+        self._gen_preview_img = None  # PIL Image original pour preview
+
         return f
+
+    # ── Preview helpers ────────────────────────────────────────────────────────
+
+    def _gen_load_preview(self):
+        from tkinter import filedialog as _fd
+        path = _fd.askopenfilename(
+            title=_t("Charger image test", "Load test image"),
+            filetypes=[("Images", "*.png *.jpg *.jpeg *.bmp *.webp"), ("Tous", "*.*")],
+        )
+        if not path:
+            return
+        try:
+            img = Image.open(path).convert("RGB")
+            self._gen_preview_img = img
+            self._gen_show_preview(self.widgets["gen_canvas_before"], img)
+            self.widgets["lbl_gen_prev_status"].configure(
+                text=f"{os.path.basename(path)} — {img.width}×{img.height}", text_color="#2ecc71"
+            )
+            # Clear after panel
+            cv = self.widgets["gen_canvas_after"]
+            cv._pil = None
+            cv.delete("all")
+            cv.create_text(cv.winfo_width() // 2 or 190, cv.winfo_height() // 2 or 140,
+                           text=_t("Appuyer sur ⚡", "Press ⚡"), fill="#555", font=("Roboto", 11))
+        except Exception as e:
+            self.widgets["lbl_gen_prev_status"].configure(text=str(e), text_color="#e74c3c")
+
+    def _gen_apply_preview(self):
+        if self._gen_preview_img is None:
+            self.widgets["lbl_gen_prev_status"].configure(
+                text=_t("Charger une image d'abord.", "Load an image first."), text_color="#e67e22"
+            )
+            return
+        self.widgets["lbl_gen_prev_status"].configure(
+            text=_t("Traitement…", "Processing…"), text_color="#3498db"
+        )
+
+        def _run():
+            try:
+                opts = self._collect_gen_opts()
+                img = self._gen_preview_img.copy()
+                # Scale down for preview
+                scale = opts["scale"]
+                new_w = max(1, img.width // scale)
+                new_h = max(1, img.height // scale)
+                img = img.resize((new_w, new_h), opts["method"])
+                img = self._apply_gen_degradations(img, opts)
+                def _show():
+                    self._gen_show_preview(self.widgets["gen_canvas_after"], img)
+                    self.widgets["lbl_gen_prev_status"].configure(
+                        text=_t("Aperçu mis à jour.", "Preview updated."), text_color="#2ecc71"
+                    )
+                self.after(0, _show)
+            except Exception as e:
+                def _err(e=e):
+                    self.widgets["lbl_gen_prev_status"].configure(text=str(e), text_color="#e74c3c")
+                self.after(0, _err)
+
+        threading.Thread(target=_run, daemon=True).start()
+
+    def _gen_show_preview(self, canvas_widget, pil_img):
+        canvas_widget._pil = pil_img
+        canvas_widget._zoom = 1.0
+        self._canvas_draw(canvas_widget)
+
+    # ── Build opts dict from widgets ──────────────────────────────────────────
+
+    def _collect_gen_opts(self):
+        W = self.widgets
+        method_map = {
+            "BICUBIC": Image.BICUBIC, "BILINEAR": Image.BILINEAR,
+            "LANCZOS": Image.LANCZOS, "NEAREST": Image.NEAREST, "BOX": Image.BOX,
+        }
+
+        def _fv(key, default):
+            try:
+                return float(W[key].get() or default)
+            except Exception:
+                return float(default)
+
+        def _iv(key, default):
+            try:
+                return int(float(W[key].get() or default))
+            except Exception:
+                return int(default)
+
+        def _bv(key):
+            try:
+                return bool(W[key].get())
+            except Exception:
+                return False
+
+        return {
+            "scale": _iv("gen_scale", 4),
+            "method": method_map.get(W["gen_method"].get(), Image.BICUBIC),
+            # Basique
+            "blur": _bv("gen_blur"), "blur_sigma": _fv("gen_blur_sigma", 1.0),
+            "noise": _bv("gen_noise"), "noise_sigma": _fv("gen_noise_sigma", 10),
+            "jpeg": _bv("gen_jpeg"), "jpeg_q": _iv("gen_jpeg_q", 50),
+            "color_jitter": _bv("gen_color_jitter"),
+            "sharpen": _bv("gen_sharpen"), "sharpen_amt": _fv("gen_sharpen_amt", 1.5),
+            # Couleur
+            "posterize": _bv("gen_posterize"), "posterize_bits": _iv("gen_posterize_bits", 4),
+            "banding": _bv("gen_banding"), "banding_levels": _iv("gen_banding_levels", 32),
+            "ca": _bv("gen_ca"), "ca_shift": _iv("gen_ca_shift", 2),
+            "disc_blur": _bv("gen_disc_blur"), "disc_blur_r": _fv("gen_disc_blur_r", 4.0),
+            "vignette": _bv("gen_vignette"), "vignette_str": _fv("gen_vignette_str", 0.4),
+            "halo": _bv("gen_halo"), "halo_str": _fv("gen_halo_str", 0.3), "halo_r": _iv("gen_halo_r", 6),
+            "saturation": _bv("gen_saturation"), "sat_factor": _fv("gen_sat_factor", 0.8),
+            "color_levels": _bv("gen_color_levels"),
+            "col_high": _fv("gen_col_high", 230), "col_low": _fv("gen_col_low", 10),
+            "quantize_depth": _bv("gen_quantize_depth"), "qdepth_bits": _iv("gen_qdepth_bits", 6),
+            # Vidéo
+            "chroma_sub": _bv("gen_chroma_sub"),
+            "aliasing": _bv("gen_aliasing"), "aliasing_str": _fv("gen_aliasing_str", 0.75),
+            "interlace_weave": _bv("gen_interlace_weave"), "weave_str": _fv("gen_weave_str", 0.8),
+            "interlace_flicker": _bv("gen_interlace_flicker"), "flicker_amp": _fv("gen_flicker_amp", 0.22),
+            "interlace_blend": _bv("gen_interlace_blend"), "blend_mix": _fv("gen_blend_mix", 0.55),
+            "scanlines": _bv("gen_scanlines"),
+            "scanlines_period": _iv("gen_scanlines_period", 3), "scanlines_dark": _fv("gen_scanlines_dark", 0.35),
+            "vhs": _bv("gen_vhs"), "vhs_str": _fv("gen_vhs_str", 0.3),
+            "screentone": _bv("gen_screentone"), "screen_sz": _iv("gen_screen_sz", 6),
+            "dithering": _bv("gen_dithering"), "dither_col": _iv("gen_dither_col", 4),
+            "sinusoidal": _bv("gen_sinusoidal"),
+            "sin_period": _fv("gen_sin_period", 300), "sin_alpha": _fv("gen_sin_alpha", 0.2),
+            "pixel_shift": _bv("gen_pixel_shift"), "pxsh_amt": _iv("gen_pxsh_amt", 3),
+            # Avancé
+            "film_grain": _bv("gen_film_grain"),
+            "grain_sigma": _fv("gen_grain_sigma", 0.08), "grain_size": _iv("gen_grain_size", 1),
+            "oversharp": _bv("gen_oversharp"), "oversharp_amt": _fv("gen_oversharp_amt", 1.4),
+            "motion_blur": _bv("gen_motion_blur"), "mb_px": _iv("gen_mb_px", 7),
+            "codec": _bv("gen_codec"), "codec_q1": _iv("gen_codec_q1", 30), "codec_q2": _iv("gen_codec_q2", 60),
+            "salt_pepper": _bv("gen_salt_pepper"), "sp_amt": _fv("gen_sp_amt", 0.01),
+            "halation": _bv("gen_halation"), "hal_str": _fv("gen_hal_str", 0.2),
+            "autocrop": _bv("gen_autocrop"), "crop_sz": _iv("gen_crop_sz", 256),
+            # Pipeline
+            "passes": _iv("gen_passes", 1),
+            "prob": _fv("gen_prob", 1.0),
+            "prob_per_image": "Par image" in self.widgets["gen_prob_mode"].get(),
+        }
 
     def run_gen(self):
         hq = self.widgets["gen_hq"].get()
@@ -2017,136 +3364,204 @@ class ToolsTab(ctk.CTkFrame):
         if not hq or not lq:
             messagebox.showerror(_t("Erreur", "Error"), _t("Dossiers requis.", "Folders required."))
             return
-        # Persister les chemins pour la prochaine session
         self.settings.set("gen_hq", hq)
         self.settings.set("gen_lq", lq)
-        scale = int(self.widgets["gen_scale"].get())
-        method_name = self.widgets["gen_method"].get()
-        method_map = {
-            "BICUBIC": Image.BICUBIC, "BILINEAR": Image.BILINEAR,
-            "LANCZOS": Image.LANCZOS, "NEAREST": Image.NEAREST, "BOX": Image.BOX,
-        }
-        method = method_map.get(method_name, Image.BICUBIC)
-
-        opts = {
-            "scale": scale, "method": method,
-            "blur": bool(self.widgets["gen_blur"].get()),
-            "blur_sigma": float(self.widgets["gen_blur_sigma"].get() or "1.0"),
-            "noise": bool(self.widgets["gen_noise"].get()),
-            "noise_sigma": float(self.widgets["gen_noise_sigma"].get() or "10"),
-            "jpeg": bool(self.widgets["gen_jpeg"].get()),
-            "jpeg_q": int(self.widgets["gen_jpeg_q"].get() or "50"),
-            "color_jitter": bool(self.widgets["gen_color_jitter"].get()),
-            "posterize": bool(self.widgets["gen_posterize"].get()),
-            "posterize_bits": int(self.widgets["gen_posterize_bits"].get() or "4"),
-            "banding": bool(self.widgets["gen_banding"].get()),
-            "banding_levels": int(self.widgets["gen_banding_levels"].get() or "32"),
-            "aliasing": bool(self.widgets["gen_aliasing"].get()),
-            "aliasing_str": float(self.widgets["gen_aliasing_str"].get() or "0.75"),
-            "interlace_weave": bool(self.widgets["gen_interlace_weave"].get()),
-            "weave_str": float(self.widgets["gen_weave_str"].get() or "0.8"),
-            "interlace_flicker": bool(self.widgets["gen_interlace_flicker"].get()),
-            "flicker_amp": float(self.widgets["gen_flicker_amp"].get() or "0.22"),
-            "interlace_blend": bool(self.widgets["gen_interlace_blend"].get()),
-            "blend_mix": float(self.widgets["gen_blend_mix"].get() or "0.55"),
-            "film_grain": bool(self.widgets["gen_film_grain"].get()),
-            "grain_sigma": float(self.widgets["gen_grain_sigma"].get() or "0.08"),
-            "grain_size": int(float(self.widgets["gen_grain_size"].get() or "1")),
-            "oversharp": bool(self.widgets["gen_oversharp"].get()),
-            "oversharp_amt": float(self.widgets["gen_oversharp_amt"].get() or "1.4"),
-            "scanlines": bool(self.widgets["gen_scanlines"].get()),
-            "scanlines_period": int(float(self.widgets["gen_scanlines_period"].get() or "3")),
-            "scanlines_dark": float(self.widgets["gen_scanlines_dark"].get() or "0.35"),
-        }
+        opts = self._collect_gen_opts()
         threading.Thread(target=self._process_gen, args=(hq, lq, opts), daemon=True).start()
 
-    def _process_gen(self, hq, lq, opts):
-        import io
+    # ── Apply all degradations to one PIL image ────────────────────────────────
+
+    def _apply_gen_degradations(self, img, opts):
+        import io as _io
+        from PIL import ImageFilter as _IF, ImageEnhance as _IE, ImageOps as _IO
+
+        prob = opts.get("prob", 1.0)
+        prob_per_image = opts.get("prob_per_image", False)
+
+        # Determine if this image is "activated" in per-image mode
+        if prob_per_image:
+            apply_all = (random.random() < prob)
+        else:
+            apply_all = None  # per-degradation mode
+
+        def _should(flag):
+            if not flag:
+                return False
+            if prob_per_image:
+                return apply_all
+            return random.random() < prob
+
+        # ── Basique ────────────────────────────────────────────────────────────
+        if _should(opts.get("sharpen")):
+            img = img.filter(_IF.SHARPEN)
+
+        if _should(opts.get("blur")):
+            img = img.filter(_IF.GaussianBlur(radius=opts["blur_sigma"]))
+
+        if _should(opts.get("noise")):
+            _ensure_numpy()
+            arr = np.array(img).astype(np.float32)
+            noise = np.random.normal(0, opts["noise_sigma"], arr.shape)
+            img = Image.fromarray(np.clip(arr + noise, 0, 255).astype(np.uint8))
+
+        if _should(opts.get("color_jitter")):
+            img = _IE.Brightness(img).enhance(random.uniform(0.9, 1.1))
+            img = _IE.Contrast(img).enhance(random.uniform(0.9, 1.1))
+            img = _IE.Color(img).enhance(random.uniform(0.9, 1.1))
+
+        if _should(opts.get("jpeg")):
+            buf = _io.BytesIO()
+            img.save(buf, format="JPEG", quality=opts["jpeg_q"])
+            buf.seek(0)
+            img = Image.open(buf).convert("RGB")
+
+        # ── Couleur ────────────────────────────────────────────────────────────
+        if _should(opts.get("posterize")):
+            img = _IO.posterize(img, max(1, min(8, opts["posterize_bits"])))
+
+        if _should(opts.get("banding")):
+            levels = max(2, min(256, opts["banding_levels"]))
+            img = img.quantize(colors=levels, method=Image.Quantize.FASTOCTREE).convert("RGB")
+
+        if _should(opts.get("saturation")):
+            img = _IE.Color(img).enhance(opts["sat_factor"])
+
         try:
-            if not os.path.exists(lq):
-                os.makedirs(lq)
+            from src.core.otf_preview import (
+                apply_chromatic_aberration, apply_disc_blur_pil, apply_vignette_pil,
+                apply_wtp_halo, apply_color_levels, apply_quantize_depth_pil,
+                apply_vhs, apply_aliasing_pil, apply_interlace_weave_pil,
+                apply_interlace_flicker_pil, apply_interlace_blend_pil,
+                apply_scanlines_pil, apply_screentone, apply_dithering,
+                apply_sinusoidal, apply_subsampling_wtp, apply_pixel_shift,
+                apply_film_grain_pil, apply_oversharpening_pil,
+                apply_salt_pepper, apply_halation,
+            )
+            _otf_ok = True
+        except Exception:
+            _otf_ok = False
+
+        if _otf_ok:
+            if _should(opts.get("ca")):
+                img = apply_chromatic_aberration(img, shift_range=(opts["ca_shift"], opts["ca_shift"]))
+            if _should(opts.get("disc_blur")):
+                img = apply_disc_blur_pil(img, radius_range=(opts["disc_blur_r"], opts["disc_blur_r"]))
+            if _should(opts.get("vignette")):
+                img = apply_vignette_pil(img, strength_range=(opts["vignette_str"], opts["vignette_str"]))
+            if _should(opts.get("halo")):
+                img = apply_wtp_halo(img, strength_range=(opts["halo_str"], opts["halo_str"]),
+                                     radius_range=(opts["halo_r"], opts["halo_r"]))
+            if _should(opts.get("color_levels")):
+                img = apply_color_levels(img,
+                                         high_range=(opts["col_high"], opts["col_high"]),
+                                         low_range=(opts["col_low"], opts["col_low"]))
+            if _should(opts.get("quantize_depth")):
+                img = apply_quantize_depth_pil(img, bits_range=(opts["qdepth_bits"], opts["qdepth_bits"]))
+            # Vidéo
+            if _should(opts.get("chroma_sub")):
+                img = apply_subsampling_wtp(img, subsampling_format="4:2:0")
+            if _should(opts.get("aliasing")):
+                img = apply_aliasing_pil(img, scale_range=(opts["aliasing_str"], opts["aliasing_str"]))
+            if _should(opts.get("interlace_weave")):
+                img = apply_interlace_weave_pil(img, strength_range=(opts["weave_str"], opts["weave_str"]))
+            if _should(opts.get("interlace_flicker")):
+                img = apply_interlace_flicker_pil(img, strength_range=(opts["flicker_amp"], opts["flicker_amp"]))
+            if _should(opts.get("interlace_blend")):
+                img = apply_interlace_blend_pil(img, strength_range=(opts["blend_mix"], opts["blend_mix"]))
+            if _should(opts.get("scanlines")):
+                img = apply_scanlines_pil(img,
+                                          spacing_range=(opts["scanlines_period"], opts["scanlines_period"]),
+                                          strength_range=(opts["scanlines_dark"], opts["scanlines_dark"]))
+            if _should(opts.get("vhs")):
+                img = apply_vhs(img, strength_range=(opts["vhs_str"], opts["vhs_str"]))
+            if _should(opts.get("screentone")):
+                img = apply_screentone(img, dot_size=opts["screen_sz"])
+            if _should(opts.get("dithering")):
+                img = apply_dithering(img, n_colors=opts["dither_col"])
+            if _should(opts.get("sinusoidal")):
+                img = apply_sinusoidal(img,
+                                       shape_range=(opts["sin_period"], opts["sin_period"]),
+                                       alpha_range=(opts["sin_alpha"], opts["sin_alpha"]))
+            if _should(opts.get("pixel_shift")):
+                img = apply_pixel_shift(img, shift_range=(opts["pxsh_amt"], opts["pxsh_amt"]))
+            # Avancé
+            if _should(opts.get("film_grain")):
+                img = apply_film_grain_pil(img,
+                                           strength_range=(opts["grain_sigma"], opts["grain_sigma"]),
+                                           size_range=(opts["grain_size"], opts["grain_size"]))
+            if _should(opts.get("oversharp")):
+                img = apply_oversharpening_pil(img,
+                                               strength_range=(opts["oversharp_amt"], opts["oversharp_amt"]))
+            if _should(opts.get("salt_pepper")):
+                img = apply_salt_pepper(img, amount_range=(opts["sp_amt"], opts["sp_amt"]))
+            if _should(opts.get("halation")):
+                img = apply_halation(img, strength_range=(opts["hal_str"], opts["hal_str"]))
+
+        # Motion blur — PIL kernel
+        if _should(opts.get("motion_blur")):
+            ksize = max(3, opts["mb_px"] | 1)  # ensure odd
+            kernel_data = [0] * (ksize * ksize)
+            mid = ksize // 2
+            for x in range(ksize):
+                kernel_data[mid * ksize + x] = 1
+            from PIL import ImageFilter as _IF2
+            img = img.filter(_IF2.Kernel(size=(ksize, ksize), kernel=kernel_data, scale=ksize, offset=0))
+
+        # H.264 codec simulation: double JPEG pass
+        if _should(opts.get("codec")):
+            buf = _io.BytesIO()
+            img.save(buf, format="JPEG", quality=opts["codec_q1"])
+            buf.seek(0)
+            img = Image.open(buf).convert("RGB")
+            buf2 = _io.BytesIO()
+            img.save(buf2, format="JPEG", quality=opts["codec_q2"])
+            buf2.seek(0)
+            img = Image.open(buf2).convert("RGB")
+
+        return img
+
+    def _process_gen(self, hq, lq, opts):
+        try:
+            os.makedirs(lq, exist_ok=True)
             exts = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
             files = [x for x in os.listdir(hq) if os.path.splitext(x)[1].lower() in exts]
             total = len(files)
             if total == 0:
-                self._ui_update(messagebox.showinfo, _t("Info", "Info"), _t("Aucune image trouvée.", "No images found."))
+                self._ui_update(messagebox.showinfo, _t("Info", "Info"),
+                                _t("Aucune image trouvée.", "No images found."))
                 return
+
+            passes = max(1, opts.get("passes", 1))
+
+            _live_every = max(1, total // 20)  # update canvas ~20 times max
             for i, fname in enumerate(files):
                 try:
-                    img = Image.open(os.path.join(hq, fname)).convert("RGB")
-                    w, h = img.size
-                    new_w, new_h = w // opts["scale"], h // opts["scale"]
-                    if new_w < 1 or new_h < 1:
-                        continue
+                    src_path = os.path.join(hq, fname)
+                    img = Image.open(src_path).convert("RGB")
+                    _hq_snap = img.copy()  # original HQ avant crop/resize/dégradation
+
+                    # Auto-crop patch
+                    if opts.get("autocrop"):
+                        csz = opts["crop_sz"]
+                        if img.width >= csz and img.height >= csz:
+                            x0 = random.randint(0, img.width - csz)
+                            y0 = random.randint(0, img.height - csz)
+                            img = img.crop((x0, y0, x0 + csz, y0 + csz))
+
+                    scale = opts["scale"]
+                    new_w = max(1, img.width // scale)
+                    new_h = max(1, img.height // scale)
                     img = img.resize((new_w, new_h), opts["method"])
 
-                    # Apply degradations
-                    if opts["blur"]:
-                        img = img.filter(ImageFilter.GaussianBlur(radius=opts["blur_sigma"]))
+                    for _ in range(passes):
+                        img = self._apply_gen_degradations(img, opts)
 
-                    if opts["noise"]:
-                        _ensure_numpy()
-                        arr = np.array(img).astype(np.float32)
-                        noise = np.random.normal(0, opts["noise_sigma"], arr.shape)
-                        arr = np.clip(arr + noise, 0, 255).astype(np.uint8)
-                        img = Image.fromarray(arr)
-
-                    if opts["color_jitter"]:
-                        from PIL import ImageEnhance
-                        img = ImageEnhance.Brightness(img).enhance(random.uniform(0.9, 1.1))
-                        img = ImageEnhance.Contrast(img).enhance(random.uniform(0.9, 1.1))
-                        img = ImageEnhance.Color(img).enhance(random.uniform(0.9, 1.1))
-
-                    if opts["jpeg"]:
-                        buf = io.BytesIO()
-                        img.save(buf, format="JPEG", quality=opts["jpeg_q"])
-                        buf.seek(0)
-                        img = Image.open(buf).convert("RGB")
-
-                    if opts.get("posterize"):
-                        # Reduce bit-depth per channel — creates flat color regions
-                        bits = max(1, min(8, opts["posterize_bits"]))
-                        from PIL import ImageOps
-                        img = ImageOps.posterize(img, bits)
-
-                    if opts.get("banding"):
-                        # Quantize to a small palette — creates banding in gradients
-                        levels = max(2, min(256, opts["banding_levels"]))
-                        # Use FASTOCTREE to keep speed; convert back to RGB
-                        img = img.quantize(colors=levels, method=Image.Quantize.FASTOCTREE).convert("RGB")
-
-                    # Custom degradations — reuse otf_preview functions with user intensities
-                    try:
-                        from src.core.otf_preview import (
-                            apply_aliasing_pil, apply_interlace_weave_pil,
-                            apply_interlace_flicker_pil, apply_interlace_blend_pil,
-                            apply_film_grain_pil, apply_oversharpening_pil, apply_scanlines_pil,
-                        )
-                        if opts.get("aliasing"):
-                            s = opts.get("aliasing_str", 0.75)
-                            img = apply_aliasing_pil(img, (s, s))
-                        if opts.get("interlace_weave"):
-                            s = opts.get("weave_str", 0.8)
-                            img = apply_interlace_weave_pil(img, (s, s))
-                        if opts.get("interlace_flicker"):
-                            s = opts.get("flicker_amp", 0.22)
-                            img = apply_interlace_flicker_pil(img, (s, s))
-                        if opts.get("interlace_blend"):
-                            s = opts.get("blend_mix", 0.55)
-                            img = apply_interlace_blend_pil(img, (s, s))
-                        if opts.get("film_grain"):
-                            sg = opts.get("grain_sigma", 0.08)
-                            sz = opts.get("grain_size", 1)
-                            img = apply_film_grain_pil(img, (sg, sg), (sz, sz))
-                        if opts.get("oversharp"):
-                            a = opts.get("oversharp_amt", 1.4)
-                            img = apply_oversharpening_pil(img, (a, a))
-                        if opts.get("scanlines"):
-                            p = opts.get("scanlines_period", 3)
-                            d = opts.get("scanlines_dark", 0.35)
-                            img = apply_scanlines_pil(img, (p, p), (d, d))
-                    except Exception:
-                        pass
+                    if i % _live_every == 0:
+                        _lq_snap = img.copy()
+                        self._ui_update(self._gen_show_preview,
+                                        self.widgets["gen_canvas_before"], _hq_snap)
+                        self._ui_update(self._gen_show_preview,
+                                        self.widgets["gen_canvas_after"], _lq_snap)
 
                     out_name = os.path.splitext(fname)[0] + ".png"
                     img.save(os.path.join(lq, out_name))
@@ -2157,7 +3572,10 @@ class ToolsTab(ctk.CTkFrame):
                 self._ui_update(self.widgets["prog_gen"].set, prog)
                 self._ui_update(self.widgets["lbl_gen"].configure, text=f"{i+1}/{total}")
 
-            self._ui_update(messagebox.showinfo, "OK", f"{_t('Terminé', 'Done')} — {total} {_t('images traitées.', 'images processed.')}")
+            self._ui_update(
+                messagebox.showinfo, "OK",
+                f"{_t('Terminé', 'Done')} — {total} {_t('images traitées.', 'images processed.')}",
+            )
         except Exception as e:
             self._ui_update(messagebox.showerror, _t("Erreur", "Error"), str(e))
 
@@ -4903,3 +6321,1506 @@ except Exception as e: print(f"ERROR:{{e}}")
                 self._bench_log_write(f"{_t('Erreur', 'Error')} : {ex}")
 
         threading.Thread(target=_worker, daemon=True).start()
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # PAGE 14: POST PROCESSING  (v2.5.8)
+    # Chaîne de post-traitement standalone : TF, UD, couleur, resize, netteté.
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    def create_page_postproc(self):
+        from tkinter import StringVar
+        f = ctk.CTkFrame(self.right_panel, fg_color="transparent")
+
+        # ── En-tête + GPU ────────────────────────────────────────────────────
+        _top = ctk.CTkFrame(f, fg_color="transparent")
+        _top.pack(fill="x", pady=(0, 4))
+        self._create_gpu_panel(_top).pack(side="right", pady=4)
+        _hdr = ctk.CTkFrame(_top, fg_color="transparent")
+        _hdr.pack(side="left", fill="x", expand=True)
+        ctk.CTkLabel(_hdr, text=_t("⚗ Post Processing", "⚗ Post Processing"),
+                     font=("Roboto", 24, "bold"), text_color="#3B8ED0", anchor="w").pack(fill="x")
+        ctk.CTkLabel(_hdr, text=_t(
+            "Chaîne de post-traitement : Temporal Fix, Undistort, couleur, netteté, redimensionnement.",
+            "Post-processing chain: Temporal Fix, Undistort, color, sharpening, resize."),
+            font=("Arial", 12), text_color="gray", anchor="w").pack(fill="x")
+
+        # ── Source ──────────────────────────────────────────────────────────
+        irow = ctk.CTkFrame(f, fg_color="transparent")
+        irow.pack(fill="x", pady=1)
+        ctk.CTkLabel(irow, text=_t("Source (image ou dossier) :", "Source (image or folder):"),
+                     width=220, anchor="w").pack(side="left")
+        self._pp_input_var = StringVar(value=self.settings.get("pp_last_input", ""))
+        self._pp_input_entry = ctk.CTkEntry(irow, textvariable=self._pp_input_var)
+        self._pp_input_entry.pack(side="left", fill="x", expand=True, padx=5)
+        ctk.CTkButton(irow, text=_t("Image", "Image"), width=60,
+                      command=self._pp_pick_image).pack(side="left", padx=(0, 2))
+        ctk.CTkButton(irow, text=_t("Dossier", "Folder"), width=70,
+                      command=self._pp_pick_folder).pack(side="left")
+
+        # ── Dossier sortie ───────────────────────────────────────────────────
+        orow = ctk.CTkFrame(f, fg_color="transparent")
+        orow.pack(fill="x", pady=1)
+        ctk.CTkLabel(orow, text=_t("Dossier sortie :", "Output folder:"),
+                     width=220, anchor="w").pack(side="left")
+        self._pp_output_var = StringVar(value=self.settings.get("pp_last_output", ""))
+        self._pp_output_entry = ctk.CTkEntry(orow, textvariable=self._pp_output_var)
+        self._pp_output_entry.pack(side="left", fill="x", expand=True, padx=5)
+        self._pp_out_btn = ctk.CTkButton(orow, text="...", width=30,
+                                          command=self._pp_pick_output_folder)
+        self._pp_out_btn.pack(side="left")
+
+        # ── Options sortie ───────────────────────────────────────────────────
+        optrow = ctk.CTkFrame(f, fg_color="transparent", height=34)
+        optrow.pack_propagate(False)
+        optrow.pack(fill="x", pady=(2, 0))
+        ctk.CTkFrame(optrow, fg_color="transparent", width=1, height=1).pack(
+            side="left", fill="x", expand=True)
+
+        self._pp_same_folder = ctk.CTkCheckBox(
+            optrow, text=_t("Même dossier que source", "Same folder as source"),
+            command=self._pp_on_same_folder_toggle)
+        self._pp_same_folder.pack(side="left", padx=(0, 15))
+        if self.settings.get("pp_same_folder", False):
+            self._pp_same_folder.select()
+
+        self._pp_subfolder = ctk.CTkCheckBox(
+            optrow, text=_t('Sous-dossier "postproc/"', '"postproc/" subfolder'))
+        self._pp_subfolder.pack(side="left", padx=(0, 15))
+        if self.settings.get("pp_subfolder", True):
+            self._pp_subfolder.select()
+
+        ctk.CTkFrame(optrow, width=1, fg_color="gray40").pack(side="left", fill="y", padx=(0, 10), pady=2)
+
+        self._pp_serialize = ctk.CTkCheckBox(
+            optrow, text=_t("Sérialisation", "Serialization"),
+            command=self._pp_on_serialize_toggle)
+        self._pp_serialize.pack(side="left", padx=(0, 6))
+        if self.settings.get("pp_serialize", False):
+            self._pp_serialize.select()
+        ToolTip(self._pp_serialize, _t(
+            "Nommage séquentiel : 00000.png, 00001.png…\nUtile pour réassembler en vidéo.",
+            "Sequential naming: 00000.png, 00001.png…\nUseful for video reassembly."))
+
+        ctk.CTkLabel(optrow, text=_t("Début :", "Start:")).pack(side="left", padx=(0, 3))
+        self._pp_serialize_start = ctk.CTkEntry(optrow, width=55, placeholder_text="0")
+        self._pp_serialize_start.pack(side="left")
+        self._pp_serialize_start.insert(0, str(self.settings.get("pp_serialize_start", "0")))
+        self._pp_on_serialize_toggle()
+
+        self._pp_input_var.trace_add("write", lambda *_: self._pp_sync_output())
+        self._pp_on_same_folder_toggle()
+
+        # ── Chaîne de traitement ─────────────────────────────────────────────
+        ctk.CTkLabel(f, text=_t("Chaîne de traitement (ordre d'application) :",
+                                "Processing chain (application order):"),
+                     font=("Arial", 12, "bold"), anchor="w").pack(fill="x", pady=(10, 2))
+
+        chain_host = ctk.CTkScrollableFrame(f, fg_color=("#EBEBEB", "#1a2535"),
+                                             corner_radius=8, height=210)
+        chain_host.pack(fill="x", pady=(0, 6))
+
+        self._pp_settings = {
+            "tf_enabled":        bool(self.settings.get("pp_tf_enabled",        False)),
+            "tf_mode":           str(self.settings.get("pp_tf_mode",            "classic")),
+            "tf_strength":       float(self.settings.get("pp_tf_strength",      0.5)),
+            "tf_window":         int(self.settings.get("pp_tf_window",          7)),
+            "tf_precision":      str(self.settings.get("pp_tf_precision",       "float32")),
+            "ud_enabled":        bool(self.settings.get("pp_ud_enabled",        False)),
+            "ud_mode":           str(self.settings.get("pp_ud_mode",            "classic")),
+            "ud_strength":       float(self.settings.get("pp_ud_strength",      0.35)),
+            "ud_window":         int(self.settings.get("pp_ud_window",          5)),
+            "ud_precision":      str(self.settings.get("pp_ud_precision",       "float32")),
+            "color_enabled":     bool(self.settings.get("pp_color_enabled",     False)),
+            "brightness":        float(self.settings.get("pp_brightness",       1.0)),
+            "contrast":          float(self.settings.get("pp_contrast",         1.0)),
+            "saturation":        float(self.settings.get("pp_saturation",       1.0)),
+            "gamma":             float(self.settings.get("pp_gamma",            1.0)),
+            "resize_enabled":    bool(self.settings.get("pp_resize_enabled",    False)),
+            "resize_mode":       str(self.settings.get("pp_resize_mode",        "percent")),
+            "resize_scale":      int(self.settings.get("pp_resize_scale",       100)),
+            "resize_multiplier": float(self.settings.get("pp_resize_multiplier", 1.0)),
+            "resize_width":      int(self.settings.get("pp_resize_width",        0)),
+            "resize_height":     int(self.settings.get("pp_resize_height",       0)),
+            "resize_aspect":     bool(self.settings.get("pp_resize_aspect",      True)),
+            "resize_method":     str(self.settings.get("pp_resize_method",      "LANCZOS")),
+            "sharpen_enabled":   bool(self.settings.get("pp_sharpen_enabled",   False)),
+            "sharpen_strength":  float(self.settings.get("pp_sharpen_strength", 1.0)),
+            "sharpen_radius":    float(self.settings.get("pp_sharpen_radius",   1.5)),
+            "sharpen_threshold": int(self.settings.get("pp_sharpen_threshold",  3)),
+        }
+
+        _tools = [
+            ("tf",      _t("🎞  Temporal Fix",        "🎞  Temporal Fix"),
+                        _t("Réduit le scintillement temporel. Nécessite torch + séquence d'images.",
+                           "Reduces temporal flickering. Requires torch + image sequence.")),
+            ("ud",      _t("🔬  Undistort",            "🔬  Undistort"),
+                        _t("Corrige les artefacts HF temporels (distorsion). Nécessite torch + séquence.",
+                           "Fixes temporal HF artifacts (distortion). Requires torch + sequence.")),
+            ("color",   _t("🎨  Correction couleur",   "🎨  Color correction"),
+                        _t("Luminosité, contraste, saturation, gamma.",
+                           "Brightness, contrast, saturation, gamma.")),
+            ("resize",  _t("📐  Redimensionnement",    "📐  Resize"),
+                        _t("Mise à l'échelle par pourcentage. Algorithme configurable (Lanczos, Bicubic…).",
+                           "Scale by percentage. Configurable algorithm (Lanczos, Bicubic…).")),
+            ("sharpen", _t("✨  Netteté (UnsharpMask)", "✨  Sharpen (UnsharpMask)"),
+                        _t("Améliore la netteté. Force, rayon, seuil.",
+                           "Improves sharpness. Strength, radius, threshold.")),
+        ]
+
+        self._pp_chain_checkboxes = {}
+        for key, label, tip in _tools:
+            row = ctk.CTkFrame(chain_host, fg_color="transparent")
+            row.pack(fill="x", padx=6, pady=3)
+            cb = ctk.CTkCheckBox(row, text="", width=24,
+                                  command=lambda k=key: self._pp_on_tool_toggle(k))
+            cb.pack(side="left", padx=(0, 4))
+            if self._pp_settings.get(f"{key}_enabled"):
+                cb.select()
+            self._pp_chain_checkboxes[key] = cb
+            lbl = ctk.CTkLabel(row, text=label, anchor="w", font=("Arial", 13))
+            lbl.pack(side="left", fill="x", expand=True)
+            ToolTip(lbl, tip)
+            ctk.CTkButton(row, text="⚙", width=34,
+                           command=lambda k=key: self._pp_open_settings(k)).pack(side="right")
+
+        # ── Run / Stop / Progress ────────────────────────────────────────────
+        run_row = ctk.CTkFrame(f, fg_color="transparent")
+        run_row.pack(fill="x", pady=(10, 3))
+        self.widgets["pp_run_btn"] = ctk.CTkButton(
+            run_row, text=_t("▶ Lancer Post Processing", "▶ Run Post Processing"),
+            fg_color="#2ecc71", command=self._pp_run)
+        self.widgets["pp_run_btn"].pack(side="left", fill="x", expand=True, padx=(0, 5))
+        self.widgets["pp_stop_btn"] = ctk.CTkButton(
+            run_row, text="⏹ Stop", fg_color="#e74c3c", hover_color="#c0392b",
+            width=110, state="disabled", command=self._pp_request_stop)
+        self.widgets["pp_stop_btn"].pack(side="left")
+
+        prog_row = ctk.CTkFrame(f, fg_color="transparent")
+        prog_row.pack(fill="x")
+        self.widgets["pp_prog"] = ctk.CTkProgressBar(prog_row)
+        self.widgets["pp_prog"].pack(side="left", fill="x", expand=True)
+        self.widgets["pp_prog"].set(0)
+        self.widgets["pp_prog_pct"] = ctk.CTkLabel(prog_row, text="0%", width=42, anchor="e")
+        self.widgets["pp_prog_pct"].pack(side="left", padx=(6, 0))
+
+        # ── Log + Preview (PanedWindow) ──────────────────────────────────────
+        from tkinter import PanedWindow as _PanedWindow
+        paned = _PanedWindow(f, orient="vertical", sashwidth=6, sashrelief="flat",
+                             bg="#1a1a1a", bd=0, sashpad=1)
+        paned.pack(fill="both", expand=True, pady=5)
+
+        log_host = ctk.CTkFrame(paned, fg_color="transparent")
+        _sash_h = int(self.settings.get("pp_log_sash_h", 150))
+        paned.add(log_host, height=_sash_h, minsize=50)
+        self.widgets["log_pp"] = ctk.CTkTextbox(log_host)
+        self.widgets["log_pp"].pack(fill="both", expand=True)
+
+        prev_frame = ctk.CTkFrame(paned, fg_color=("#E8E8E8", "#111827"), corner_radius=6)
+        paned.add(prev_frame, minsize=80)
+        for side, key, label in [("left",  "pp_prev_in",  _t("Avant", "Before")),
+                                  ("right", "pp_prev_out", _t("Après", "After"))]:
+            col = ctk.CTkFrame(prev_frame, fg_color="transparent")
+            col.pack(side=side, fill="both", expand=True, padx=4, pady=4)
+            ctk.CTkLabel(col, text=label, font=("Arial", 10), text_color="gray").pack()
+            lbl = ctk.CTkLabel(col, text="—", fg_color=("#D0D0D0", "#1e293b"), corner_radius=4)
+            lbl.pack(fill="both", expand=True)
+            self.widgets[key] = lbl
+        self._pp_preview_refs = []
+        self._pp_last_preview_paths = None
+        prev_frame.bind("<Configure>", self._pp_on_preview_resize)
+        paned.bind("<ButtonRelease-1>", lambda e, p=paned: self._pp_save_sash(p))
+
+        return f
+
+    # ── Post Processing : helpers I/O ─────────────────────────────────────────
+
+    def _pp_pick_image(self):
+        path = filedialog.askopenfilename(
+            title=_t("Sélectionner une image", "Select image"),
+            filetypes=[(_t("Images", "Images"),
+                        "*.png *.jpg *.jpeg *.webp *.tiff *.tif *.bmp"),
+                       (_t("Tous les fichiers", "All files"), "*.*")])
+        if path:
+            self._pp_input_var.set(path)
+
+    def _pp_pick_folder(self):
+        path = filedialog.askdirectory(
+            title=_t("Sélectionner un dossier source", "Select source folder"))
+        if path:
+            self._pp_input_var.set(path)
+
+    def _pp_pick_output_folder(self):
+        path = filedialog.askdirectory(
+            title=_t("Sélectionner le dossier de sortie", "Select output folder"))
+        if path:
+            self._pp_output_var.set(path)
+
+    def _pp_sync_output(self):
+        if not (hasattr(self, "_pp_same_folder") and self._pp_same_folder.get()):
+            return
+        inp = self._pp_input_var.get().strip()
+        base = inp if os.path.isdir(inp) else os.path.dirname(inp)
+        self._pp_output_var.set(base)
+
+    def _pp_on_same_folder_toggle(self):
+        sf = hasattr(self, "_pp_same_folder") and bool(self._pp_same_folder.get())
+        if hasattr(self, "_pp_out_btn"):
+            self._pp_out_btn.configure(state="disabled" if sf else "normal")
+        if hasattr(self, "_pp_output_entry"):
+            self._pp_output_entry.configure(state="disabled" if sf else "normal")
+        if sf:
+            self._pp_sync_output()
+
+    def _pp_on_serialize_toggle(self):
+        on = hasattr(self, "_pp_serialize") and bool(self._pp_serialize.get())
+        if hasattr(self, "_pp_serialize_start"):
+            self._pp_serialize_start.configure(state="normal" if on else "disabled")
+
+    def _pp_on_tool_toggle(self, key: str):
+        enabled = bool(self._pp_chain_checkboxes[key].get())
+        self._pp_settings[f"{key}_enabled"] = enabled
+        self.settings.set(f"pp_{key}_enabled", enabled)
+
+    def _pp_on_preview_resize(self, _event=None):
+        paths = getattr(self, "_pp_last_preview_paths", None)
+        if paths:
+            self._pp_update_preview(*paths)
+
+    def _pp_save_sash(self, paned):
+        try:
+            h = paned.sash_coord(0)[1]
+            if h > 20:
+                self.settings.set("pp_log_sash_h", h)
+        except Exception:
+            pass
+
+    # ── Post Processing : settings popups ────────────────────────────────────
+
+    def _pp_open_settings(self, key: str):
+        dispatch = {
+            "tf":      self._pp_settings_tf,
+            "ud":      self._pp_settings_ud,
+            "color":   self._pp_settings_color,
+            "resize":  self._pp_settings_resize,
+            "sharpen": self._pp_settings_sharpen,
+        }
+        fn = dispatch.get(key)
+        if fn:
+            fn()
+
+    def _pp_settings_tf(self):
+        """Popup Temporal Fix — Post-process (style identique à Quick Upscale v2.5.9)."""
+        popup = getattr(self, "_pp_tf_popup", None)
+        if popup and popup.winfo_exists():
+            popup.lift()
+            return
+
+        s = self._pp_settings
+        popup = ctk.CTkToplevel(self)
+        popup.title(_t("PP — Réglages Temporal Fix", "PP — Temporal Fix Settings"))
+        popup.resizable(False, False)
+        popup.grab_set()
+        self._pp_tf_popup = popup
+
+        ctk.CTkLabel(popup, text="Temporal Fix — Post-processing",
+                     font=("Roboto", 14, "bold"), text_color="#9B59B6").pack(
+                     padx=20, pady=(15, 5))
+        ctk.CTkLabel(popup,
+                     text=_t(
+                         "Réduction du scintillement SR sur séquences vidéo.\n"
+                         "Blend adaptatif : zones statiques lissées, zones mobiles conservées.",
+                         "SR flickering reduction on video sequences.\n"
+                         "Adaptive blend: static regions smoothed, moving regions preserved."),
+                     font=("Arial", 10), text_color="gray").pack(padx=20, pady=(0, 8))
+
+        body = ctk.CTkFrame(popup, fg_color="transparent")
+        body.pack(fill="x", padx=20, pady=4)
+
+        ctk.CTkLabel(body, text=_t("Intensité (0 = désactivé, 1 = maximum) :",
+                                   "Strength (0 = off, 1 = maximum):"),
+                     anchor="w").pack(fill="x", pady=(0, 2))
+        ctk.CTkLabel(body,
+                     text=_t(
+                         "0.4-0.6 = recommandé pour anime SR. 0.8+ = effet fort (risque de flou).",
+                         "0.4-0.6 = recommended for anime SR. 0.8+ = strong effect (blur risk)."),
+                     font=("Arial", 10), text_color="gray", anchor="w").pack(fill="x", pady=(0, 6))
+        str_row = ctk.CTkFrame(body, fg_color="transparent")
+        str_row.pack(fill="x", pady=(0, 10))
+        str_lbl = ctk.CTkLabel(str_row, text=f"{s.get('tf_strength', 0.5):.2f}", width=38, anchor="w")
+        str_sld = ctk.CTkSlider(str_row, from_=0.0, to=1.0, number_of_steps=20, width=220)
+        str_sld.set(s.get("tf_strength", 0.5))
+        str_sld.pack(side="left")
+        str_lbl.pack(side="left", padx=6)
+        str_sld.configure(command=lambda v: str_lbl.configure(text=f"{float(v):.2f}"))
+
+        ctk.CTkLabel(body, text=_t("Taille fenêtre (frames) :", "Window size (frames):"),
+                     anchor="w").pack(fill="x", pady=(4, 2))
+        win_row = ctk.CTkFrame(body, fg_color="transparent")
+        win_row.pack(fill="x", pady=(0, 6))
+        win_var = ctk.StringVar(value=str(s.get("tf_window", 7)))
+        win_menu = ctk.CTkOptionMenu(win_row, values=["5", "7", "9"], variable=win_var, width=90)
+        win_menu.pack(side="left")
+        lat_lbl = ctk.CTkLabel(win_row,
+                               text=_t(f"→ latence {int(s.get('tf_window', 7)) // 2} frames",
+                                       f"→ latency {int(s.get('tf_window', 7)) // 2} frames"),
+                               font=("Consolas", 10), text_color="gray60")
+        lat_lbl.pack(side="left", padx=(10, 0))
+        win_menu.configure(command=lambda v: lat_lbl.configure(
+            text=_t(f"→ latence {int(v) // 2} frames", f"→ latency {int(v) // 2} frames")))
+
+        ctk.CTkLabel(body, text=_t("Précision :", "Precision:"),
+                     anchor="w").pack(fill="x", pady=(4, 2))
+        ctk.CTkLabel(body,
+                     text=_t(
+                         "float16 = 2× moins de VRAM, qualité identique.\n"
+                         "float32 = sûr sur toutes les cartes (défaut).",
+                         "float16 = 2× less VRAM, same quality.\n"
+                         "float32 = safe on all cards (default)."),
+                     font=("Arial", 10), text_color="gray", anchor="w").pack(fill="x", pady=(0, 6))
+        prec_var = ctk.StringVar(value=s.get("tf_precision", "float32"))
+        ctk.CTkOptionMenu(body, values=["float32", "float16"],
+                          variable=prec_var, width=120).pack(anchor="w", pady=(0, 10))
+
+        ctk.CTkFrame(body, height=1, fg_color="gray35").pack(fill="x", pady=(2, 8))
+        ctk.CTkLabel(body, text=_t("Algorithme Temporal Fix :", "TemporalFix Algorithm:"),
+                     font=("Roboto", 12, "bold"), anchor="w").pack(fill="x", pady=(0, 2))
+        ctk.CTkLabel(body,
+                     text=_t(
+                         "Variante : s1 léger / s2★ recommandé / s3 fort.\n"
+                         "Backend : PyTorch CUDA | OnnxRuntime ⚡ (recommandé GPU) | TRT ⚡⚡ | CPU.",
+                         "Variant: s1 light / s2★ recommended / s3 strong.\n"
+                         "Backend: PyTorch CUDA | OnnxRuntime ⚡ (recommended GPU) | TRT ⚡⚡ | CPU."),
+                     font=("Arial", 10), text_color="gray", anchor="w").pack(fill="x", pady=(0, 4))
+
+        def _tf_parse_mode(m: str):
+            if m == "classic":              return "classic", "pytorch"
+            if m.startswith("model_"):      return m[6:], "pytorch"
+            if m.startswith("ort_"):        return m[4:],  "ort"
+            if m.startswith("trt_"):        return m[4:],  "trt"
+            if m.startswith("cpu_"):        return m[4:],  "cpu"
+            return "classic", "pytorch"
+
+        def _tf_build_mode(variant: str, backend: str) -> str:
+            if variant == "classic":
+                return "classic"
+            pfx = {"pytorch": "model_", "ort": "ort_", "trt": "trt_", "cpu": "cpu_"}.get(backend, "model_")
+            return pfx + variant
+
+        _tf_v_init, _tf_b_init = _tf_parse_mode(s.get("tf_mode", "classic"))
+        _tf_variants = {"classic": _t("Classic (rapide / fallback)", "Classic (fast / fallback)"),
+                        "s1": "s1  (~2 MB, léger)", "s2": "s2 ★ (~2 MB, recommandé)", "s3": "s3  (~2 MB, fort)"}
+        _tf_variants_rev = {v: k for k, v in _tf_variants.items()}
+        _tf_backends = {"pytorch": "PyTorch CUDA", "ort": "OnnxRuntime ⚡ (CUDA)",
+                        "trt": "TRT + OnnxRuntime ⚡⚡", "cpu": "CPU (PyTorch)"}
+        _tf_backends_rev = {v: k for k, v in _tf_backends.items()}
+
+        tf_sel_row = ctk.CTkFrame(body, fg_color="transparent")
+        tf_sel_row.pack(fill="x", pady=(0, 4))
+        ctk.CTkLabel(tf_sel_row, text=_t("Variante:", "Variant:"), width=65, anchor="w").pack(side="left")
+        tf_var_var = ctk.StringVar(value=_tf_variants.get(_tf_v_init, _tf_variants["classic"]))
+        tf_var_menu = ctk.CTkOptionMenu(tf_sel_row, values=list(_tf_variants.values()),
+                                        variable=tf_var_var, width=200)
+        tf_var_menu.pack(side="left")
+
+        tf_bck_row = ctk.CTkFrame(body, fg_color="transparent")
+        tf_bck_row.pack(fill="x", pady=(0, 6))
+        ctk.CTkLabel(tf_bck_row, text="Backend:", width=65, anchor="w").pack(side="left")
+        tf_bck_var = ctk.StringVar(value=_tf_backends.get(_tf_b_init, _tf_backends["pytorch"]))
+        tf_bck_menu = ctk.CTkOptionMenu(tf_bck_row, values=list(_tf_backends.values()),
+                                        variable=tf_bck_var, width=200)
+        tf_bck_menu.pack(side="left")
+
+        tf_dl_row = ctk.CTkFrame(body, fg_color="transparent")
+        tf_dl_row.pack(fill="x", pady=(0, 10))
+        tf_dl_status = ctk.CTkLabel(tf_dl_row, text="", font=("Consolas", 10),
+                                    text_color="gray60", anchor="w", width=200)
+        tf_dl_status.pack(side="left")
+
+        def _tf_current_model_key() -> str:
+            variant = _tf_variants_rev.get(tf_var_var.get(), "classic")
+            backend = _tf_backends_rev.get(tf_bck_var.get(), "pytorch")
+            if variant == "classic":
+                return ""
+            if backend in ("ort", "trt"):
+                return f"temporalfix_{variant}_onnx"
+            return f"temporalfix_{variant}"
+
+        def _tf_update_dl_status(*_):
+            from src.core.model_manager import get_manager, MODELS
+            variant = _tf_variants_rev.get(tf_var_var.get(), "classic")
+            tf_bck_menu.configure(state="normal" if variant != "classic" else "disabled")
+            model_key = _tf_current_model_key()
+            if not model_key:
+                tf_dl_status.configure(text=_t("Classic — aucun poids nécessaire.",
+                                                "Classic — no weights needed."), text_color="gray60")
+                tf_dl_btn.configure(state="disabled")
+            else:
+                mgr = get_manager()
+                if mgr.is_ready(model_key):
+                    info = MODELS[model_key]
+                    tf_dl_status.configure(text=f"✓ {info['filename']} ({info['size_mb']:.1f} MB)",
+                                           text_color="#2ecc71")
+                    tf_dl_btn.configure(state="disabled", text=_t("Téléchargé ✓", "Downloaded ✓"))
+                else:
+                    info = MODELS[model_key]
+                    tf_dl_status.configure(text=f"⬇ {info['filename']} ({info['size_mb']:.1f} MB)",
+                                           text_color="#e67e22")
+                    tf_dl_btn.configure(state="normal", text=_t("Télécharger", "Download"))
+
+        def _tf_download():
+            import threading as _thr
+            from src.core.model_manager import get_manager
+            model_key = _tf_current_model_key()
+            if not model_key:
+                return
+            tf_dl_btn.configure(state="disabled", text=_t("Téléchargement…", "Downloading…"))
+            tf_dl_status.configure(text="0 %", text_color="#3498db")
+            def _run():
+                try:
+                    mgr = get_manager()
+                    def _progress(dl, total):
+                        pct = int(dl * 100 / total) if total else 0
+                        popup.after(0, lambda: tf_dl_status.configure(
+                            text=f"{pct}%  ({dl//1024}KB / {total//1024}KB)"))
+                    mgr.download(model_key, progress_cb=_progress)
+                    popup.after(0, _tf_update_dl_status)
+                except Exception as e:
+                    popup.after(0, lambda: (
+                        tf_dl_status.configure(text=f"Erreur: {e}", text_color="#e74c3c"),
+                        tf_dl_btn.configure(state="normal", text=_t("Réessayer", "Retry"))))
+            _thr.Thread(target=_run, daemon=True).start()
+
+        tf_dl_btn = ctk.CTkButton(tf_dl_row, text=_t("Télécharger", "Download"),
+                                  width=110, height=26, command=_tf_download)
+        tf_dl_btn.pack(side="right")
+        tf_var_menu.configure(command=lambda _v: _tf_update_dl_status())
+        tf_bck_menu.configure(command=lambda _v: _tf_update_dl_status())
+        _tf_update_dl_status()
+
+        btn_row = ctk.CTkFrame(popup, fg_color="transparent")
+        btn_row.pack(fill="x", padx=20, pady=(0, 15))
+
+        def _apply():
+            _tf_v = _tf_variants_rev.get(tf_var_var.get(), "classic")
+            _tf_b = _tf_backends_rev.get(tf_bck_var.get(), "pytorch")
+            self._pp_settings["tf_mode"]      = _tf_build_mode(_tf_v, _tf_b)
+            self._pp_settings["tf_strength"]  = round(float(str_sld.get()), 2)
+            self._pp_settings["tf_window"]    = int(win_var.get())
+            self._pp_settings["tf_precision"] = prec_var.get()
+            self.settings.set("pp_tf_mode",      self._pp_settings["tf_mode"])
+            self.settings.set("pp_tf_strength",  self._pp_settings["tf_strength"])
+            self.settings.set("pp_tf_window",    self._pp_settings["tf_window"])
+            self.settings.set("pp_tf_precision", self._pp_settings["tf_precision"])
+            popup.destroy()
+
+        ctk.CTkButton(btn_row, text=_t("Appliquer", "Apply"), fg_color="#2ecc71",
+                      command=_apply).pack(side="left", fill="x", expand=True, padx=(0, 5))
+        ctk.CTkButton(btn_row, text=_t("Annuler", "Cancel"), fg_color="#e74c3c",
+                      command=popup.destroy).pack(side="left", fill="x", expand=True)
+
+    def _pp_settings_ud(self):
+        """Popup Undistort — Post-process (style identique à Quick Upscale v2.5.9)."""
+        popup = getattr(self, "_pp_ud_popup", None)
+        if popup and popup.winfo_exists():
+            popup.lift()
+            return
+
+        s = self._pp_settings
+        popup = ctk.CTkToplevel(self)
+        popup.title(_t("PP — Réglages Undistort", "PP — Undistort Settings"))
+        popup.resizable(False, False)
+        popup.grab_set()
+        self._pp_ud_popup = popup
+
+        ctk.CTkLabel(popup, text="Undistort — Correction de jitter HF",
+                     font=("Roboto", 14, "bold"), text_color="#27AE60").pack(
+                     padx=20, pady=(15, 5))
+        ctk.CTkLabel(popup,
+                     text=_t(
+                         "Réduit le 'shimmer' sur les contours (jitter haute fréquence).\n"
+                         "Médiane temporelle du composant HF (frame − flou gaussien).\n"
+                         "Complémentaire à Temporal Fix. Fenêtre plus petite = moins de latence.",
+                         "Reduces edge 'shimmer' (high-frequency temporal jitter).\n"
+                         "Method: temporal median of HF component (frame − Gaussian blur).\n"
+                         "Complementary to Temporal Fix. Smaller window = less latency."),
+                     font=("Arial", 10), text_color="gray").pack(padx=20, pady=(0, 8))
+
+        body = ctk.CTkFrame(popup, fg_color="transparent")
+        body.pack(fill="x", padx=20, pady=4)
+
+        ctk.CTkLabel(body, text=_t("Intensité Undistort :", "Undistort Strength:"),
+                     anchor="w").pack(fill="x", pady=(4, 2))
+        ctk.CTkLabel(body,
+                     text=_t(
+                         "0.3–0.5 = recommandé. Plus élevé = correction plus forte (risque de flou HF).",
+                         "0.3–0.5 = recommended. Higher = stronger correction (HF blur risk)."),
+                     font=("Arial", 10), text_color="gray", anchor="w").pack(fill="x", pady=(0, 4))
+        undist_str_row = ctk.CTkFrame(body, fg_color="transparent")
+        undist_str_row.pack(fill="x", pady=(0, 8))
+        _ud_str_init = float(s.get("ud_strength", 0.35))
+        undist_str_lbl = ctk.CTkLabel(undist_str_row, text=f"{_ud_str_init:.2f}", width=38, anchor="w")
+        undist_str_sld = ctk.CTkSlider(undist_str_row, from_=0.0, to=1.0, number_of_steps=20, width=220)
+        undist_str_sld.set(_ud_str_init)
+        undist_str_sld.pack(side="left")
+        undist_str_lbl.pack(side="left", padx=6)
+        undist_str_sld.configure(command=lambda v: undist_str_lbl.configure(text=f"{float(v):.2f}"))
+
+        ctk.CTkLabel(body, text=_t("Fenêtre Undistort (frames) :", "Undistort Window (frames):"),
+                     anchor="w").pack(fill="x", pady=(4, 2))
+        udist_win_var = ctk.StringVar(value=str(s.get("ud_window", 5)))
+        ctk.CTkOptionMenu(body, values=["3", "5", "7"], variable=udist_win_var, width=90).pack(
+            anchor="w", pady=(0, 8))
+
+        ctk.CTkLabel(body, text=_t("Algorithme Undistort :", "Undistort Algorithm:"),
+                     anchor="w", font=("Roboto", 11, "bold")).pack(fill="x", pady=(4, 2))
+        ctk.CTkLabel(body,
+                     text=_t(
+                         "Classic : médiane HF, rapide, sans poids.\n"
+                         "TMT : réseau xg416/pifroggi. Backend : ORT ⚡ recommandé GPU.",
+                         "Classic: HF median, fast, no weights.\n"
+                         "TMT: xg416/pifroggi network. Backend: ORT ⚡ recommended GPU."),
+                     font=("Arial", 10), text_color="gray", anchor="w").pack(fill="x", pady=(0, 4))
+
+        def _ud_parse_mode(m: str):
+            if m == "classic":          return "classic", "pytorch"
+            if m.startswith("model_"):  return "tmt", "pytorch"
+            if m.startswith("ort_"):    return "tmt",  "ort"
+            if m.startswith("trt_"):    return "tmt",  "trt"
+            return "classic", "pytorch"
+
+        def _ud_build_mode(variant: str, backend: str) -> str:
+            if variant == "classic":
+                return "classic"
+            pfx = {"pytorch": "model_", "ort": "ort_", "trt": "trt_"}.get(backend, "model_")
+            return pfx + "tmt"
+
+        _ud_v_init, _ud_b_init = _ud_parse_mode(s.get("ud_mode", "classic"))
+        _ud_variants = {"classic": _t("Classic (rapide / fallback)", "Classic (fast / fallback)"),
+                        "tmt": "TMT (~8 MB PTH / ~5 MB ONNX)"}
+        _ud_variants_rev = {v: k for k, v in _ud_variants.items()}
+        _ud_backends = {"pytorch": "PyTorch CUDA", "ort": "OnnxRuntime ⚡ (CUDA)",
+                        "trt": "TRT + OnnxRuntime ⚡⚡"}
+        _ud_backends_rev = {v: k for k, v in _ud_backends.items()}
+
+        ud_sel_row = ctk.CTkFrame(body, fg_color="transparent")
+        ud_sel_row.pack(fill="x", pady=(0, 4))
+        ctk.CTkLabel(ud_sel_row, text=_t("Variante:", "Variant:"), width=65, anchor="w").pack(side="left")
+        ud_var_var = ctk.StringVar(value=_ud_variants.get(_ud_v_init, _ud_variants["classic"]))
+        ud_var_menu = ctk.CTkOptionMenu(ud_sel_row, values=list(_ud_variants.values()),
+                                        variable=ud_var_var, width=200)
+        ud_var_menu.pack(side="left")
+
+        ud_bck_row = ctk.CTkFrame(body, fg_color="transparent")
+        ud_bck_row.pack(fill="x", pady=(0, 6))
+        ctk.CTkLabel(ud_bck_row, text="Backend:", width=65, anchor="w").pack(side="left")
+        ud_bck_var = ctk.StringVar(value=_ud_backends.get(_ud_b_init, _ud_backends["pytorch"]))
+        ud_bck_menu = ctk.CTkOptionMenu(ud_bck_row, values=list(_ud_backends.values()),
+                                        variable=ud_bck_var, width=200)
+        ud_bck_menu.pack(side="left")
+
+        ud_dl_row = ctk.CTkFrame(body, fg_color="transparent")
+        ud_dl_row.pack(fill="x", pady=(0, 12))
+        ud_dl_status = ctk.CTkLabel(ud_dl_row, text="", font=("Consolas", 10),
+                                    text_color="gray60", anchor="w", width=200)
+        ud_dl_status.pack(side="left")
+
+        def _ud_current_model_key() -> str:
+            variant = _ud_variants_rev.get(ud_var_var.get(), "classic")
+            backend = _ud_backends_rev.get(ud_bck_var.get(), "pytorch")
+            if variant == "classic":
+                return ""
+            if backend in ("ort", "trt"):
+                return "undistort_tmt_onnx"
+            return "undistort_tmt"
+
+        def _ud_update_dl_status(*_):
+            from src.core.model_manager import get_manager, MODELS
+            variant = _ud_variants_rev.get(ud_var_var.get(), "classic")
+            ud_bck_menu.configure(state="normal" if variant != "classic" else "disabled")
+            model_key = _ud_current_model_key()
+            if not model_key:
+                ud_dl_status.configure(text=_t("Classic — aucun poids nécessaire.",
+                                                "Classic — no weights needed."), text_color="gray60")
+                ud_dl_btn.configure(state="disabled")
+            else:
+                mgr = get_manager()
+                if mgr.is_ready(model_key):
+                    info = MODELS[model_key]
+                    ud_dl_status.configure(text=f"✓ {info['filename']} ({info['size_mb']:.1f} MB)",
+                                           text_color="#2ecc71")
+                    ud_dl_btn.configure(state="disabled", text=_t("Téléchargé ✓", "Downloaded ✓"))
+                else:
+                    info = MODELS[model_key]
+                    ud_dl_status.configure(text=f"⬇ {info['filename']} ({info['size_mb']:.1f} MB)",
+                                           text_color="#e67e22")
+                    ud_dl_btn.configure(state="normal", text=_t("Télécharger", "Download"))
+
+        def _ud_download():
+            import threading as _thr
+            from src.core.model_manager import get_manager
+            model_key = _ud_current_model_key()
+            if not model_key:
+                return
+            ud_dl_btn.configure(state="disabled", text=_t("Téléchargement…", "Downloading…"))
+            ud_dl_status.configure(text="0 %", text_color="#3498db")
+            def _run():
+                try:
+                    mgr = get_manager()
+                    def _progress(dl, total):
+                        pct = int(dl * 100 / total) if total else 0
+                        popup.after(0, lambda: ud_dl_status.configure(
+                            text=f"{pct}%  ({dl//1024}KB / {total//1024}KB)"))
+                    mgr.download(model_key, progress_cb=_progress)
+                    popup.after(0, _ud_update_dl_status)
+                except Exception as e:
+                    popup.after(0, lambda: (
+                        ud_dl_status.configure(text=f"Erreur: {e}", text_color="#e74c3c"),
+                        ud_dl_btn.configure(state="normal", text=_t("Réessayer", "Retry"))))
+            _thr.Thread(target=_run, daemon=True).start()
+
+        ud_dl_btn = ctk.CTkButton(ud_dl_row, text=_t("Télécharger", "Download"),
+                                  width=110, height=26, command=_ud_download)
+        ud_dl_btn.pack(side="right")
+        ud_var_menu.configure(command=lambda _v: _ud_update_dl_status())
+        ud_bck_menu.configure(command=lambda _v: _ud_update_dl_status())
+        _ud_update_dl_status()
+
+        btn_row = ctk.CTkFrame(popup, fg_color="transparent")
+        btn_row.pack(fill="x", padx=20, pady=(0, 15))
+
+        def _apply():
+            _ud_v = _ud_variants_rev.get(ud_var_var.get(), "classic")
+            _ud_b = _ud_backends_rev.get(ud_bck_var.get(), "pytorch")
+            self._pp_settings["ud_mode"]     = _ud_build_mode(_ud_v, _ud_b)
+            self._pp_settings["ud_strength"] = round(float(undist_str_sld.get()), 2)
+            self._pp_settings["ud_window"]   = int(udist_win_var.get())
+            self.settings.set("pp_ud_mode",     self._pp_settings["ud_mode"])
+            self.settings.set("pp_ud_strength", self._pp_settings["ud_strength"])
+            self.settings.set("pp_ud_window",   self._pp_settings["ud_window"])
+            popup.destroy()
+
+        ctk.CTkButton(btn_row, text=_t("Appliquer", "Apply"), fg_color="#2ecc71",
+                      command=_apply).pack(side="left", fill="x", expand=True, padx=(0, 5))
+        ctk.CTkButton(btn_row, text=_t("Annuler", "Cancel"), fg_color="#e74c3c",
+                      command=popup.destroy).pack(side="left", fill="x", expand=True)
+
+    def _pp_settings_color(self):
+        from tkinter import DoubleVar, Canvas as _Canvas
+        import os as _os
+        _ensure_pil()
+        dlg = ctk.CTkToplevel(self)
+        dlg.title(_t("Réglages — Correction couleur", "Settings — Color correction"))
+        dlg.resizable(True, True)
+        dlg.transient(self.winfo_toplevel())
+        dlg.grab_set()
+        dlg.geometry("480x640")
+
+        _bri_var = DoubleVar(value=self._pp_settings.get("brightness", 1.0))
+        _con_var = DoubleVar(value=self._pp_settings.get("contrast",   1.0))
+        _sat_var = DoubleVar(value=self._pp_settings.get("saturation", 1.0))
+        _gam_var = DoubleVar(value=self._pp_settings.get("gamma",      1.0))
+
+        # ── Preview helpers ───────────────────────────────────────────────────
+        _zoom    = [1.0]
+        _tk_ref  = [None]
+        _sched   = [False]
+        _orig    = [None]
+
+        def _load_src():
+            prev = getattr(self, "_pp_last_preview_paths", None)
+            if prev and isinstance(prev, tuple) and len(prev) >= 1:
+                try:
+                    return Image.open(prev[0]).convert("RGB")
+                except Exception:
+                    pass
+            inp = self._pp_input_var.get().strip()
+            _IMG_EXT = {".png", ".jpg", ".jpeg", ".webp", ".tiff", ".tif", ".bmp"}
+            if _os.path.isfile(inp) and _os.path.splitext(inp)[1].lower() in _IMG_EXT:
+                try:
+                    return Image.open(inp).convert("RGB")
+                except Exception:
+                    pass
+            if _os.path.isdir(inp):
+                for fn in sorted(_os.listdir(inp)):
+                    if _os.path.splitext(fn)[1].lower() in _IMG_EXT:
+                        try:
+                            return Image.open(_os.path.join(inp, fn)).convert("RGB")
+                        except Exception:
+                            pass
+            return None
+
+        _orig[0] = _load_src()
+
+        # ── Sliders ───────────────────────────────────────────────────────────
+        ctrl = ctk.CTkFrame(dlg, fg_color="transparent")
+        ctrl.pack(fill="x", padx=0)
+
+        def _slider_row(parent, label_text, var, from_, to):
+            lbl = ctk.CTkLabel(parent, text=f"{label_text} : {var.get():.2f}", anchor="w")
+            lbl.pack(fill="x", padx=20, pady=(10, 0))
+            def _upd(v, l=lbl, lt=label_text):
+                l.configure(text=f"{lt} : {float(v):.2f}")
+                _schedule_preview()
+            ctk.CTkSlider(parent, from_=from_, to=to, variable=var,
+                          command=_upd).pack(fill="x", padx=20)
+
+        _slider_row(ctrl, _t("Luminosité", "Brightness"), _bri_var, 0.3, 3.0)
+        _slider_row(ctrl, _t("Contraste",  "Contrast"),   _con_var, 0.3, 3.0)
+        _slider_row(ctrl, _t("Saturation", "Saturation"), _sat_var, 0.0, 2.0)
+        _slider_row(ctrl, _t("Gamma",      "Gamma"),      _gam_var, 0.2, 4.0)
+
+        ctk.CTkLabel(ctrl, text=_t(
+            "1.0 = pas de changement pour chaque paramètre.",
+            "1.0 = no change for each parameter."),
+            font=("Arial", 11), text_color="gray").pack(padx=20, pady=(6, 0), anchor="w")
+
+        # ── Live preview ──────────────────────────────────────────────────────
+        ctk.CTkFrame(dlg, height=1, fg_color="gray35").pack(fill="x", padx=10, pady=(8, 2))
+        ctk.CTkLabel(dlg,
+                     text=_t("Aperçu (molette = zoom)", "Preview (scroll = zoom)"),
+                     font=("Arial", 10), text_color="gray").pack(anchor="w", padx=12)
+
+        prev_frame = ctk.CTkFrame(dlg, fg_color="#181818", corner_radius=6)
+        prev_frame.pack(fill="both", expand=True, padx=10, pady=(0, 4))
+
+        canvas = _Canvas(prev_frame, bg="#181818", highlightthickness=0, cursor="crosshair")
+        canvas.pack(fill="both", expand=True, padx=2, pady=2)
+
+        def _render():
+            _sched[0] = False
+            from PIL import ImageTk
+            src = _orig[0]
+            if src is None:
+                canvas.delete("all")
+                cw = canvas.winfo_width() or 400
+                ch = canvas.winfo_height() or 200
+                canvas.create_text(cw // 2, ch // 2,
+                                   text=_t("Aucune image source", "No source image"),
+                                   fill="#555", font=("Arial", 11))
+                return
+            try:
+                ps = {
+                    "color_enabled":   True,
+                    "brightness":      float(_bri_var.get()),
+                    "contrast":        float(_con_var.get()),
+                    "saturation":      float(_sat_var.get()),
+                    "gamma":           float(_gam_var.get()),
+                    "resize_enabled":  False,
+                    "sharpen_enabled": False,
+                }
+                img = self._pp_apply_pil_chain(src.copy(), ps)
+                z = _zoom[0]
+                cw = max(1, canvas.winfo_width() or 400)
+                ch = max(1, canvas.winfo_height() or 220)
+                dw = max(1, round(img.width * z))
+                dh = max(1, round(img.height * z))
+                if z == 1.0:
+                    ratio = min(cw / img.width, ch / img.height, 1.0)
+                    dw = max(1, round(img.width * ratio))
+                    dh = max(1, round(img.height * ratio))
+                resamp = Image.Resampling.LANCZOS if z <= 1.0 else Image.Resampling.NEAREST
+                disp = img.resize((dw, dh), resamp)
+                x0 = max(0, (dw - cw) // 2)
+                y0 = max(0, (dh - ch) // 2)
+                disp = disp.crop((x0, y0, x0 + min(cw, dw), y0 + min(ch, dh)))
+                tk_img = ImageTk.PhotoImage(disp)
+                _tk_ref[0] = tk_img
+                canvas.delete("all")
+                canvas.create_image(0, 0, anchor="nw", image=tk_img)
+            except Exception as e:
+                canvas.delete("all")
+                canvas.create_text(8, 8, anchor="nw", text=str(e),
+                                   fill="#e74c3c", font=("Arial", 9))
+
+        def _schedule_preview(*_):
+            if not _sched[0]:
+                _sched[0] = True
+                dlg.after(80, _render)
+
+        def _on_wheel(event):
+            if event.delta > 0:
+                _zoom[0] = min(8.0, _zoom[0] * 1.2)
+            else:
+                _zoom[0] = max(0.05, _zoom[0] / 1.2)
+            _render()
+
+        canvas.bind("<MouseWheel>", _on_wheel)
+        dlg.after(120, _render)
+
+        # ── Confirm ───────────────────────────────────────────────────────────
+        def _confirm():
+            for k, v in [("brightness", _bri_var), ("contrast", _con_var),
+                         ("saturation", _sat_var), ("gamma", _gam_var)]:
+                val = round(float(v.get()), 3)
+                self._pp_settings[k] = val
+                self.settings.set(f"pp_{k}", val)
+            dlg.destroy()
+
+        ctk.CTkButton(dlg, text=_t("Confirmer", "Confirm"), command=_confirm).pack(pady=8)
+        dlg.wait_window()
+
+    def _pp_settings_resize(self):
+        from tkinter import IntVar, StringVar as _SV, DoubleVar, BooleanVar
+        dlg = ctk.CTkToplevel(self)
+        dlg.title(_t("Réglages — Redimensionnement", "Settings — Resize"))
+        dlg.resizable(False, False)
+        dlg.transient(self.winfo_toplevel())
+        dlg.grab_set()
+        dlg.geometry("420x360")
+
+        _mode_var   = _SV(value=self._pp_settings.get("resize_mode", "percent"))
+        _scale_var  = IntVar(value=self._pp_settings.get("resize_scale", 100))
+        _mult_var   = _SV(value=str(self._pp_settings.get("resize_multiplier", 1.0)))
+        _w_var      = _SV(value=str(self._pp_settings.get("resize_width", 0) or ""))
+        _h_var      = _SV(value=str(self._pp_settings.get("resize_height", 0) or ""))
+        _asp_var    = BooleanVar(value=self._pp_settings.get("resize_aspect", True))
+        _method_var = _SV(value=self._pp_settings.get("resize_method", "LANCZOS"))
+
+        # ── Mode selector ─────────────────────────────────────────────────────
+        mode_frame = ctk.CTkFrame(dlg, fg_color="transparent")
+        mode_frame.pack(fill="x", padx=20, pady=(14, 6))
+        ctk.CTkLabel(mode_frame, text=_t("Mode :", "Mode:"), width=60, anchor="w").pack(side="left")
+        for _lbl, _val in [("% Scale", "percent"), ("× Mult", "multiplier"), ("px Pixels", "pixels")]:
+            ctk.CTkRadioButton(mode_frame, text=_lbl, variable=_mode_var, value=_val,
+                               command=lambda: _show_mode()).pack(side="left", padx=(0, 12))
+
+        # ── Content area (swapped per mode) ───────────────────────────────────
+        content = ctk.CTkFrame(dlg, fg_color="transparent", height=140)
+        content.pack(fill="x", padx=20)
+        content.pack_propagate(False)
+
+        _active_widgets = [None]
+
+        def _clear():
+            for w in content.winfo_children():
+                w.destroy()
+
+        def _show_mode():
+            _clear()
+            mode = _mode_var.get()
+            if mode == "percent":
+                _scale_lbl = ctk.CTkLabel(content,
+                    text=f"Scale : {_scale_var.get()} %", anchor="w")
+                _scale_lbl.pack(fill="x", pady=(6, 0))
+                def _upd(v): _scale_lbl.configure(text=f"Scale : {int(float(v))} %")
+                ctk.CTkSlider(content, from_=10, to=400, variable=_scale_var,
+                              command=_upd, number_of_steps=390).pack(fill="x")
+                ctk.CTkLabel(content, text=_t(
+                    "10 %–400 %. 100 % = pas de redimensionnement.",
+                    "10 %–400 %. 100 % = no resize."),
+                    font=("Arial", 10), text_color="gray").pack(anchor="w", pady=(4, 0))
+
+            elif mode == "multiplier":
+                ctk.CTkLabel(content, text=_t("Multiplicateur :", "Multiplier:"), anchor="w").pack(
+                    fill="x", pady=(6, 2))
+                _mults = ["0.25", "0.5", "1.0", "2.0", "3.0", "4.0", "8.0"]
+                ctk.CTkOptionMenu(content, variable=_mult_var, values=_mults, width=120).pack(anchor="w")
+                ctk.CTkLabel(content, text=_t(
+                    "2× = doubler la résolution. 0.5× = réduire de moitié.",
+                    "2× = double resolution. 0.5× = halve."),
+                    font=("Arial", 10), text_color="gray").pack(anchor="w", pady=(4, 0))
+
+            elif mode == "pixels":
+                px_row = ctk.CTkFrame(content, fg_color="transparent")
+                px_row.pack(fill="x", pady=(6, 2))
+                ctk.CTkLabel(px_row, text="W:", width=22, anchor="w").pack(side="left")
+                ctk.CTkEntry(px_row, textvariable=_w_var, width=80,
+                             placeholder_text="1920").pack(side="left", padx=(0, 10))
+                ctk.CTkLabel(px_row, text="H:", width=22, anchor="w").pack(side="left")
+                ctk.CTkEntry(px_row, textvariable=_h_var, width=80,
+                             placeholder_text="1080").pack(side="left")
+                ctk.CTkCheckBox(content, text=_t("Garder ratio", "Keep aspect"),
+                                variable=_asp_var).pack(anchor="w", pady=(4, 0))
+                ctk.CTkLabel(content, text=_t(
+                    "Laisser W ou H à 0 pour calculer automatiquement.",
+                    "Leave W or H at 0 to auto-calculate."),
+                    font=("Arial", 10), text_color="gray").pack(anchor="w", pady=(2, 0))
+
+        _show_mode()
+
+        # ── Algorithm ─────────────────────────────────────────────────────────
+        ctk.CTkFrame(dlg, height=1, fg_color="gray35").pack(fill="x", padx=10, pady=(8, 6))
+        alg_row = ctk.CTkFrame(dlg, fg_color="transparent")
+        alg_row.pack(fill="x", padx=20)
+        ctk.CTkLabel(alg_row, text=_t("Algo :", "Algo:"), width=50, anchor="w").pack(side="left")
+        ctk.CTkOptionMenu(alg_row, variable=_method_var,
+                          values=["LANCZOS", "BICUBIC", "BILINEAR", "NEAREST"],
+                          width=140).pack(side="left")
+        ctk.CTkLabel(alg_row, text=_t("★ LANCZOS = best quality", "★ LANCZOS = best quality"),
+                     font=("Arial", 10), text_color="gray").pack(side="left", padx=(8, 0))
+
+        # ── Confirm ───────────────────────────────────────────────────────────
+        def _confirm():
+            mode = _mode_var.get()
+            self._pp_settings["resize_mode"]   = mode
+            self._pp_settings["resize_method"] = _method_var.get()
+            self.settings.set("pp_resize_mode",   mode)
+            self.settings.set("pp_resize_method", _method_var.get())
+            if mode == "percent":
+                self._pp_settings["resize_scale"] = int(_scale_var.get())
+                self.settings.set("pp_resize_scale", int(_scale_var.get()))
+            elif mode == "multiplier":
+                try:
+                    m = float(_mult_var.get())
+                except ValueError:
+                    m = 1.0
+                self._pp_settings["resize_multiplier"] = m
+                self.settings.set("pp_resize_multiplier", m)
+            elif mode == "pixels":
+                try:
+                    w = int(_w_var.get()) if _w_var.get().strip().isdigit() else 0
+                except Exception:
+                    w = 0
+                try:
+                    h = int(_h_var.get()) if _h_var.get().strip().isdigit() else 0
+                except Exception:
+                    h = 0
+                self._pp_settings["resize_width"]  = w
+                self._pp_settings["resize_height"] = h
+                self._pp_settings["resize_aspect"] = bool(_asp_var.get())
+                self.settings.set("pp_resize_width",  w)
+                self.settings.set("pp_resize_height", h)
+                self.settings.set("pp_resize_aspect", bool(_asp_var.get()))
+            dlg.destroy()
+
+        ctk.CTkButton(dlg, text=_t("Confirmer", "Confirm"), command=_confirm).pack(pady=12)
+        dlg.wait_window()
+
+    def _pp_settings_sharpen(self):
+        from tkinter import DoubleVar, IntVar, Canvas as _Canvas
+        import os as _os
+        _ensure_pil()
+        dlg = ctk.CTkToplevel(self)
+        dlg.title(_t("Réglages — Netteté", "Settings — Sharpen"))
+        dlg.resizable(True, True)
+        dlg.transient(self.winfo_toplevel())
+        dlg.grab_set()
+        dlg.geometry("480x580")
+
+        _str_var = DoubleVar(value=self._pp_settings.get("sharpen_strength",  1.0))
+        _rad_var = DoubleVar(value=self._pp_settings.get("sharpen_radius",    1.5))
+        _thr_var = IntVar(value=self._pp_settings.get("sharpen_threshold", 3))
+
+        # ── Preview helpers ───────────────────────────────────────────────────
+        _zoom   = [1.0]
+        _tk_ref = [None]
+        _sched  = [False]
+        _orig   = [None]
+
+        def _load_src():
+            prev = getattr(self, "_pp_last_preview_paths", None)
+            if prev and isinstance(prev, tuple) and len(prev) >= 1:
+                try:
+                    return Image.open(prev[0]).convert("RGB")
+                except Exception:
+                    pass
+            inp = self._pp_input_var.get().strip()
+            _IMG_EXT = {".png", ".jpg", ".jpeg", ".webp", ".tiff", ".tif", ".bmp"}
+            if _os.path.isfile(inp) and _os.path.splitext(inp)[1].lower() in _IMG_EXT:
+                try:
+                    return Image.open(inp).convert("RGB")
+                except Exception:
+                    pass
+            if _os.path.isdir(inp):
+                for fn in sorted(_os.listdir(inp)):
+                    if _os.path.splitext(fn)[1].lower() in _IMG_EXT:
+                        try:
+                            return Image.open(_os.path.join(inp, fn)).convert("RGB")
+                        except Exception:
+                            pass
+            return None
+
+        _orig[0] = _load_src()
+
+        # ── Sliders ───────────────────────────────────────────────────────────
+        ctrl = ctk.CTkFrame(dlg, fg_color="transparent")
+        ctrl.pack(fill="x", padx=0)
+
+        def _slider_row(parent, label_text, var, from_, to, fmt=".2f"):
+            lbl = ctk.CTkLabel(parent, text=f"{label_text} : {var.get():{fmt}}", anchor="w")
+            lbl.pack(fill="x", padx=20, pady=(10, 0))
+            def _upd(v, l=lbl, lt=label_text, f=fmt):
+                l.configure(text=f"{lt} : {float(v):{f}}")
+                _schedule_preview()
+            ctk.CTkSlider(parent, from_=from_, to=to, variable=var,
+                          command=_upd).pack(fill="x", padx=20)
+
+        _slider_row(ctrl, _t("Force (Percent)", "Strength (Percent)"), _str_var, 0.0, 5.0)
+        _slider_row(ctrl, _t("Rayon",           "Radius"),             _rad_var, 0.3, 6.0)
+        _slider_row(ctrl, _t("Seuil (Threshold)", "Threshold"),        _thr_var, 0,  15, ".0f")
+
+        ctk.CTkLabel(ctrl, text=_t(
+            "Force = multiplicateur du percent UnsharpMask (x100).\n"
+            "Seuil = différence minimum pour appliquer l'effet.",
+            "Strength = multiplier for UnsharpMask percent (x100).\n"
+            "Threshold = minimum difference to apply effect."),
+            font=("Arial", 10), text_color="gray").pack(padx=20, pady=(8, 0), anchor="w")
+
+        # ── Live preview ──────────────────────────────────────────────────────
+        ctk.CTkFrame(dlg, height=1, fg_color="gray35").pack(fill="x", padx=10, pady=(8, 2))
+        ctk.CTkLabel(dlg,
+                     text=_t("Aperçu (molette = zoom)", "Preview (scroll = zoom)"),
+                     font=("Arial", 10), text_color="gray").pack(anchor="w", padx=12)
+
+        prev_frame = ctk.CTkFrame(dlg, fg_color="#181818", corner_radius=6)
+        prev_frame.pack(fill="both", expand=True, padx=10, pady=(0, 4))
+
+        canvas = _Canvas(prev_frame, bg="#181818", highlightthickness=0, cursor="crosshair")
+        canvas.pack(fill="both", expand=True, padx=2, pady=2)
+
+        def _render():
+            _sched[0] = False
+            from PIL import ImageTk
+            src = _orig[0]
+            if src is None:
+                canvas.delete("all")
+                cw = canvas.winfo_width() or 400
+                ch = canvas.winfo_height() or 200
+                canvas.create_text(cw // 2, ch // 2,
+                                   text=_t("Aucune image source", "No source image"),
+                                   fill="#555", font=("Arial", 11))
+                return
+            try:
+                ps = {
+                    "color_enabled":    False,
+                    "resize_enabled":   False,
+                    "sharpen_enabled":  True,
+                    "sharpen_strength": float(_str_var.get()),
+                    "sharpen_radius":   float(_rad_var.get()),
+                    "sharpen_threshold": int(_thr_var.get()),
+                }
+                img = self._pp_apply_pil_chain(src.copy(), ps)
+                z = _zoom[0]
+                cw = max(1, canvas.winfo_width() or 400)
+                ch = max(1, canvas.winfo_height() or 220)
+                dw = max(1, round(img.width * z))
+                dh = max(1, round(img.height * z))
+                if z == 1.0:
+                    ratio = min(cw / img.width, ch / img.height, 1.0)
+                    dw = max(1, round(img.width * ratio))
+                    dh = max(1, round(img.height * ratio))
+                resamp = Image.Resampling.LANCZOS if z <= 1.0 else Image.Resampling.NEAREST
+                disp = img.resize((dw, dh), resamp)
+                x0 = max(0, (dw - cw) // 2)
+                y0 = max(0, (dh - ch) // 2)
+                disp = disp.crop((x0, y0, x0 + min(cw, dw), y0 + min(ch, dh)))
+                tk_img = ImageTk.PhotoImage(disp)
+                _tk_ref[0] = tk_img
+                canvas.delete("all")
+                canvas.create_image(0, 0, anchor="nw", image=tk_img)
+            except Exception as e:
+                canvas.delete("all")
+                canvas.create_text(8, 8, anchor="nw", text=str(e),
+                                   fill="#e74c3c", font=("Arial", 9))
+
+        def _schedule_preview(*_):
+            if not _sched[0]:
+                _sched[0] = True
+                dlg.after(80, _render)
+
+        def _on_wheel(event):
+            if event.delta > 0:
+                _zoom[0] = min(8.0, _zoom[0] * 1.2)
+            else:
+                _zoom[0] = max(0.05, _zoom[0] / 1.2)
+            _render()
+
+        canvas.bind("<MouseWheel>", _on_wheel)
+        dlg.after(120, _render)
+
+        # ── Confirm ───────────────────────────────────────────────────────────
+        def _confirm():
+            self._pp_settings["sharpen_strength"]  = round(float(_str_var.get()), 3)
+            self._pp_settings["sharpen_radius"]    = round(float(_rad_var.get()), 2)
+            self._pp_settings["sharpen_threshold"] = int(_thr_var.get())
+            self.settings.set("pp_sharpen_strength",  round(float(_str_var.get()), 3))
+            self.settings.set("pp_sharpen_radius",    round(float(_rad_var.get()), 2))
+            self.settings.set("pp_sharpen_threshold", int(_thr_var.get()))
+            dlg.destroy()
+
+        ctk.CTkButton(dlg, text=_t("Confirmer", "Confirm"), command=_confirm).pack(pady=8)
+        dlg.wait_window()
+
+    # ── Post Processing : run / stop ─────────────────────────────────────────
+
+    def _pp_run(self):
+        _ensure_pil()
+        inp = self._pp_input_var.get().strip()
+        if not inp:
+            messagebox.showerror(_t("Erreur", "Error"),
+                                 _t("Sélectionnez une source.", "Select a source."))
+            return
+
+        same_folder  = bool(self._pp_same_folder.get())
+        use_subfolder = bool(self._pp_subfolder.get())
+        base_out = (inp if os.path.isdir(inp) else os.path.dirname(inp)) if same_folder \
+                   else self._pp_output_var.get().strip()
+        if not base_out:
+            messagebox.showerror(_t("Erreur", "Error"),
+                                 _t("Sélectionnez un dossier de sortie.", "Select an output folder."))
+            return
+        output_dir = os.path.join(base_out, "postproc") if use_subfolder else base_out
+
+        _IMG_EXT = {".png", ".jpg", ".jpeg", ".webp", ".tiff", ".tif", ".bmp"}
+        if os.path.isfile(inp):
+            ext_low = os.path.splitext(inp)[1].lower()
+            input_paths = [inp] if ext_low in _IMG_EXT else []
+        elif os.path.isdir(inp):
+            input_paths = sorted(
+                [os.path.join(inp, fn) for fn in os.listdir(inp)
+                 if os.path.splitext(fn)[1].lower() in _IMG_EXT],
+                key=lambda p: _natural_sort_key(os.path.basename(p))
+            )
+        else:
+            messagebox.showerror(_t("Erreur", "Error"), _t("Source introuvable.", "Source not found."))
+            return
+
+        if not input_paths:
+            messagebox.showerror(_t("Erreur", "Error"),
+                                 _t("Aucune image dans la source.", "No images in source."))
+            return
+
+        _any_enabled = any(self._pp_settings.get(f"{k}_enabled", False)
+                           for k in ("tf", "ud", "color", "resize", "sharpen"))
+        if not _any_enabled:
+            messagebox.showwarning(_t("Avertissement", "Warning"),
+                                   _t("Activez au moins un outil de la chaîne.",
+                                      "Enable at least one tool in the chain."))
+            return
+
+        use_serialize = bool(self._pp_serialize.get())
+        _ser_raw = self._pp_serialize_start.get().strip()
+        serialize_start = int(_ser_raw) if _ser_raw.isdigit() else 0
+
+        self.settings.set("pp_last_input", inp)
+        if not same_folder:
+            self.settings.set("pp_last_output", base_out)
+        self.settings.set("pp_same_folder", same_folder)
+        self.settings.set("pp_subfolder", use_subfolder)
+        self.settings.set("pp_serialize", use_serialize)
+        self.settings.set("pp_serialize_start", str(serialize_start))
+
+        _existing = getattr(self, "_pp_thread", None)
+        if _existing is not None and _existing.is_alive():
+            messagebox.showwarning(
+                _t("En cours", "In progress"),
+                _t("Un traitement est déjà en cours.", "Processing is already running."))
+            return
+
+        self.widgets["log_pp"].delete("1.0", "end")
+        self.widgets["pp_prog"].set(0)
+        self.widgets["pp_prog_pct"].configure(text="0%")
+        self.widgets["pp_run_btn"].configure(
+            state="disabled", text=_t("⏳ En cours…", "⏳ Running…"))
+        self.widgets["pp_stop_btn"].configure(state="normal")
+
+        self._pp_stop_flag = threading.Event()
+
+        def _cb(msg: str):
+            self._ui_update(self._pp_log_append, msg)
+
+        import copy as _copy
+        settings_snap = _copy.deepcopy(self._pp_settings)
+
+        self._pp_thread = threading.Thread(
+            target=self._pp_run_batch,
+            args=(input_paths, output_dir, use_serialize, serialize_start, settings_snap, _cb),
+            daemon=True
+        )
+        self._pp_thread.start()
+
+    def _pp_request_stop(self):
+        if hasattr(self, "_pp_stop_flag"):
+            self._pp_stop_flag.set()
+        if "pp_stop_btn" in self.widgets:
+            self.widgets["pp_stop_btn"].configure(
+                state="disabled", text=_t("⏳ Arrêt…", "⏳ Stopping…"))
+
+    def _pp_log_append(self, msg: str):
+        if "log_pp" in self.widgets:
+            self.widgets["log_pp"].insert("end", msg + "\n")
+            self.widgets["log_pp"].see("end")
+
+    # ── Post Processing : worker thread ──────────────────────────────────────
+
+    def _pp_run_batch(self, input_paths, output_dir, use_serialize,
+                       serialize_start, settings, callback):
+        import time as _time
+        _ensure_pil()
+        _ensure_numpy()
+
+        tf_en  = bool(settings.get("tf_enabled",      False))
+        ud_en  = bool(settings.get("ud_enabled",      False))
+        col_en = bool(settings.get("color_enabled",   False))
+        rsz_en = bool(settings.get("resize_enabled",  False))
+        shp_en = bool(settings.get("sharpen_enabled", False))
+
+        use_neural = tf_en or ud_en
+        use_pil    = col_en or rsz_en or shp_en
+
+        total = len(input_paths)
+        _pad  = max(5, len(str(total + serialize_start)))
+
+        out_paths = []
+        for i, p in enumerate(input_paths):
+            fname = os.path.basename(p)
+            _, ext = os.path.splitext(fname)
+            ext = ext or ".png"
+            if use_serialize:
+                out_paths.append(os.path.join(output_dir,
+                                              f"{serialize_start + i:0{_pad}d}{ext}"))
+            else:
+                out_paths.append(os.path.join(output_dir, fname))
+
+        os.makedirs(output_dir, exist_ok=True)
+
+        def _set_prog(v):
+            v = min(1.0, max(0.0, v))
+            self._ui_update(self.widgets["pp_prog"].set, v)
+            self._ui_update(self.widgets["pp_prog_pct"].configure,
+                            text=f"{int(v * 100)}%")
+
+        # ── Init PostProcSession ──────────────────────────────────────────────
+        _pp = None
+        _pp_started = False
+        _tf_active  = False
+        _ud_active  = False
+        _pp_tf_lat  = 0
+        _pp_ud_lat  = 0
+
+        if use_neural:
+            _venv_py = _find_torch_python()
+            if not _venv_py:
+                callback(_t("[AVERT.] Python torch introuvable — TF/UD désactivés.",
+                            "[WARN] Python with torch not found — TF/UD disabled."))
+                tf_en = ud_en = use_neural = False
+            else:
+                from src.core.post_proc_session import PostProcSession
+                _pp = PostProcSession(venv_py=_venv_py, log=callback)
+                _pp_started = _pp.start()
+
+                if ud_en and _pp_started:
+                    try:
+                        _pp_ud_lat = _pp.init_ud(
+                            mode=settings.get("ud_mode",      "classic"),
+                            strength=float(settings.get("ud_strength", 0.35)),
+                            window=int(settings.get("ud_window",       5)),
+                            precision=settings.get("ud_precision",     "float32"),
+                        )
+                        _ud_active = True
+                        callback(_t(
+                            f"[Undistort] Activé — mode={settings.get('ud_mode')} "
+                            f"str={settings.get('ud_strength'):.2f} latence={_pp_ud_lat}",
+                            f"[Undistort] Enabled — mode={settings.get('ud_mode')} "
+                            f"str={settings.get('ud_strength'):.2f} latency={_pp_ud_lat}"))
+                    except Exception as e:
+                        callback(f"[Undistort] Init échoué : {e}")
+
+                if tf_en and _pp_started:
+                    try:
+                        _pp_tf_lat = _pp.init_tf(
+                            mode=settings.get("tf_mode",      "classic"),
+                            strength=float(settings.get("tf_strength", 0.5)),
+                            window=int(settings.get("tf_window",       7)),
+                            precision=settings.get("tf_precision",     "float32"),
+                        )
+                        _tf_active = True
+                        callback(_t(
+                            f"[TemporalFix] Activé — mode={settings.get('tf_mode')} "
+                            f"str={settings.get('tf_strength'):.2f} latence={_pp_tf_lat}",
+                            f"[TemporalFix] Enabled — mode={settings.get('tf_mode')} "
+                            f"str={settings.get('tf_strength'):.2f} latency={_pp_tf_lat}"))
+                    except Exception as e:
+                        callback(f"[TemporalFix] Init échoué : {e}")
+
+        errors = []
+        success = 0
+        _batch_start = _time.monotonic()
+
+        # ── Phase 1 : copie + push TF/UD ────────────────────────────────────
+        _ph1_weight = 0.6 if use_neural else (0.85 if use_pil else 1.0)
+        callback(_t(f"Phase 1/{'3' if (use_neural and use_pil) else ('2' if (use_neural or use_pil) else '1')} — copie ({total} images)…",
+                    f"Phase 1/{'3' if (use_neural and use_pil) else ('2' if (use_neural or use_pil) else '1')} — copy ({total} images)…"))
+
+        for i, (in_path, out_path) in enumerate(zip(input_paths, out_paths)):
+            if self._pp_stop_flag.is_set():
+                callback(_t("Arrêt demandé.", "Stop requested.")); break
+            fname = os.path.basename(in_path)
+            callback(f"[{i+1}/{total}] {fname}")
+            try:
+                img = Image.open(in_path).convert("RGB")
+                img.save(out_path)
+                if _ud_active:
+                    try:
+                        _pp.push_ud(out_path)
+                    except Exception as e:
+                        callback(f"  [Undistort] {e}")
+                if _tf_active:
+                    try:
+                        _pp.push_tf(out_path)
+                    except Exception as e:
+                        callback(f"  [TemporalFix] {e}")
+                success += 1
+            except Exception as e:
+                errors.append(f"{fname}: {e}")
+            _set_prog((i + 1) / total * _ph1_weight)
+
+        # ── Phase 2 : flush TF/UD ────────────────────────────────────────────
+        try:
+            if _pp_started:
+                if _ud_active and _pp_ud_lat > 0:
+                    callback(_t("[Undistort] Flush des dernières frames…",
+                                "[Undistort] Flushing remaining frames…"))
+                    try:
+                        _pp.flush_ud()
+                    except Exception as e:
+                        callback(f"[Undistort] Erreur flush : {e}")
+                if _tf_active and _pp_tf_lat > 0:
+                    callback(_t("[TemporalFix] Flush des dernières frames…",
+                                "[TemporalFix] Flushing remaining frames…"))
+                    try:
+                        _pp.flush_tf()
+                    except Exception as e:
+                        callback(f"[TemporalFix] Erreur flush : {e}")
+        finally:
+            if _pp_started and _pp:
+                _pp.stop()
+
+        if use_neural:
+            _set_prog(0.8)
+
+        # ── Phase 3 : chaîne PIL ─────────────────────────────────────────────
+        if use_pil and not self._pp_stop_flag.is_set():
+            _pil_tools = ([_t("couleur","color")] if col_en else []) + \
+                         ([_t("resize","resize")]  if rsz_en else []) + \
+                         ([_t("netteté","sharpen")] if shp_en else [])
+            callback(_t(f"Phase PIL — {', '.join(_pil_tools)}…",
+                        f"PIL phase — {', '.join(_pil_tools)}…"))
+            _pil_start  = 0.8 if use_neural else 0.0
+            _pil_weight = 0.2 if use_neural else _ph1_weight
+
+            for i, (in_path, out_path) in enumerate(zip(input_paths, out_paths)):
+                if self._pp_stop_flag.is_set(): break
+                if not os.path.isfile(out_path): continue
+                try:
+                    pil_img = Image.open(out_path).convert("RGB")
+                    pil_img = self._pp_apply_pil_chain(pil_img, settings)
+                    pil_img.save(out_path)
+                    self._pp_update_preview(in_path, out_path)
+                except Exception as e:
+                    callback(f"  [PIL] {os.path.basename(out_path)}: {e}")
+                _set_prog(_pil_start + (i + 1) / total * _pil_weight)
+        elif input_paths and out_paths and os.path.isfile(out_paths[-1]):
+            self._pp_update_preview(input_paths[-1], out_paths[-1])
+
+        _set_prog(1.0)
+        elapsed = _time.monotonic() - _batch_start
+        callback(_t(f"Terminé en {elapsed:.1f}s — {success}/{total} images",
+                    f"Done in {elapsed:.1f}s — {success}/{total} images") +
+                 (f" | {len(errors)} erreur(s)" if errors else ""))
+        for err in errors[:10]:
+            callback(f"  ERR: {err}")
+
+        self._ui_update(self.widgets["pp_run_btn"].configure, state="normal",
+                        text=_t("▶ Lancer Post Processing", "▶ Run Post Processing"))
+        self._ui_update(self.widgets["pp_stop_btn"].configure, state="disabled")
+
+    # ── Post Processing : chaîne PIL ─────────────────────────────────────────
+
+    @staticmethod
+    def _pp_apply_pil_chain(pil_img, settings: dict):
+        """Apply PIL color/resize/sharpen chain. Returns modified PIL Image."""
+        _ensure_pil()
+        _ensure_numpy()
+        from PIL import ImageEnhance, ImageFilter
+
+        # 1. Color correction
+        if settings.get("color_enabled"):
+            b = float(settings.get("brightness", 1.0))
+            c = float(settings.get("contrast",   1.0))
+            s = float(settings.get("saturation", 1.0))
+            g = float(settings.get("gamma",      1.0))
+            if abs(b - 1.0) > 1e-3:
+                pil_img = ImageEnhance.Brightness(pil_img).enhance(b)
+            if abs(c - 1.0) > 1e-3:
+                pil_img = ImageEnhance.Contrast(pil_img).enhance(c)
+            if abs(s - 1.0) > 1e-3:
+                pil_img = ImageEnhance.Color(pil_img).enhance(s)
+            if abs(g - 1.0) > 1e-3:
+                arr = np.array(pil_img, dtype=np.float32) / 255.0
+                arr = np.clip(np.power(arr, 1.0 / g), 0.0, 1.0)
+                pil_img = Image.fromarray((arr * 255.0).astype(np.uint8))
+
+        # 2. Resize
+        if settings.get("resize_enabled"):
+            _RESAMPLE_MAP = {
+                "LANCZOS":  Image.Resampling.LANCZOS,
+                "BICUBIC":  Image.Resampling.BICUBIC,
+                "BILINEAR": Image.Resampling.BILINEAR,
+                "NEAREST":  Image.Resampling.NEAREST,
+            }
+            method = _RESAMPLE_MAP.get(settings.get("resize_method", "LANCZOS"), Image.Resampling.LANCZOS)
+            w, h = pil_img.size
+            nw, nh = w, h
+            resize_mode = settings.get("resize_mode", "percent")
+            if resize_mode == "percent":
+                scale_pct = int(settings.get("resize_scale", 100))
+                nw = max(1, round(w * scale_pct / 100))
+                nh = max(1, round(h * scale_pct / 100))
+            elif resize_mode == "multiplier":
+                mult = float(settings.get("resize_multiplier", 1.0))
+                nw = max(1, round(w * mult))
+                nh = max(1, round(h * mult))
+            elif resize_mode == "pixels":
+                tw = int(settings.get("resize_width", 0))
+                th = int(settings.get("resize_height", 0))
+                if tw > 0 and th > 0:
+                    if settings.get("resize_aspect", True):
+                        ratio = min(tw / w, th / h)
+                        nw = max(1, round(w * ratio))
+                        nh = max(1, round(h * ratio))
+                    else:
+                        nw, nh = tw, th
+                elif tw > 0:
+                    nw = tw
+                    nh = max(1, round(h * tw / w))
+                elif th > 0:
+                    nh = th
+                    nw = max(1, round(w * th / h))
+            if (nw, nh) != (w, h):
+                pil_img = pil_img.resize((nw, nh), method)
+
+        # 3. Sharpen (UnsharpMask)
+        if settings.get("sharpen_enabled"):
+            strength  = float(settings.get("sharpen_strength",  1.0))
+            radius    = float(settings.get("sharpen_radius",    1.5))
+            threshold = int(settings.get("sharpen_threshold",   3))
+            percent   = max(0, int(strength * 100))
+            pil_img = pil_img.filter(
+                ImageFilter.UnsharpMask(radius=radius, percent=percent, threshold=threshold))
+
+        return pil_img
+
+    # ── Post Processing : preview ─────────────────────────────────────────────
+
+    def _pp_update_preview(self, in_path: str, out_path: str):
+        _ensure_pil()
+        self._pp_last_preview_paths = (in_path, out_path)
+        refs = []
+        for path, key in [(in_path, "pp_prev_in"), (out_path, "pp_prev_out")]:
+            try:
+                lbl = self.widgets[key]
+                w = lbl.winfo_width()
+                h = lbl.winfo_height()
+                if w < 10: w = 480
+                if h < 10: h = 220
+                img = Image.open(path).convert("RGB")
+                img.thumbnail((w, h), Image.LANCZOS)
+                ctk_img = ctk.CTkImage(light_image=img, dark_image=img,
+                                       size=(img.width, img.height))
+                refs.append(ctk_img)
+                self._ui_update(lbl.configure, image=ctk_img, text="")
+            except Exception:
+                pass
+        if refs:
+            self._pp_preview_refs = refs

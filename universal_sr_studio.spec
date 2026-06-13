@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-# PyInstaller spec — Universal SR Studio v2.5.6
+# PyInstaller spec — Universal SR Studio v2.5.7
 # Build: pyinstaller universal_sr_studio.spec
 # Output: dist/Universal_SR_Studio/Universal_SR_Studio.exe
 #
@@ -27,6 +27,7 @@ a = Analysis(
         ('src/core/onnx_runner.py', 'src/core/'),               # v2.5.6: ONNX inference subprocess (onnxruntime in venv, not bundled in exe)
         # v2.5.6: ALL subprocess scripts run by the engine venv must be loose .py on disk
         ('src/core/neosr_runner.py', 'src/core/'),              # ESC inference (neosr venv)
+        ('src/core/persistent_neosr_worker.py', 'src/core/'), # v2.5.9: ESC persistent worker (model loaded once)
         ('src/core/neosr_general_runner.py', 'src/core/'),      # ninasr/lmlt/eimn/drct (neosr venv)
         ('src/core/spanplus_runner.py', 'src/core/'),           # legacy SPANPlus runner
         ('src/core/redux_inference_runner.py', 'src/core/'),    # redux inference helper
@@ -37,6 +38,19 @@ a = Analysis(
         ('src/core/redux_feature_benchmark.py', 'src/core/'),   # redux feature benchmark
         ('src/core/model_export.py', 'src/core/'),              # model info/convert CLI (torch/safetensors in venv)
         ('src/core/tb_launcher.py', 'src/core/'),               # v2.5.6: TensorBoard subprocess launcher (venv python, must be loose .py on disk)
+        ('src/core/post_proc_worker.py', 'src/core/'),          # v2.5.7: TemporalFix+Undistort subprocess worker (venv python, CUDA sm_61 fix)
+        ('src/core/post_proc_session.py', 'src/core/'),         # v2.5.7: PostProcSession client for post_proc_worker
+        # v2.5.7: deps de post_proc_worker — doivent être loose .py (importés par le venv Python externe)
+        ('src/__init__.py', 'src/'),
+        ('src/core/__init__.py', 'src/core/'),
+        ('src/core/temporal_fix.py', 'src/core/'),
+        ('src/core/undistort.py', 'src/core/'),
+        ('src/core/model_manager.py', 'src/core/'),
+        ('src/core/ort_session.py', 'src/core/'),
+        ('src/core/models/__init__.py', 'src/core/models/'),
+        ('src/core/models/temporalfix_arch.py', 'src/core/models/'),
+        ('src/core/models/unet3d_tmt.py', 'src/core/models/'),
+        ('src/core/models/tmt_inference.py', 'src/core/models/'),
     ],
     hiddenimports=[
         # ── App modules (dynamic try/except imports) ──────────────────────────
@@ -76,6 +90,8 @@ a = Analysis(
         'src.core.feature_benchmark',
         'src.core.redux_arch_benchmark',
         'src.core.redux_feature_benchmark',
+        'src.core.post_proc_session',
+        'src.core.post_proc_worker',
         'src.ui.components.tooltip',
         'src.ui.components.performance_bars',
         'src.ui.tabs.tab_wizard',

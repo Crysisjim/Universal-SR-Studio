@@ -813,9 +813,128 @@ _NEOSR_VENV_PY = _ep.resolve_engine_python(_ep.neosr_path())
 # Keep old spanplus_runner for compatibility; prefer universal_runner
 _UNIVERSAL_RUNNER = os.path.join(os.path.dirname(__file__), "universal_runner.py")
 _SPANPLUS_RUNNER  = os.path.join(os.path.dirname(__file__), "spanplus_runner.py")
-_NEOSR_RUNNER         = os.path.join(os.path.dirname(__file__), "neosr_runner.py")
-_NEOSR_GENERAL_RUNNER = os.path.join(os.path.dirname(__file__), "neosr_general_runner.py")
-_ONNX_RUNNER          = os.path.join(os.path.dirname(__file__), "onnx_runner.py")
+_NEOSR_RUNNER              = os.path.join(os.path.dirname(__file__), "neosr_runner.py")
+_NEOSR_GENERAL_RUNNER      = os.path.join(os.path.dirname(__file__), "neosr_general_runner.py")
+_PERSISTENT_NEOSR_WORKER   = os.path.join(os.path.dirname(__file__), "persistent_neosr_worker.py")
+_ONNX_RUNNER               = os.path.join(os.path.dirname(__file__), "onnx_runner.py")
+
+# ─── Persistent NeoSR (ESC) session ─────────────────────────────────────────
+
+class PersistentNeoSRSession:
+    """
+    Garde le modèle ESC chargé dans le venv neosr entre chaque image d'un batch.
+    Même protocole JSON-lines que PersistentBatchSession.
+    Gain : ~3-8s par image (pas de rechargement neosr + ESC à chaque subprocess).
+
+    Usage :
+        with PersistentNeoSRSession(venv_py, model_path, tile_size, tile_pad) as s:
+            ok, msg = s.infer(input_path, output_path)
+    """
+
+    def __init__(self, venv_py: str, model_path: str,
+                 tile_size: int = 256, tile_pad: int = 32, use_amp: bool = False,
+                 log: Optional[Callable] = None):
+        self._venv_py    = venv_py
+        self._model_path = model_path
+        self._tile_size  = tile_size
+        self._tile_pad   = tile_pad
+        self._use_amp    = use_amp
+        self._log        = log or (lambda m: None)
+        self._proc       = None
+        self.scale: int  = 1
+        self._ready      = False
+
+    def _send(self, obj: dict) -> dict:
+        line = json.dumps(obj, ensure_ascii=False) + "\n"
+        self._proc.stdin.write(line)
+        self._proc.stdin.flush()
+        resp_line = self._proc.stdout.readline()
+        if not resp_line:
+            raise RuntimeError("PersistentNeoSR: worker process closed stdout unexpectedly")
+        return json.loads(resp_line.strip())
+
+    def start(self) -> bool:
+        import subprocess as _sp
+        if not os.path.isfile(self._venv_py):
+            self._log(f"[ESC-Persistent] venv Python introuvable : {self._venv_py}")
+            return False
+        if not os.path.isfile(_PERSISTENT_NEOSR_WORKER):
+            self._log(f"[ESC-Persistent] Worker introuvable : {_PERSISTENT_NEOSR_WORKER}")
+            return False
+
+        _env = os.environ.copy()
+        _env["PYTHONIOENCODING"] = "utf-8"
+        _env["PYTHONUTF8"] = "1"
+
+        neosr_dir = os.path.join(os.path.expanduser("~"), "IA_Engine", "neosr")
+        cwd = neosr_dir if os.path.isdir(neosr_dir) else os.path.dirname(self._venv_py)
+        try:
+            self._proc = _sp.Popen(
+                [self._venv_py, _PERSISTENT_NEOSR_WORKER],
+                stdin=_sp.PIPE, stdout=_sp.PIPE, stderr=_sp.PIPE,
+                text=True, encoding="utf-8", errors="replace",
+                env=_env, cwd=cwd,
+                creationflags=0x08000000 if sys.platform == "win32" else 0,
+            )
+        except Exception as e:
+            self._log(f"[ESC-Persistent] Échec lancement : {e}")
+            return False
+
+        try:
+            resp = self._send({
+                "cmd": "init",
+                "model": self._model_path,
+                "tile_size": self._tile_size,
+                "tile_pad":  self._tile_pad,
+                "use_amp":   self._use_amp,
+            })
+        except Exception as e:
+            self._log(f"[ESC-Persistent] Erreur init : {e}")
+            self.stop()
+            return False
+
+        if resp.get("status") == "ready":
+            self.scale  = resp.get("scale", 1)
+            self._ready = True
+            self._log(f"[ESC-Persistent] Prêt — ESC {self.scale}× (modèle chargé une fois)")
+            return True
+        self._log(f"[ESC-Persistent] Init refusé : {resp.get('msg', '?')}")
+        self.stop()
+        return False
+
+    def infer(self, input_path: str, output_path: str) -> Tuple[bool, str]:
+        if not self._ready:
+            return False, "Session non prête"
+        try:
+            resp = self._send({"cmd": "infer", "input": input_path, "output": output_path})
+            if resp.get("status") == "ok":
+                return True, "ok"
+            return False, resp.get("msg", "erreur inconnue")
+        except Exception as e:
+            self._ready = False
+            return False, str(e)
+
+    def stop(self) -> None:
+        if self._proc is not None:
+            try:
+                self._proc.stdin.write(json.dumps({"cmd": "quit"}) + "\n")
+                self._proc.stdin.flush()
+            except Exception:
+                pass
+            try:
+                self._proc.terminate()
+            except Exception:
+                pass
+            self._proc = None
+        self._ready = False
+
+    def __enter__(self):
+        self.start()
+        return self
+
+    def __exit__(self, *_):
+        self.stop()
+
 
 # ─── Custom arch injection ───────────────────────────────────────
 # These archs (gfisrv2, smosr, spanpp/SpanC, figsr) are NOT in the official
@@ -1151,6 +1270,13 @@ def _dandere_block_mae(prev_arr: "np.ndarray", curr_arr: "np.ndarray",
     ~100x faster than a block-level Python loop.
     """
     h, w = prev_arr.shape[:2]
+    ch, cw = curr_arr.shape[:2]
+    if (ch, cw) != (h, w):
+        # Resolution change between frames (different source clip / scene).
+        # No temporal reuse possible → every block counts as changed (max MAE).
+        bh = math.ceil(max(h, ch) / block_size)
+        bw = math.ceil(max(w, cw) / block_size)
+        return np.full((bh, bw), np.inf, dtype=np.float32)
     bh = math.ceil(h / block_size)
     bw = math.ceil(w / block_size)
     ph, pw = bh * block_size, bw * block_size
@@ -1182,6 +1308,13 @@ def dandere_compute_diff(
         motion_vectors: int32 [bh, bw, 2]       (dy, dx) — zeros when no MV
     """
     h, w = prev_arr.shape[:2]
+    # Resolution change between consecutive frames → no temporal reuse.
+    # Force full re-process: every block changed, no motion vectors.
+    if curr_arr.shape[:2] != (h, w):
+        ch, cw = curr_arr.shape[:2]
+        bh = math.ceil(max(h, ch) / block_size)
+        bw = math.ceil(max(w, cw) / block_size)
+        return np.ones((bh, bw), dtype=bool), np.zeros((bh, bw, 2), dtype=np.int32)
     bh = math.ceil(h / block_size)
     bw = math.ceil(w / block_size)
     motion_vectors = np.zeros((bh, bw, 2), dtype=np.int32)
@@ -1286,6 +1419,9 @@ def dandere_frame_similarity(
     [LEGACY] Returns (mean_diff, has_global_motion).
     Prefer dandere_should_skip() for skip-mode decisions.
     """
+    if curr_arr.shape != prev_arr.shape:
+        # Resolution change → never skip; treat as fully different frame.
+        return float("inf"), False
     mean_diff = float(np.abs(curr_arr - prev_arr).mean())
     return mean_diff, False
 
@@ -2068,6 +2204,12 @@ def upscale_folder(
     dandere_threshold: float = 0.02,
     dandere_full_skip: bool = False,  # skip entire frame if global diff < threshold
     dandere_full_skip_threshold: float = 0.005,
+    # ── Temporal Fix (v2.5.7) ──
+    temporal_fix: bool = False,
+    temporal_fix_strength: float = 0.5,
+    temporal_fix_window: int = 7,
+    temporal_fix_precision: str = "float32",
+    temporal_fix_device: str = "auto",
 ) -> Tuple[int, int, list]:
     """
     Upscale all images in a folder.
@@ -2116,6 +2258,7 @@ def upscale_folder(
     # Determine if the model is a subprocess arch (needs persistent worker).
     # Use all state_dict keys (metadata only for safetensors — no tensor data loaded).
     _is_subprocess_arch = False
+    _is_esc_arch = False
     if os.path.isfile(model_path) and persistent_batch:
         try:
             if model_path.endswith(".safetensors"):
@@ -2132,10 +2275,11 @@ def upscale_folder(
                 _sd_keys = set(_sd.keys())
             _arch_detected = detect_arch_from_state({k: None for k in _sd_keys})  # type: ignore
             _is_subprocess_arch = (_arch_detected or "") in _TRAINNER_SUBPROCESS_ARCHS
+            _is_esc_arch = (_arch_detected or "") == "esc"
         except Exception:
             pass
 
-    # ── Persistent batch session (subprocess archs) ────────────────────────────
+    # ── Persistent batch session (traiNNer subprocess archs) ──────────────────
     _session: Optional[PersistentBatchSession] = None
     if persistent_batch and _is_subprocess_arch:
         _session = PersistentBatchSession(
@@ -2151,6 +2295,21 @@ def upscale_folder(
             _session = None
             _cb("[PersistentBatch] Démarrage échoué — mode normal utilisé")
 
+    # ── Persistent ESC session (neosr venv) ───────────────────────────────────
+    _esc_session: Optional[PersistentNeoSRSession] = None
+    if persistent_batch and _is_esc_arch and os.path.isfile(_NEOSR_VENV_PY):
+        _esc_session = PersistentNeoSRSession(
+            venv_py=_NEOSR_VENV_PY,
+            model_path=model_path,
+            tile_size=tile_size,
+            tile_pad=tile_pad,
+            use_amp=use_amp,
+            log=_cb,
+        )
+        if not _esc_session.start():
+            _esc_session = None
+            _cb("[ESC-Persistent] Démarrage échoué — subprocess par image utilisé")
+
     success = 0
     errors  = []
     skipped_dandere = 0
@@ -2158,6 +2317,25 @@ def upscale_folder(
     # Dandere2x state
     _prev_lq_arr: Optional["np.ndarray"] = None  # previous input as float32 [H,W,3]
     _prev_sr_arr: Optional["np.ndarray"] = None  # previous SR output as float32
+
+    # Temporal Fix state (v2.5.7)
+    _tf_proc = None
+    # Maps output filenames to their final disk paths (needed for latency writes)
+    _tf_pending: list = []  # list of (out_path,) for frames not yet written
+    if temporal_fix and IMAGING_AVAILABLE:
+        try:
+            from src.core.temporal_fix import TemporalFixProcessor
+            _tf_proc = TemporalFixProcessor(
+                window=temporal_fix_window,
+                strength=temporal_fix_strength,
+                precision=temporal_fix_precision,
+                device=temporal_fix_device,
+            )
+            _cb(f"[TemporalFix] Activé — fenêtre={temporal_fix_window}, "
+                f"intensité={temporal_fix_strength:.2f}, "
+                f"latence={_tf_proc.latency} frames")
+        except Exception as _tfe:
+            _cb(f"[TemporalFix] Import échoué ({_tfe}) — désactivé")
 
     total = len(files)
     try:
@@ -2200,8 +2378,25 @@ def upscale_folder(
                     continue
 
             # ── Normal upscale ────────────────────────────────────────────────
-            if _session is not None:
-                # Persistent subprocess session
+            if _esc_session is not None:
+                # Persistent ESC session (neosr venv — model stays loaded)
+                ok, msg = _esc_session.infer(in_path, out_path)
+                if not ok:
+                    _cb(f"  [ESC-Persistent] Erreur : {msg} — fallback subprocess")
+                    ok, msg = upscale_image(
+                        model_path, in_path, out_path,
+                        scale=scale, tile_size=tile_size, tile_pad=tile_pad,
+                        use_amp=use_amp, callback=callback,
+                        stop_event=stop_event,
+                        color_fix=color_fix,
+                        color_fix_wavelets=color_fix_wavelets,
+                        color_fix_radius=color_fix_radius,
+                        color_fix_fast=color_fix_fast,
+                        color_fix_strength=color_fix_strength,
+                        color_fix_device=color_fix_device,
+                    )
+            elif _session is not None:
+                # Persistent traiNNer subprocess session
                 ok, msg = _session.infer(in_path, out_path)
             else:
                 ok, msg = upscale_image(
@@ -2222,6 +2417,7 @@ def upscale_folder(
                 # ── Dandere2x — block compositing ──────────────────────────────
                 if (dandere_mode and not dandere_full_skip and
                         _prev_lq_arr is not None and _curr_lq_arr is not None and
+                        _prev_lq_arr.shape == _curr_lq_arr.shape and
                         IMAGING_AVAILABLE):
                     try:
                         _curr_sr_arr = _pil_to_float(Image.open(out_path))
@@ -2252,6 +2448,22 @@ def upscale_folder(
                             _prev_sr_arr = _pil_to_float(Image.open(out_path))
                         except Exception:
                             pass
+
+                # ── Temporal Fix — push frame into sliding window ──────────────
+                if _tf_proc is not None and IMAGING_AVAILABLE:
+                    _tf_pending.append(out_path)
+                    try:
+                        frame_np = _pil_to_float(Image.open(out_path))
+                        tf_result = _tf_proc.push(frame_np)
+                        if tf_result is not None:
+                            # The processed frame corresponds to the oldest pending path
+                            _write_path = _tf_pending.pop(0)
+                            _float_to_pil(tf_result).save(_write_path)
+                    except Exception as _tfe2:
+                        _cb(f"  [TemporalFix] Erreur frame {i}: {_tfe2}")
+                        _tf_pending.clear()
+                        _tf_proc = None  # disable on error
+
             else:
                 errors.append(f"{fname}: {msg}")
 
@@ -2262,6 +2474,20 @@ def upscale_folder(
     finally:
         if _session is not None:
             _session.stop()
+        if _esc_session is not None:
+            _esc_session.stop()
+
+        # ── Temporal Fix — flush remaining frames ─────────────────────────────
+        if _tf_proc is not None and _tf_pending and IMAGING_AVAILABLE:
+            _cb(f"[TemporalFix] Flush des {len(_tf_pending)} dernières frames…")
+            try:
+                for tf_result in _tf_proc.flush():
+                    if not _tf_pending:
+                        break
+                    _write_path = _tf_pending.pop(0)
+                    _float_to_pil(tf_result).save(_write_path)
+            except Exception as _tff:
+                _cb(f"[TemporalFix] Erreur flush : {_tff}")
 
     if skipped_dandere > 0:
         _cb(f"[Dandere2x] {skipped_dandere}/{total} frames sautées (identiques)")

@@ -469,6 +469,7 @@ class ConfigHandler:
                     flat["weight_loss_spark"] = lw
                     flat["spark_criterion"]   = loss.get("criterion", "fd")
                     flat["spark_path"]        = loss.get("path", "")
+                    flat["spark_max_score"]   = loss.get("max_score", 50.0)
                 elif "sobeledge" in lt or "sobel_edge" in lt:
                     # SobelEdgeLoss (traiNNer-redux native) — mapped to loss_edge widget
                     flat["loss_edge"] = "true"
@@ -1025,6 +1026,9 @@ class ConfigHandler:
                     _spark_path = (data.get("spark_path") or "").strip()
                     if _spark_path:
                         _spark_entry["path"] = _spark_path
+                    _spark_max_score = safe_num("spark_max_score", 50.0, float)
+                    if _spark_max_score > 0:
+                        _spark_entry["max_score"] = _spark_max_score
                     losses.append(_spark_entry)
                 # else: SparkLoss absent from this traiNNer-redux version — silently skip
             if use_gan:

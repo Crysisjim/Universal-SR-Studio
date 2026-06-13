@@ -528,6 +528,9 @@ else:
     log("Install Torch {_cuda_label} (~2.8 GB) — override tout torch CPU installe par les deps...")
     subprocess.call([pip, "uninstall", "-y", "torch", "torchvision", "torchaudio"], cwd=TARGET)
     subprocess.call([pip, "install", "{_torch_pkg}", "{_tv_pkg}", "--index-url", "{_whl_url}", "--no-cache-dir"], cwd=TARGET)
+log("Migration pynvml -> nvidia-ml-py (supprime FutureWarning PyTorch)...")
+subprocess.call([pip, "uninstall", "pynvml", "-y"], cwd=TARGET)
+subprocess.call([pip, "install", "nvidia-ml-py"], cwd=TARGET)
 log("[OK] TERMINE !")
 try: import os as _os; _os.remove(__file__)
 except Exception: pass
@@ -1196,6 +1199,7 @@ except ImportError:
             ("OpenAI (ChatGPT)", "https://platform.openai.com/api-keys"),
             ("xAI (Grok)", "https://console.x.ai"),
             ("DeepSeek", "https://platform.deepseek.com/api_keys"),
+            ("NVIDIA NIM", "https://build.nvidia.com/settings/api-key"),
         ]
         for provider, url in providers:
             frame = ctk.CTkFrame(f, fg_color=("#E8E8E8", "#1a1a2e"), corner_radius=8)

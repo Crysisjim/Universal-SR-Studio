@@ -288,6 +288,15 @@ class RunTab(ctk.CTkFrame):
         self.btn_lr_sched.pack(side="right", padx=2)
         ToolTip(self.btn_lr_sched, _t("Visualiser l'evolution du Learning Rate\nsur toute la duree de l'entrainement", "Visualize the Learning Rate schedule\nover the full training duration"))
 
+        # IA analysis button
+        self.btn_ai_analyze = ctk.CTkButton(self.f_cons_head, text="🤖 IA",
+                                             width=50, height=26, fg_color="#e67e22",
+                                             font=_EMOJI_FONT,
+                                             command=self._open_ai_analyze_popup)
+        self.btn_ai_analyze.pack(side="right", padx=2)
+        ToolTip(self.btn_ai_analyze, _t("Analyser l'entrainement avec une IA\n(envoie le log + config à l'IA choisie)",
+                                        "Analyze training with AI\n(sends log + config to the chosen AI)"))
+
         # Auto-resume + options
         f_opts = ctk.CTkFrame(self.frame_console, fg_color="transparent", height=25)
         f_opts.pack(fill="x", pady=(0, 2))
@@ -332,17 +341,17 @@ class RunTab(ctk.CTkFrame):
         self.poll_gpu_stats()
         self.poll_cpu_stats()
 
-    # --- QUEUE MONITOR (LE FIX EST ICI) ---
+    # --- QUEUE MONITOR ---
     def check_log_queue(self):
         """Vérifie la file d'attente pour mettre à jour l'UI dans le thread principal"""
+        chunks = []
         try:
             while True:
-                # Récupère tout ce qui est en attente sans bloquer
-                text = self.log_queue.get_nowait()
-                self._update_log_ui(text)
+                chunks.append(self.log_queue.get_nowait())
         except queue.Empty:
             pass
-        # Rappel dans 100ms
+        if chunks:
+            self._update_log_ui("".join(chunks))
         self.after(100, self.check_log_queue)
 
     def append_log(self, text):
@@ -975,6 +984,13 @@ class RunTab(ctk.CTkFrame):
             elif p:
                 self.textbox_logs.insert("end", p, tuple(tags))
         
+        # Trim: garde les 2000 dernières lignes si > 3000 (évite épuisement GDI)
+        try:
+            last_line = int(self.textbox_logs.index("end-1c").split(".")[0])
+            if last_line > 3000:
+                self.textbox_logs.delete("1.0", f"{last_line - 2000}.0")
+        except Exception:
+            pass
         self.textbox_logs.see("end")
         self.textbox_logs.configure(state="disabled")
         # Parsing des métriques (PSNR, Iteration, etc.) — pass the ORIGINAL text
@@ -4351,3 +4367,277 @@ class RunTab(ctk.CTkFrame):
             self.entries_dict["config_path"].insert(0, p)
             if p: self.detect_engine_and_setup(p)
         except Exception: pass
+
+    def _open_ai_analyze_popup(self):
+        """Popup IA : analyse le log d'entraînement + config avec le modèle choisi."""
+        popup = getattr(self, "_ai_analyze_popup", None)
+        if popup and popup.winfo_exists():
+            popup.lift()
+            return
+
+        popup = ctk.CTkToplevel(self)
+        popup.title(_t("🤖 Analyse IA — Entraînement", "🤖 AI Analysis — Training"))
+        popup.resizable(True, True)
+        popup.grab_set()
+        self._ai_analyze_popup = popup
+        popup.geometry("620x700")
+
+        _ai_models = {
+            "OpenRouter (Gratuit)": ["meta-llama/llama-3.3-70b-instruct:free", "nvidia/nemotron-3-super-120b-a12b:free", "z-ai/glm-4.5-air:free", "google/gemma-4-31b-it:free", "qwen/qwen3-coder:free"],
+            "GitHub Models (Gratuit)": ["gpt-4o", "gpt-4o-mini", "Phi-4", "DeepSeek-R1", "Llama-3.3-70B-Instruct"],
+            "Google (Gemini)": ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash"],
+            "Anthropic (Claude)": ["claude-opus-4-7", "claude-sonnet-4-6", "claude-haiku-4-5-20251001"],
+            "OpenAI (ChatGPT)": ["gpt-5", "gpt-5-mini", "gpt-4.1", "gpt-4.1-mini", "gpt-4o", "gpt-4o-mini"],
+            "xAI (Grok)": ["grok-4.3", "grok-4.3-fast", "grok-4.3-mini", "grok-3", "grok-3-fast"],
+            "DeepSeek": ["deepseek-chat", "deepseek-reasoner"],
+            "NVIDIA NIM": [
+                "meta/llama-3.3-70b-instruct",
+                "meta/llama-3.1-405b-instruct",
+                "nvidia/llama-3.1-nemotron-ultra-253b-v1",
+                "mistralai/mistral-large-2-instruct",
+                "mistralai/mixtral-8x7b-instruct-v0.1",
+                "microsoft/phi-3.5-mini-instruct",
+                "google/gemma-2-27b-it",
+                "deepseek-ai/deepseek-r1",
+                "qwen/qwen2.5-coder-32b-instruct",
+                "nvidia/nemotron-4-340b-instruct",
+            ],
+        }
+
+        ctk.CTkLabel(popup, text=_t("🤖 Analyse IA de l'entraînement", "🤖 AI Training Analysis"),
+                     font=("Roboto", 14, "bold"), text_color="#e67e22").pack(padx=20, pady=(15, 5))
+
+        body = ctk.CTkScrollableFrame(popup, fg_color="transparent")
+        body.pack(fill="both", expand=True, padx=10, pady=4)
+
+        # Provider + model
+        prov_row = ctk.CTkFrame(body, fg_color="transparent")
+        prov_row.pack(fill="x", pady=(4, 2))
+        ctk.CTkLabel(prov_row, text=_t("Fournisseur :", "Provider:"), width=100, anchor="w").pack(side="left")
+        saved_prov = self.settings.get("ai_analyze_provider", "OpenRouter (Gratuit)")
+        prov_var = ctk.StringVar(value=saved_prov if saved_prov in _ai_models else "OpenRouter (Gratuit)")
+        prov_menu = ctk.CTkOptionMenu(prov_row, values=list(_ai_models.keys()),
+                                      variable=prov_var, width=280)
+        prov_menu.pack(side="left")
+
+        model_row = ctk.CTkFrame(body, fg_color="transparent")
+        model_row.pack(fill="x", pady=(4, 2))
+        ctk.CTkLabel(model_row, text=_t("Modèle :", "Model:"), width=100, anchor="w").pack(side="left")
+        _init_models = _ai_models.get(prov_var.get(), [])
+        saved_model = self.settings.get("ai_analyze_model", "")
+        model_var = ctk.StringVar(value=saved_model if saved_model in _init_models else (_init_models[0] if _init_models else ""))
+        model_menu = ctk.CTkOptionMenu(model_row, values=_init_models or [""],
+                                       variable=model_var, width=280)
+        model_menu.pack(side="left")
+
+        # API Key
+        ctk.CTkLabel(body, text=_t("Clé API :", "API Key:"), anchor="w").pack(fill="x", pady=(8, 2))
+        key_entry = ctk.CTkEntry(body, show="*", placeholder_text="sk-...")
+        key_entry.pack(fill="x", pady=(0, 4))
+        saved_key = self.settings.get(f"api_key_{prov_var.get()}",
+                     self.settings.get(f"ai_key_{prov_var.get()}", ""))
+        if saved_key:
+            key_entry.insert(0, saved_key)
+
+        def _on_prov_change(choice):
+            models = _ai_models.get(choice, [])
+            model_menu.configure(values=models or [""])
+            model_var.set(models[0] if models else "")
+            key_entry.delete(0, "end")
+            k = self.settings.get(f"api_key_{choice}",
+                 self.settings.get(f"ai_key_{choice}", ""))
+            if k:
+                key_entry.insert(0, k)
+
+        prov_menu.configure(command=_on_prov_change)
+
+        # Log lines selector
+        ctk.CTkFrame(body, height=1, fg_color="gray35").pack(fill="x", pady=(8, 6))
+        ctk.CTkLabel(body, text=_t("Log d'entraînement :", "Training log:"),
+                     font=("Roboto", 11, "bold"), anchor="w").pack(fill="x")
+        log_mode_var = ctk.StringVar(value="last_n")
+        log_row = ctk.CTkFrame(body, fg_color="transparent")
+        log_row.pack(fill="x", pady=(4, 2))
+        ctk.CTkRadioButton(log_row, text=_t("Dernières", "Last"), variable=log_mode_var,
+                           value="last_n").pack(side="left")
+        n_entry = ctk.CTkEntry(log_row, width=60, placeholder_text="200")
+        n_entry.insert(0, str(self.settings.get("ai_analyze_last_n", 200)))
+        n_entry.pack(side="left", padx=4)
+        ctk.CTkLabel(log_row, text=_t("lignes", "lines"), anchor="w").pack(side="left")
+        ctk.CTkRadioButton(body, text=_t("Tout le log (peut être lourd)", "Full log (may be large)"),
+                           variable=log_mode_var, value="full").pack(anchor="w", pady=(2, 6))
+
+        # Question
+        ctk.CTkLabel(body, text=_t("Question à l'IA :", "Question for AI:"),
+                     font=("Roboto", 11, "bold"), anchor="w").pack(fill="x", pady=(6, 2))
+        question_box = ctk.CTkTextbox(body, height=80)
+        question_box.pack(fill="x", pady=(0, 4))
+        default_q = _t(
+            "Que penses-tu de mon entraînement pour le moment ? "
+            "Y a-t-il des signes de sur-apprentissage, sous-apprentissage ou problèmes à corriger ?",
+            "What do you think of my training so far? "
+            "Are there signs of overfitting, underfitting or issues to correct?")
+        question_box.insert("1.0", default_q)
+
+        # Status label
+        status_lbl = ctk.CTkLabel(body, text="", font=("Consolas", 10), text_color="gray60", anchor="w")
+        status_lbl.pack(fill="x", pady=(2, 4))
+
+        # Response box
+        ctk.CTkLabel(body, text=_t("Réponse IA :", "AI Response:"),
+                     font=("Roboto", 11, "bold"), anchor="w").pack(fill="x", pady=(6, 2))
+        resp_box = ctk.CTkTextbox(body, height=220, state="disabled")
+        resp_box.pack(fill="x", pady=(0, 4))
+
+        # Buttons row
+        btn_row = ctk.CTkFrame(popup, fg_color="transparent")
+        btn_row.pack(fill="x", padx=20, pady=(4, 12))
+
+        def _copy_response():
+            txt = resp_box.get("1.0", "end").strip()
+            if txt:
+                popup.clipboard_clear()
+                popup.clipboard_append(txt)
+
+        copy_btn = ctk.CTkButton(btn_row, text=_t("📋 Copier", "📋 Copy"),
+                                 width=100, command=_copy_response)
+        copy_btn.pack(side="right", padx=(4, 0))
+
+        def _send():
+            prov = prov_var.get()
+            model = model_var.get()
+            api_key = key_entry.get().strip()
+            question = question_box.get("1.0", "end").strip()
+
+            # Save settings
+            self.settings.set("ai_analyze_provider", prov)
+            self.settings.set("ai_analyze_model", model)
+            self.settings.set(f"ai_key_{prov}", api_key)
+            try:
+                self.settings.set("ai_analyze_last_n", int(n_entry.get()))
+            except Exception:
+                pass
+
+            # Build log content
+            try:
+                if log_mode_var.get() == "full":
+                    log_text = self.textbox_logs.get("1.0", "end")
+                else:
+                    try:
+                        n = int(n_entry.get())
+                    except Exception:
+                        n = 200
+                    all_lines = self.textbox_logs.get("1.0", "end").splitlines()
+                    log_text = "\n".join(all_lines[-n:])
+            except Exception:
+                log_text = "(log non disponible)"
+
+            # Build config content
+            config_text = ""
+            try:
+                cf = self.entries_dict["config_path"].get().strip()
+                if cf and os.path.isfile(cf):
+                    with open(cf, "r", encoding="utf-8", errors="replace") as f:
+                        config_text = f.read()
+            except Exception:
+                config_text = "(config non disponible)"
+
+            prompt = (
+                f"=== CONFIG D'ENTRAÎNEMENT ===\n{config_text}\n\n"
+                f"=== LOG D'ENTRAÎNEMENT (dernières lignes) ===\n{log_text}\n\n"
+                f"=== QUESTION ===\n{question}"
+            )
+
+            send_btn.configure(state="disabled", text=_t("Envoi…", "Sending…"))
+            status_lbl.configure(text=_t("Appel API en cours…", "API call in progress…"), text_color="#3498db")
+            resp_box.configure(state="normal")
+            resp_box.delete("1.0", "end")
+            resp_box.configure(state="disabled")
+
+            def _run():
+                import urllib.request
+                import json as _json
+                headers = {"Content-Type": "application/json", "User-Agent": "UniversalSRStudio/2.0"}
+
+                try:
+                    if "OpenRouter" in prov:
+                        url = "https://openrouter.ai/api/v1/chat/completions"
+                        headers["Authorization"] = f"Bearer {api_key}"
+                        headers["HTTP-Referer"] = "https://github.com/Universal-SR-Studio"
+                        body_data = _json.dumps({"model": model, "max_tokens": 2000,
+                                                 "messages": [{"role": "user", "content": prompt}]}).encode()
+                    elif "GitHub" in prov:
+                        url = "https://models.github.ai/inference/chat/completions"
+                        headers["Authorization"] = f"Bearer {api_key}"
+                        headers["X-GitHub-Api-Version"] = "2022-11-28"
+                        headers["Accept"] = "application/vnd.github+json"
+                        body_data = _json.dumps({"model": model, "max_tokens": 2000,
+                                                 "messages": [{"role": "user", "content": prompt}]}).encode()
+                    elif "Anthropic" in prov:
+                        url = "https://api.anthropic.com/v1/messages"
+                        headers["x-api-key"] = api_key
+                        headers["anthropic-version"] = "2023-06-01"
+                        body_data = _json.dumps({"model": model, "max_tokens": 2000,
+                                                 "messages": [{"role": "user", "content": prompt}]}).encode()
+                    elif "Google" in prov:
+                        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+                        body_data = _json.dumps({"contents": [{"parts": [{"text": prompt}]}]}).encode()
+                    elif "xAI" in prov:
+                        url = "https://api.x.ai/v1/chat/completions"
+                        headers["Authorization"] = f"Bearer {api_key}"
+                        body_data = _json.dumps({"model": model, "max_tokens": 2000,
+                                                 "messages": [{"role": "user", "content": prompt}]}).encode()
+                    elif "DeepSeek" in prov:
+                        url = "https://api.deepseek.com/chat/completions"
+                        headers["Authorization"] = f"Bearer {api_key}"
+                        body_data = _json.dumps({"model": model, "max_tokens": 2000,
+                                                 "messages": [{"role": "user", "content": prompt}]}).encode()
+                    elif "NVIDIA" in prov:
+                        url = "https://integrate.api.nvidia.com/v1/chat/completions"
+                        headers["Authorization"] = f"Bearer {api_key}"
+                        body_data = _json.dumps({"model": model, "max_tokens": 2000,
+                                                 "messages": [{"role": "user", "content": prompt}]}).encode()
+                    elif "OpenAI" in prov or "ChatGPT" in prov:
+                        url = "https://api.openai.com/v1/chat/completions"
+                        headers["Authorization"] = f"Bearer {api_key}"
+                        body_data = _json.dumps({"model": model, "max_tokens": 2000,
+                                                 "messages": [{"role": "user", "content": prompt}]}).encode()
+                    else:
+                        raise ValueError(f"API non supportée : {prov}")
+
+                    req = urllib.request.Request(url, data=body_data, headers=headers, method="POST")
+                    with urllib.request.urlopen(req, timeout=90) as resp:
+                        result = _json.loads(resp.read().decode())
+
+                    if "content" in result and isinstance(result["content"], list):
+                        text = result["content"][0].get("text", str(result))
+                    elif "choices" in result:
+                        text = result["choices"][0]["message"]["content"]
+                    elif "candidates" in result:
+                        parts = result["candidates"][0].get("content", {}).get("parts", [])
+                        text = parts[0].get("text", str(result)) if parts else str(result)
+                    else:
+                        text = str(result)
+
+                    def _show(t=text):
+                        resp_box.configure(state="normal")
+                        resp_box.delete("1.0", "end")
+                        resp_box.insert("1.0", t)
+                        resp_box.configure(state="disabled")
+                        status_lbl.configure(text=_t("✓ Réponse reçue.", "✓ Response received."),
+                                             text_color="#2ecc71")
+                        send_btn.configure(state="normal", text=_t("📤 Envoyer", "📤 Send"))
+                    popup.after(0, _show)
+
+                except Exception as e:
+                    err = str(e)
+                    def _show_err(e=err):
+                        status_lbl.configure(text=f"Erreur : {e}", text_color="#e74c3c")
+                        send_btn.configure(state="normal", text=_t("📤 Envoyer", "📤 Send"))
+                    popup.after(0, _show_err)
+
+            threading.Thread(target=_run, daemon=True).start()
+
+        send_btn = ctk.CTkButton(btn_row, text=_t("📤 Envoyer", "📤 Send"),
+                                 fg_color="#e67e22", command=_send)
+        send_btn.pack(side="left", fill="x", expand=True, padx=(0, 4))

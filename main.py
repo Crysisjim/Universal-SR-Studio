@@ -3,6 +3,7 @@ import os
 import traceback
 import datetime
 
+
 # Force UTF-8 stdout/stderr — évite crash cp1252 sur Windows (emoji dans print)
 try:
     if hasattr(sys.stdout, 'reconfigure'):

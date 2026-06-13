@@ -3,7 +3,7 @@
   <h1>Universal SR Studio</h1>
   <p>Graphical interface for training super-resolution AI models<br>with <strong>NeoSR</strong> and <strong>traiNNer-Redux</strong> engines.</p>
 
-  <a href="https://github.com/Crysisjim/Universal-SR-Studio/releases"><img src="https://img.shields.io/badge/Version-2.5.6-blue" alt="Version"/></a>
+  <a href="https://github.com/Crysisjim/Universal-SR-Studio/releases"><img src="https://img.shields.io/badge/Version-2.5.7-blue" alt="Version"/></a>
   <a href="https://github.com/Crysisjim/Universal-SR-Studio/wiki"><img src="https://img.shields.io/badge/📖_Wiki-Documentation-informational" alt="Wiki"/></a>
   <img src="https://img.shields.io/badge/Platform-Windows-lightgrey" alt="Platform"/>
   <img src="https://img.shields.io/badge/License-MIT-green" alt="License"/>
@@ -22,6 +22,20 @@
 A graphical interface for training and managing super-resolution AI models with **NeoSR** and **traiNNer-Redux** engines.
 
 [![📖 Wiki — Full Documentation](https://img.shields.io/badge/📖_Wiki-Full_Documentation-blue?style=for-the-badge)](https://github.com/Crysisjim/Universal-SR-Studio/wiki)
+
+### What's new in v2.5.7
+
+- **New "⚗ Post Processing" tab** — post-process an image or a folder *after* upscaling, independently of the upscale step. Ordered chain: **Temporal Fix → Undistort → Color correction → Resize → Sharpen (UnsharpMask)**. Each stage has an enable toggle and a ⚙ settings popup, with a Before/After preview, a live log and a progress bar.
+- **Temporal Fix** — reduces temporal flicker between frames. Modes: *Classic* (motion-aware blend, no weights) or neural models *S1 / S2 / S3* (pifroggi) with on-demand weight download. Backends: PyTorch CUDA, OnnxRuntime (CUDA), TensorRT + OnnxRuntime, CPU.
+- **Undistort** — removes temporal high-frequency artifacts (shimmering / jittering edges on SR output). Modes: *Classic* (temporal HF median, no weights) or neural *TMT* (xg416), with the same backend choices and on-demand weights.
+- **AI assistant button in Post Processing** — get recommended settings for the post-processing chain.
+- **SparkLoss `Clamp (max_score)` field** — now exposed in the Configuration losses block; the losses block was widened and aerated (full labels, no abbreviations) for the GAN Phase 2 workflow.
+- **Important fixes:**
+  - **Mixed-resolution batches** — a folder mixing e.g. 1080p and 480p frames no longer crashes (`cannot reshape array of size …`) and no longer triggers a VRAM explosion + permanent slowdown (cuDNN autotune storm now disabled for inference; allocator defragmented on resolution change).
+  - **Pascal GPUs (GTX 1080 / 1080 Ti, sm_61)** — Temporal Fix / Undistort now run inside the engine venv subprocess → fixes `no kernel image for device`.
+  - **ONNX Temporal Fix** — fixed rank error (5D vs 4D input) on the OnnxRuntime backend.
+  - **ORT performance** — the inference session is now cached once (no reload between frames).
+  - GPU stats reliability (pynvml), zombie process on close, double-launch guard.
 
 ### What's new in v2.5.6
 
@@ -73,7 +87,7 @@ A graphical interface for training and managing super-resolution AI models with 
 
 ### Quick Start — Portable (recommended)
 
-1. Download `Universal_SR_Studio_v2.5.6_portable.zip` from [Releases](https://github.com/Crysisjim/Universal-SR-Studio/releases)
+1. Download `Universal_SR_Studio_v2.5.7_portable.zip` from [Releases](https://github.com/Crysisjim/Universal-SR-Studio/releases)
 2. Extract anywhere
 3. Run `Universal_SR_Studio.exe`
 4. On first launch, choose your language (FR/EN), then go to **⚙️ Settings** → the built-in installer handles everything else
@@ -135,7 +149,7 @@ Then use the **⚙️ Settings** tab to install the training engines.
 | 😊 Assistant | Guided setup wizard for beginners |
 | 📝 Configuration | TOML/YAML config editor with live OTF preview |
 | 🚀 Training | Start/stop training, live curves, TensorBoard |
-| 🔧 Tools | Benchmark, quick upscale, model export, dataset tools |
+| 🔧 Tools | Benchmark, quick upscale, model export, dataset tools, ⚗ Post Processing (Temporal Fix / Undistort / color / resize / sharpen) |
 | 📋 Queue | Schedule multiple training sessions |
 | ⚙️ Settings | Engine installer, paths, language, appearance, API keys |
 | 🌐 Distributed | Multi-machine training (experimental) |
@@ -185,6 +199,20 @@ Pull requests welcome. For major changes, open an issue first.
 Interface graphique pour l'entraînement et la gestion de modèles d'IA super-résolution avec les moteurs **NeoSR** et **traiNNer-Redux**.
 
 [![📖 Wiki — Documentation complète](https://img.shields.io/badge/📖_Wiki-Documentation_complète-blue?style=for-the-badge)](https://github.com/Crysisjim/Universal-SR-Studio/wiki)
+
+### Nouveautés v2.5.7
+
+- **Nouvel onglet "⚗ Post Processing"** — post-traiter une image ou un dossier *après* l'upscale, indépendamment. Chaîne ordonnée : **Temporal Fix → Undistort → Correction couleur → Redimensionnement → Netteté (UnsharpMask)**. Chaque étape a une case enable + un popup ⚙ de réglages, avec preview Avant/Après, log live et barre de progression.
+- **Temporal Fix** — réduit le scintillement temporel entre frames. Modes : *Classic* (blend motion-aware, sans poids) ou modèles neuraux *S1 / S2 / S3* (pifroggi) avec téléchargement des poids à la demande. Backends : PyTorch CUDA, OnnxRuntime (CUDA), TensorRT + OnnxRuntime, CPU.
+- **Undistort** — supprime les artefacts haute-fréquence temporels (bords qui scintillent/tremblent sur la sortie SR). Modes : *Classic* (médiane HF temporelle, sans poids) ou neural *TMT* (xg416), mêmes choix de backend + poids à la demande.
+- **Bouton assistant IA dans Post Processing** — recommandations de réglages pour la chaîne de post-traitement.
+- **Champ `Clamp (max_score)` SparkLoss** — maintenant exposé dans le bloc losses de Configuration ; bloc losses élargi et aéré (labels complets, plus d'abréviations) pour le workflow GAN Phase 2.
+- **Corrections importantes :**
+  - **Batchs multi-résolution** — un dossier mélangeant par ex. du 1080p et du 480p ne plante plus (`cannot reshape array of size …`) et ne déclenche plus d'explosion VRAM + ralentissement permanent (tempête d'autotune cuDNN désactivée en inférence ; allocateur défragmenté au changement de résolution).
+  - **GPU Pascal (GTX 1080 / 1080 Ti, sm_61)** — Temporal Fix / Undistort tournent désormais dans le subprocess venv du moteur → corrige `no kernel image for device`.
+  - **ONNX Temporal Fix** — erreur de rang corrigée (entrée 5D vs 4D) sur le backend OnnxRuntime.
+  - **Performance ORT** — la session d'inférence est mise en cache une seule fois (plus de rechargement entre frames).
+  - Fiabilité stats GPU (pynvml), processus zombie à la fermeture, garde anti-double-lancement.
 
 ### Nouveautés v2.5.6
 
@@ -236,7 +264,7 @@ Interface graphique pour l'entraînement et la gestion de modèles d'IA super-r�
 
 ### Démarrage rapide — Portable (recommandé)
 
-1. Télécharger `Universal_SR_Studio_v2.5.6_portable.zip` depuis les [Releases](https://github.com/Crysisjim/Universal-SR-Studio/releases)
+1. Télécharger `Universal_SR_Studio_v2.5.7_portable.zip` depuis les [Releases](https://github.com/Crysisjim/Universal-SR-Studio/releases)
 2. Extraire n'importe où
 3. Lancer `Universal_SR_Studio.exe`
 4. Au premier lancement, choisir la langue (FR/EN), puis aller dans **⚙️ Paramètres** → l'installeur intégré gère le reste
@@ -298,7 +326,7 @@ Puis utiliser l'onglet **⚙️ Paramètres** pour installer les moteurs d'entra
 | 😊 Assistant | Wizard de configuration guidée pour débutants |
 | 📝 Configuration | Éditeur TOML/YAML avec prévisualisation OTF live |
 | 🚀 Entraînement | Démarrer/arrêter, courbes live, TensorBoard |
-| 🔧 Outils | Benchmark, upscale rapide, export modèle, outils dataset |
+| 🔧 Outils | Benchmark, upscale rapide, export modèle, outils dataset, ⚗ Post Processing (Temporal Fix / Undistort / couleur / resize / netteté) |
 | 📋 File d'attente | Planifier plusieurs sessions d'entraînement |
 | ⚙️ Paramètres | Installeur moteurs, chemins, langue, apparence, clés API |
 | 🌐 Distribué | Entraînement multi-machines (expérimental) |
