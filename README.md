@@ -48,43 +48,42 @@ A graphical interface for training and managing super-resolution AI models with 
 - **Crash fixes** — Thumbs.db auto-clean before validation; TensorBoard path in frozen exe; UnicodeEncodeError on Windows stdout; zombie process on close; double-launch guard
 - **VRAM estimation** — calibrated for all ParagonSR, ParagonSR2 and AetherNet variants against real `torch.cuda.memory_reserved()` measurements
 
-### What's new in v2.5.5
-
-- **SpanC multi-scale training** — multi-scale `[1,2]` or `[1,2,4]` fully working (3 crashes resolved: GT resize, LDL EMA align, LDL huber criterion)
-- **Quick Upscale — persistent batch subprocess** — model stays loaded in VRAM across frames, no reload per image (2.8× faster on 30k-frame batches)
-- **Quick Upscale — skip frames** — duplicate/near-identical frame detection via block MAE, 0 GPU cost and 0 artifacts
-- **Training — 6 new architectures** — CATANet (NeoSR), SMoSR, SpanF, SpanC, SpanPP, GFISRv2 (traiNNer-Redux) fully supported, tested end-to-end
-- **NeoSR training fixes** — LDL criterion `charbonnier` remapped to `l1`; UI "bicubic" mode mapped to NeoSR `otf` type (NeoSR has no `bicubic` class — `otf` with minimal degradation params emulates traiNNer-Redux bicubic behavior); `dataroot_lq` excluded from train section when `type = otf`
-- **Training bugfixes** — SMoSR `rep` bool crash, SparkLoss minimum lq_size=128, `high_order_degradation` always True for OTF, SparkLoss default weight 1.0→0.2
-- **UI sliders** — batch size, accumulate, patch size get compact slider+entry with live VRAM estimation update; patch size snaps to arch-specific step
-- **LQ Generator sliders** — 14 degradation effects now have inline slider+entry (blur, noise, JPEG, aliasing, grain, scanlines, …)
-- **VRAM estimation corrected** — calibrated against `torch.cuda.memory_reserved()` for 6 new archs
-- **Browse shortcuts** — config dialog opens at `~/IA_Engine/Option Custom`, dataset dialog opens at `~/IA_Engine/datasets`
-
-### What's new in v2.5.0
-
-- **Quick Upscale — batch serialization** — sequential output numbering (`00000.png … 24999.png`) for direct video reassembly, with configurable start index
-- **Quick Upscale — natural sort** — files processed in correct order (`frame_1, frame_2, …, frame_10`) instead of lexicographic
-- **Quick Upscale — Color Fix ATWT** — adaptive wavelet color correction popup with CPU/CUDA selection
-- **Quick Upscale — CUDA fallback** — SPANPlus, SMoSR, GFISRv2, SpanC, SpanF now run via traiNNer venv subprocess, fixing `cudaErrorNoKernelImageForDevice` on Pascal GPUs (GTX 1080/Ti)
-- **Quick Upscale — UI layout** — tighter spacing matching v2.2, centered controls, proper button separation
-- **Benchmark — ECO Training Mode** — tests `eco_training` and `eco_personal` now fully functional; fixed `FileExistsError` in traiNNer `make_exp_dirs` for `eco_pretrain_g` paths
-- **Benchmark — personal model tests** — `bicubic_personal` + `eco_personal` test upscale pipeline with your own model after training
-- **traiNNer-Redux as default engine** — replaces NeoSR as the default when no preference is set
-- **AI Assistant — Gemini 3.1 Pro** — updated provider references
-
 ### Features
 
-- **Configuration wizard** — visual TOML/YAML config editor for NeoSR and traiNNer-Redux
-- **Training monitor** — real-time loss curves, PSNR/SSIM, TensorBoard integration, live GPU stats
-- **OTF preview** — on-the-fly degradation pipeline preview (blur, noise, JPEG, compression, screentone, dithering, …)
-- **Benchmark suite** — automated architecture and feature benchmarks with resume support (Sprint 20: SpanF, SpanC, GFISRv2, SMoSR, ECO mode, 30+ features)
-- **Model tools** — quick upscale (batch + serialization + color fix), model export (safetensors), model packaging
+**Training**
+- **Configuration wizard** — visual TOML/YAML config editor for NeoSR and traiNNer-Redux; live VRAM estimation per architecture/patch size
+- **GAN Phase 2** — `RealESRGANModel` + `UNetDiscriminatorSN`; Adaptive D (auto-pause to prevent collapse); SparkLoss + PerceptualAnimeLoss
+- **Training monitor** — real-time loss curves, PSNR/SSIM, TensorBoard integration, live GPU stats (pynvml)
+- **AI Training Analysis (🤖)** — send log + config to an AI provider for run analysis and tuning suggestions
+- **Training queue** — schedule multiple sessions back-to-back
+- **Distributed training** — multi-machine coordination
+
+**Upscaling**
+- **Quick Upscale** — persistent batch subprocess (model stays in VRAM), sequential numbering for video reassembly, skip duplicate frames (MAE), Color Fix ATWT, CUDA fallback for Pascal GPUs
+- **30+ architectures** — ParagonSR (8 variants), ParagonSR2 (6 variants), AetherNet, FIGSR, GFISRv2, SMoSR, SPANpp, SRFormer/v2, FDAT, TFDAT, SpanF, SpanC, SpanPlus, MoESR/MoSR/MoSRv2, Temporal SPAN v2, and more
+
+**Post Processing (⚗)**
+- Ordered chain: **Temporal Fix → Undistort → Color correction → Resize → Sharpen → Deband → Line Darken → Line Thinning → Edge Cleanup**
+- Neural Temporal Fix (S1/S2/S3, pifroggi) and Undistort (TMT, xg416) with PyTorch / OnnxRuntime / TensorRT backends
+- CAS (AMD FidelityFX) and UnsharpMask sharpen modes
+- Line-art modules: Deband (neo_f3kdb-style), Line Darken (Hysteria-style), Line Thinning (aWarpSharp2-style), Edge Cleanup (havsfunc-style)
+- Each stage: enable toggle + ⚙ settings popup, Before/After preview, live log
+
+**Dataset & Degradation**
+- **LQ Dataset Generator** — ~30 degradations in 5 tabs (Basic · Color · Video · Advanced · Pipeline): blur, noise, JPEG/H.264, posterize, banding, chroma, aliasing, interlace, CRT, VHS, screentone, dithering, disc blur, vignette, pixel shift, film grain, motion blur, halation, auto-crop patches…
+- **Probabilistic pipeline** (wtp_dataset_destroyer-style): N passes (1–5) + per-degradation probability for varied dataset results
+- **OTF preview** — live on-the-fly degradation preview in the Configuration tab
 - **Dataset tools** — tile splitter, validation rotation, LMDB converter
-- **Distributed training** — multi-machine training coordination
-- **Training queue** — schedule multiple training sessions back-to-back
-- **20+ themes** — customizable UI themes
-- **Bilingual UI** — French / English interface
+
+**AI Assistant**
+- Multi-provider support: OpenRouter (Nemotron, Claude, GPT-4o, Gemini…), local models
+- Send training logs for AI-assisted run analysis
+
+**Other**
+- **Benchmark suite** — 30+ automated architecture/feature benchmarks with resume (SpanF, SpanC, GFISRv2, SMoSR, ECO mode, personal model tests)
+- **Model tools** — export (safetensors), packaging
+- **20+ themes** — customizable UI
+- **Bilingual UI** — French / English
 
 ### Quick Start — Portable (recommended)
 
@@ -110,7 +109,7 @@ That's it. Universal SR Studio handles the rest automatically via the **⚙️ S
 |------|-------------|
 | **GPU detection** | Detects your GPU and recommends the correct PyTorch + CUDA version |
 | **Engine install** | Downloads and installs NeoSR and/or traiNNer-Redux from their official repositories |
-| **Virtual environment** | Creates an isolated `.venv` for each engine |
+| **Virtual environment** | Creates a single shared `runtimes/.venv` (Python 3.12.9 + PyTorch CUDA) for all engines |
 | **PyTorch** | Installs the correct CUDA-compatible version automatically |
 | **Dependencies** | Installs all engine-specific packages |
 
@@ -120,10 +119,10 @@ Just open the **⚙️ Settings** tab, choose which engine(s) to install, and cl
 
 ```
 ~/IA_Engine/
-├── traiNNer-redux/        (installed via Settings)
-│   └── .venv/
-├── neosr/                 (installed via Settings)
-│   └── .venv/
+├── runtimes/
+│   ├── traiNNer-redux/        (installed via Settings)
+│   ├── neosr/                 (installed via Settings)
+│   └── .venv/                 (shared Python 3.12.9 + PyTorch CUDA environment)
 ├── datasets/
 │   ├── train/HR/          (your training images)
 │   └── val/
@@ -150,7 +149,7 @@ Then use the **⚙️ Settings** tab to install the training engines.
 | 😊 Assistant | Guided setup wizard for beginners |
 | 📝 Configuration | TOML/YAML config editor with live OTF preview |
 | 🚀 Training | Start/stop training, live curves, TensorBoard |
-| 🔧 Tools | Benchmark, quick upscale, model export, dataset tools, ⚗ Post Processing (Temporal Fix / Undistort / color / resize / sharpen) |
+| 🔧 Tools | Benchmark, quick upscale, model export, dataset tools, ⚗ Post Processing (Temporal Fix / Undistort / color / resize / sharpen / deband / line-art modules) |
 | 📋 Queue | Schedule multiple training sessions |
 | ⚙️ Settings | Engine installer, paths, language, appearance, API keys |
 | 🌐 Distributed | Multi-machine training (experimental) |
@@ -175,7 +174,7 @@ python src/core/benchmark_runner.py --list
 |---------|-------------|
 | **Temporal SR training** | Enter a video as GT reference, extract frame sequences, train TSPAN/TSPANv2 with sliding window input `[B, N, C, H, W]`. Full temporal consistency pipeline. |
 | **Temporal SR inference** | Sliding window N-frame inference with TSPAN/TSPANv2 and frame reassembly. |
-| **NVIDIA NIM provider** | `build.nvidia.com` as a new AI assistant provider — OpenAI-compatible API, free model credits (Llama, Mistral, Phi…). |
+| **AA post-processing** | NNEDI3/EEDI3-ONNX antialiasing module in the Post Processing chain (insaneAA-quality). |
 
 > ⏸ **VOSR / OSEDiff** (diffusion-based SR, CVPR 2026) — integration paused indefinitely. Interest is limited due to very high VRAM requirements, making them impractical for most consumer GPUs.
 
@@ -226,42 +225,41 @@ Interface graphique pour l'entraînement et la gestion de modèles d'IA super-r�
 - **Fixes crashs** — nettoyage automatique Thumbs.db avant validation ; chemin TensorBoard dans l'exe portable ; UnicodeEncodeError sur stdout Windows ; processus zombie à la fermeture ; garde anti-double-lancement
 - **Estimation VRAM** — calibrée pour tous les variants ParagonSR, ParagonSR2 et AetherNet sur des mesures `torch.cuda.memory_reserved()` réelles
 
-### Nouveautés v2.5.5
-
-- **Entraînement SpanC multi-scale** — `[1,2]` ou `[1,2,4]` entièrement fonctionnel (3 crashs résolus : GT resize, LDL EMA align, critère huber)
-- **Quick Upscale — subprocess batch persistant** — modèle chargé en VRAM sur toute la durée du batch, plus de rechargement par image (×2.8 sur 30k frames)
-- **Quick Upscale — skip frames** — détection frames dupliquées/quasi-identiques par blocs MAE, 0 coût GPU et 0 artefact
-- **Entraînement — 6 nouvelles architectures** — CATANet (NeoSR), SMoSR, SpanF, SpanC, SpanPP, GFISRv2 (traiNNer-Redux) supportées et testées
-- **Fixes NeoSR** — critère LDL `charbonnier` remappé vers `l1` ; mode UI "bicubic" mappé vers `otf` de NeoSR (`otf` avec dégradations minimales émule le comportement de la classe `bicubic` de traiNNer-Redux — NeoSR n'a pas de dataset `bicubic` dédié) ; `dataroot_lq` exclu du train section quand `type = otf`
-- **Bugfixes training** — crash SMoSR `rep` bool, minimum lq_size=128 SparkLoss, `high_order_degradation` toujours True pour OTF, poids SparkLoss 1.0→0.2
-- **Sliders UI** — batch size, accumulate, patch size : slider+entry avec mise à jour VRAM live ; snap de step selon l'arch
-- **Sliders LQ Generator** — 14 effets de dégradation ont maintenant un slider+entry inline (flou, bruit, JPEG, aliasing, grain, scanlines, …)
-- **Estimation VRAM corrigée** — calibrée sur `torch.cuda.memory_reserved()` pour les 6 nouvelles archs
-- **Raccourcis browse** — dialog config ouvre `~/IA_Engine/Option Custom`, dialog dataset ouvre `~/IA_Engine/datasets`
-
-### Nouveautés v2.5.0
-
-- **Quick Upscale — sérialisation sortie** — numérotation séquentielle (`00000.png … 24999.png`) pour réassemblage vidéo direct, index de départ configurable
-- **Quick Upscale — tri naturel** — fichiers traités dans le bon ordre (`frame_1, frame_2, …, frame_10`) au lieu de l'ordre lexicographique
-- **Quick Upscale — Color Fix ATWT** — correction couleur par ondelettes adaptative, popup avec sélection CPU/CUDA
-- **Quick Upscale — fallback CUDA** — SPANPlus, SMoSR, GFISRv2, SpanC, SpanF via subprocess venv traiNNer, résout `cudaErrorNoKernelImageForDevice` sur GPU Pascal (GTX 1080/Ti)
-- **Quick Upscale — UI** — layout compact identique à v2.2, contrôles centrés, espacement bouton corrigé
-- **Benchmark — ECO Training Mode** — tests `eco_training` et `eco_personal` entièrement fonctionnels ; bug `FileExistsError` traiNNer `make_exp_dirs` corrigé
-- **Benchmark — tests modèle perso** — `bicubic_personal` + `eco_personal` testent le pipeline upscale avec votre propre modèle
-- **traiNNer-Redux par défaut** — remplace NeoSR comme moteur par défaut
-- **Assistant IA — Gemini 3.1 Pro** — références providers mises à jour
-
 ### Fonctionnalités
 
-- **Assistant de configuration** — éditeur visuel TOML/YAML pour NeoSR et traiNNer-Redux
-- **Moniteur d'entraînement** — courbes de perte en temps réel, PSNR/SSIM, intégration TensorBoard, stats GPU live
-- **Aperçu OTF** — prévisualisation du pipeline de dégradation à la volée (flou, bruit, JPEG, compression, screentone, dithering, …)
-- **Suite de benchmarks** — benchmarks automatisés d'architectures et de features avec reprise (Sprint 20 : SpanF, SpanC, GFISRv2, SMoSR, ECO mode, 30+ features)
-- **Outils modèles** — upscale rapide (batch + sérialisation + color fix), export modèle (safetensors), packaging
-- **Outils dataset** — découpeur de tuiles, rotation de validation, convertisseur LMDB
-- **Entraînement distribué** — coordination multi-machines
+**Entraînement**
+- **Assistant de configuration** — éditeur visuel TOML/YAML pour NeoSR et traiNNer-Redux ; estimation VRAM live selon l'architecture et la patch size
+- **GAN Phase 2** — `RealESRGANModel` + `UNetDiscriminatorSN` ; Adaptive D (pause auto du discriminateur) ; SparkLoss + PerceptualAnimeLoss
+- **Moniteur d'entraînement** — courbes de perte en temps réel, PSNR/SSIM, TensorBoard, stats GPU live (pynvml)
+- **Analyse IA (🤖)** — envoyer le log + la config à un provider IA pour analyser l'entraînement et suggérer des réglages
 - **File d'entraînements** — planifier plusieurs sessions à la suite
-- **20+ thèmes** — thèmes UI personnalisables
+- **Entraînement distribué** — coordination multi-machines
+
+**Upscale**
+- **Quick Upscale** — subprocess batch persistant (modèle reste en VRAM), numérotation séquentielle pour réassemblage vidéo, skip frames dupliquées (MAE), Color Fix ATWT, fallback CUDA pour GPU Pascal
+- **30+ architectures** — ParagonSR (8 variants), ParagonSR2 (6 variants), AetherNet, FIGSR, GFISRv2, SMoSR, SPANpp, SRFormer/v2, FDAT, TFDAT, SpanF, SpanC, SpanPlus, MoESR/MoSR/MoSRv2, Temporal SPAN v2, et plus
+
+**Post Processing (⚗)**
+- Chaîne ordonnée : **Temporal Fix → Undistort → Correction couleur → Redimensionnement → Netteté → Deband → Renforcement lignes → Amincissement lignes → Edge Cleanup**
+- Temporal Fix neural (S1/S2/S3, pifroggi) et Undistort (TMT, xg416) avec backends PyTorch / OnnxRuntime / TensorRT
+- Modes sharpen CAS (AMD FidelityFX) et UnsharpMask
+- Modules line-art : Deband (style neo_f3kdb), Renforcement lignes (style Hysteria), Amincissement lignes (style aWarpSharp2), Edge Cleanup (style havsfunc)
+- Chaque étape : toggle enable + popup ⚙ de réglages, preview Avant/Après, log live
+
+**Dataset & Dégradation**
+- **Générateur LQ** — ~30 dégradations en 5 onglets (Basique · Couleur · Vidéo · Avancé · Pipeline) : flou, bruit, JPEG/H.264, postérisation, banding, chroma, aliasing, entrelacement, CRT, VHS, screentone, dithering, flou disque, vignette, pixel shift, grain, motion blur, halation, auto-crop…
+- **Pipeline probabiliste** (style wtp_dataset_destroyer) : N passes (1–5) + probabilité par dégradation → résultats variés sur tout un dataset
+- **Aperçu OTF** — prévisualisation live dans l'onglet Configuration
+- **Outils dataset** — découpeur de tuiles, rotation de validation, convertisseur LMDB
+
+**Assistant IA**
+- Multi-providers : OpenRouter (Nemotron, Claude, GPT-4o, Gemini…), modèles locaux
+- Analyse des logs d'entraînement assistée par IA
+
+**Autre**
+- **Suite de benchmarks** — 30+ benchmarks architectures/features automatisés avec reprise (SpanF, SpanC, GFISRv2, SMoSR, ECO mode, tests modèle perso)
+- **Outils modèles** — export (safetensors), packaging
+- **20+ thèmes** — UI personnalisable
 - **Interface bilingue** — Français / Anglais
 
 ### Démarrage rapide — Portable (recommandé)
@@ -288,7 +286,7 @@ C'est tout. Universal SR Studio gère le reste automatiquement via l'onglet **�
 |-------|--------|
 | **Détection GPU** | Détecte le GPU et recommande la bonne version PyTorch + CUDA |
 | **Installation moteur** | Télécharge et installe NeoSR et/ou traiNNer-Redux depuis leurs dépôts officiels |
-| **Environnement virtuel** | Crée un `.venv` isolé pour chaque moteur |
+| **Environnement virtuel** | Crée un seul `runtimes/.venv` partagé (Python 3.12.9 + PyTorch CUDA) pour tous les moteurs |
 | **PyTorch** | Installe la version compatible CUDA automatiquement |
 | **Dépendances** | Installe tous les packages spécifiques au moteur |
 
@@ -298,10 +296,10 @@ Ouvrir l'onglet **⚙️ Paramètres**, choisir le(s) moteur(s) à installer, et
 
 ```
 ~/IA_Engine/
-├── traiNNer-redux/        (installé via Paramètres)
-│   └── .venv/
-├── neosr/                 (installé via Paramètres)
-│   └── .venv/
+├── runtimes/
+│   ├── traiNNer-redux/        (installé via Paramètres)
+│   ├── neosr/                 (installé via Paramètres)
+│   └── .venv/                 (environnement Python 3.12.9 + PyTorch CUDA partagé)
 ├── datasets/
 │   ├── train/HR/          (vos images d'entraînement)
 │   └── val/
@@ -328,7 +326,7 @@ Puis utiliser l'onglet **⚙️ Paramètres** pour installer les moteurs d'entra
 | 😊 Assistant | Wizard de configuration guidée pour débutants |
 | 📝 Configuration | Éditeur TOML/YAML avec prévisualisation OTF live |
 | 🚀 Entraînement | Démarrer/arrêter, courbes live, TensorBoard |
-| 🔧 Outils | Benchmark, upscale rapide, export modèle, outils dataset, ⚗ Post Processing (Temporal Fix / Undistort / couleur / resize / netteté) |
+| 🔧 Outils | Benchmark, upscale rapide, export modèle, outils dataset, ⚗ Post Processing (Temporal Fix / Undistort / couleur / resize / netteté / deband / modules line-art) |
 | 📋 File d'attente | Planifier plusieurs sessions d'entraînement |
 | ⚙️ Paramètres | Installeur moteurs, chemins, langue, apparence, clés API |
 | 🌐 Distribué | Entraînement multi-machines (expérimental) |
@@ -340,7 +338,7 @@ Puis utiliser l'onglet **⚙️ Paramètres** pour installer les moteurs d'entra
 |---------|-------------|
 | **Entraînement Temporal SR** | Vidéo GT en entrée → extraction séquences frames → entraînement TSPAN/TSPANv2 avec fenêtre glissante `[B, N, C, H, W]`. Pipeline temporel complet. |
 | **Inférence Temporal SR** | Inférence N frames en fenêtre glissante avec TSPAN/TSPANv2 + réassemblage. |
-| **Provider NVIDIA NIM** | `build.nvidia.com` comme nouveau provider IA — API compatible OpenAI, crédits gratuits (Llama, Mistral, Phi…). |
+| **AA post-processing** | Module antialiasing NNEDI3/EEDI3-ONNX dans la chaîne Post Processing (qualité insaneAA). |
 
 > ⏸ **VOSR / OSEDiff** (SR par diffusion, CVPR 2026) — intégration en pause indéfinie. Intérêt limité en raison d'une consommation VRAM très élevée, peu pratique sur la majorité des GPU grand public.
 
