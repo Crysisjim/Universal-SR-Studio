@@ -30,7 +30,7 @@ A graphical interface for training and managing super-resolution AI models with 
 - **Undistort** — removes temporal high-frequency artifacts (shimmering / jittering edges on SR output). Modes: *Classic* (temporal HF median, no weights) or neural *TMT* (xg416), with the same backend choices and on-demand weights.
 - **LQ Dataset Generator — full redesign** — the degradation tool is now organized into 5 tabs (**🔧 Basic · 🎨 Colour · 📺 Video · ⚙ Advanced · 🎲 Pipeline**) with ~30 degradations, each with a checkbox + live slider: blur, noise, JPEG/H.264 codec, posterization, banding, chromatic aberration, disc blur, vignette, halo, saturation, quantize depth, chroma subsampling, aliasing, interlace (weave / flicker / field blend), CRT scanlines, VHS/analog, screentone, dithering, sinusoidal distortion, pixel shift, film grain, oversharpening, motion blur, salt & pepper, halation, auto-crop patches. The new **🎲 Pipeline** tab adds a **probabilistic pipeline** (wtp_dataset_destroyer-style): **N passes (1–5)** and a **per-degradation probability** so the same config yields varied results across a dataset.
 - **AI Training Analysis button (🤖)** — in the **Training** tab console header: sends the training log + config to a chosen AI provider to analyze your run and suggest adjustments.
-- **SparkLoss `Clamp (max_score)` field** — now exposed in the Configuration losses block; the losses block was widened and aerated (full labels, no abbreviations) for the GAN Phase 2 workflow.
+- **SparkLoss `Clamp (max_score)` field** — now exposed in the Configuration losses block; the losses block was widened and aerated (full labels, no abbreviations) for the GAN training workflow.
 - **Important fixes:**
   - **Mixed-resolution batches** — a folder mixing e.g. 1080p and 480p frames no longer crashes (`cannot reshape array of size …`) and no longer triggers a VRAM explosion + permanent slowdown (cuDNN autotune storm now disabled for inference; allocator defragmented on resolution change).
   - **Pascal GPUs (GTX 1080 / 1080 Ti, sm_61)** — Temporal Fix / Undistort now run inside the engine venv subprocess → fixes `no kernel image for device`.
@@ -42,7 +42,7 @@ A graphical interface for training and managing super-resolution AI models with 
 
 - **Shared venv** — single `runtimes/.venv` replaces dual neosr+traiNNer venvs; Python 3.12.9, numpy ≥2, traiNNer-redux `dev` branch; saves ~3 GB disk
 - **New architectures** — custom-bundled and auto-injected: **ParagonSR** (nano/tiny/xs/s/m/l/xl/anime), **ParagonSR2** (photo/pro/realtime/stream/ultimate/ultimate_v2), **AetherNet** (NeoSR, mobile→extreme), FIGSR, GFISRv2, SMoSR, SPANpp; native in traiNNer-redux dev: srformer/v2, fdat, tfdat, spanf, spanplus, moesr/mosr/mosrv2, temporal_span_v2
-- **GAN Phase 2 training** — `RealESRGANModel` + `UNetDiscriminatorSN` pipeline; Adaptive D checkbox (auto-pauses discriminator to prevent collapse); SparkLoss FD + PerceptualAnimeLoss in Redux config; GAN weight persistence fix
+- **GAN training training** — `RealESRGANModel` + `UNetDiscriminatorSN` pipeline; Adaptive D checkbox (auto-pauses discriminator to prevent collapse); SparkLoss FD + PerceptualAnimeLoss in Redux config; GAN weight persistence fix
 - **Custom degradations** — Custom 3+4 groups now correctly applied to training (were wired in UI but missing from sidecar writer); 3 new effects (disc_blur, vignette, quantize_depth); 2 new coupled clusters; severity preset button; 68 total keys (was 29)
 - **RCAN 1× fix** — bypass spandrel bug (wrong n_feats for 1× models); construction from state_dict directly
 - **Crash fixes** — Thumbs.db auto-clean before validation; TensorBoard path in frozen exe; UnicodeEncodeError on Windows stdout; zombie process on close; double-launch guard
@@ -50,40 +50,29 @@ A graphical interface for training and managing super-resolution AI models with 
 
 ### Features
 
-**Training**
-- **Configuration wizard** — visual TOML/YAML config editor for NeoSR and traiNNer-Redux; live VRAM estimation per architecture/patch size
-- **GAN Phase 2** — `RealESRGANModel` + `UNetDiscriminatorSN`; Adaptive D (auto-pause to prevent collapse); SparkLoss + PerceptualAnimeLoss
-- **Training monitor** — real-time loss curves, PSNR/SSIM, TensorBoard integration, live GPU stats (pynvml)
-- **AI Training Analysis (🤖)** — send log + config to an AI provider for run analysis and tuning suggestions
-- **Training queue** — schedule multiple sessions back-to-back
-- **Distributed training** — multi-machine coordination
+> Training super-resolution models usually means editing YAML files and babysitting a terminal.
+> Universal SR Studio changes that — everything is visual, everything is in one place.
 
-**Upscaling**
-- **Quick Upscale** — persistent batch subprocess (model stays in VRAM), sequential numbering for video reassembly, skip duplicate frames (MAE), Color Fix ATWT, CUDA fallback for Pascal GPUs
-- **30+ architectures** — ParagonSR (8 variants), ParagonSR2 (6 variants), AetherNet, FIGSR, GFISRv2, SMoSR, SPANpp, SRFormer/v2, FDAT, TFDAT, SpanF, SpanC, SpanPlus, MoESR/MoSR/MoSRv2, Temporal SPAN v2, and more
+| | |
+|--|--|
+| 🎯 **Visual config editor** | Edit TOML/YAML with live VRAM estimation — know if your setup fits *before* starting |
+| 📊 **Live training monitor** | Real-time loss curves, PSNR/SSIM, TensorBoard, GPU stats |
+| 🤖 **AI training analysis** | Send your training log to Claude/GPT-4o/Gemini/Nemotron and get tuning advice in seconds |
+| ⚡ **30+ architectures** | ParagonSR, ParagonSR2, AetherNet, FIGSR, SPAN, SRFormer, FDAT, MoESR, and more — all one click away |
+| 🎛 **GAN training** | Adaptive D anti-collapse, SparkLoss FD, PerceptualAnimeLoss — stable training out of the box |
+| ⚗ **Post Processing chain** | 9 stages: neural Temporal Fix, Undistort, Color, Resize, CAS Sharpen, Deband, Line Darken, Line Thinning, Edge Cleanup |
+| 🎨 **LQ Dataset Generator** | ~30 degradations, probabilistic multi-pass pipeline — varied training data from a single config |
+| 🚀 **Quick Upscale** | Batch thousands of frames with video-ready output numbering, duplicate skip, Color Fix ATWT |
+| 📋 **Training queue** | Chain multiple training jobs back-to-back, unattended |
+| 🌐 **Multi-provider AI** | OpenRouter, Nemotron, Claude, GPT-4o, Gemini — pick your provider |
+| 🗂 **Dataset tools** | Tile splitter, LMDB converter, validation rotation |
+| 🎨 **20+ themes** | Dark, light, custom — matches your workflow |
+| 🌍 **Bilingual** | Full French / English interface |
 
-**Post Processing (⚗)**
-- Ordered chain: **Temporal Fix → Undistort → Color correction → Resize → Sharpen → Deband → Line Darken → Line Thinning → Edge Cleanup**
-- Neural Temporal Fix (S1/S2/S3, pifroggi) and Undistort (TMT, xg416) with PyTorch / OnnxRuntime / TensorRT backends
-- CAS (AMD FidelityFX) and UnsharpMask sharpen modes
-- Line-art modules: Deband (neo_f3kdb-style), Line Darken (Hysteria-style), Line Thinning (aWarpSharp2-style), Edge Cleanup (havsfunc-style)
-- Each stage: enable toggle + ⚙ settings popup, Before/After preview, live log
-
-**Dataset & Degradation**
-- **LQ Dataset Generator** — ~30 degradations in 5 tabs (Basic · Color · Video · Advanced · Pipeline): blur, noise, JPEG/H.264, posterize, banding, chroma, aliasing, interlace, CRT, VHS, screentone, dithering, disc blur, vignette, pixel shift, film grain, motion blur, halation, auto-crop patches…
-- **Probabilistic pipeline** (wtp_dataset_destroyer-style): N passes (1–5) + per-degradation probability for varied dataset results
-- **OTF preview** — live on-the-fly degradation preview in the Configuration tab
-- **Dataset tools** — tile splitter, validation rotation, LMDB converter
-
-**AI Assistant**
-- Multi-provider support: OpenRouter (Nemotron, Claude, GPT-4o, Gemini…), local models
-- Send training logs for AI-assisted run analysis
-
-**Other**
-- **Benchmark suite** — 30+ automated architecture/feature benchmarks with resume (SpanF, SpanC, GFISRv2, SMoSR, ECO mode, personal model tests)
-- **Model tools** — export (safetensors), packaging
-- **20+ themes** — customizable UI
-- **Bilingual UI** — French / English
+**Perfect for:**
+- 🖼 Anime / manga upscaling — line-art-aware post-processing, screentone and dithering degradations
+- 📷 Photo and video restoration — VHS, film grain, lens artifacts, interlace simulation
+- 🎬 Video super-resolution — frame-exact batch output, temporal consistency, TSPAN architecture support
 
 ### Quick Start — Portable (recommended)
 
@@ -207,7 +196,7 @@ Interface graphique pour l'entraînement et la gestion de modèles d'IA super-r�
 - **Undistort** — supprime les artefacts haute-fréquence temporels (bords qui scintillent/tremblent sur la sortie SR). Modes : *Classic* (médiane HF temporelle, sans poids) ou neural *TMT* (xg416), mêmes choix de backend + poids à la demande.
 - **Générateur de dataset LQ — refonte complète** — l'outil de dégradation est maintenant organisé en 5 onglets (**🔧 Basique · 🎨 Couleur · 📺 Vidéo · ⚙ Avancé · 🎲 Pipeline**) avec ~30 dégradations, chacune avec case + slider live : flou, bruit, codec JPEG/H.264, postérisation, banding, aberration chromatique, flou disque, vignette, halo, saturation, quantize depth, sous-échantillonnage chroma, aliasing, entrelacement (weave / flicker / field blend), scanlines CRT, VHS/analog, screentone, dithering, distorsion sinusoïdale, pixel shift, grain de film, oversharpening, motion blur, sel & poivre, halation, auto-crop patches. Le nouvel onglet **🎲 Pipeline** ajoute un **pipeline probabiliste** (style wtp_dataset_destroyer) : **N passes (1–5)** et une **probabilité par dégradation** → une même config produit des résultats variés sur tout un dataset.
 - **Bouton Analyse IA (🤖)** — dans l'en-tête de la console de l'onglet **Entraînement** : envoie le log + la config à un provider IA pour analyser l'entraînement et suggérer des ajustements.
-- **Champ `Clamp (max_score)` SparkLoss** — maintenant exposé dans le bloc losses de Configuration ; bloc losses élargi et aéré (labels complets, plus d'abréviations) pour le workflow GAN Phase 2.
+- **Champ `Clamp (max_score)` SparkLoss** — maintenant exposé dans le bloc losses de Configuration ; bloc losses élargi et aéré (labels complets, plus d'abréviations) pour le workflow GAN training.
 - **Corrections importantes :**
   - **Batchs multi-résolution** — un dossier mélangeant par ex. du 1080p et du 480p ne plante plus (`cannot reshape array of size …`) et ne déclenche plus d'explosion VRAM + ralentissement permanent (tempête d'autotune cuDNN désactivée en inférence ; allocateur défragmenté au changement de résolution).
   - **GPU Pascal (GTX 1080 / 1080 Ti, sm_61)** — Temporal Fix / Undistort tournent désormais dans le subprocess venv du moteur → corrige `no kernel image for device`.
@@ -219,7 +208,7 @@ Interface graphique pour l'entraînement et la gestion de modèles d'IA super-r�
 
 - **Venv partagé** — un seul `runtimes/.venv` remplace les deux venvs neosr+traiNNer ; Python 3.12.9, numpy ≥2, branche `dev` traiNNer-redux ; économise ~3 Go
 - **Nouvelles architectures** — custom bundlées et auto-injectées : **ParagonSR** (nano/tiny/xs/s/m/l/xl/anime), **ParagonSR2** (photo/pro/realtime/stream/ultimate/ultimate_v2), **AetherNet** (NeoSR, mobile→extreme), FIGSR, GFISRv2, SMoSR, SPANpp ; natives dans traiNNer-redux dev : srformer/v2, fdat, tfdat, spanf, spanplus, moesr/mosr/mosrv2, temporal_span_v2
-- **Entraînement GAN Phase 2** — pipeline `RealESRGANModel` + `UNetDiscriminatorSN` ; checkbox Adaptive D (met le discriminateur en pause pour éviter l'effondrement) ; SparkLoss FD + PerceptualAnimeLoss dans la config Redux ; fix persistance du poids GAN
+- **Entraînement GAN** — pipeline `RealESRGANModel` + `UNetDiscriminatorSN` ; checkbox Adaptive D (met le discriminateur en pause pour éviter l'effondrement) ; SparkLoss FD + PerceptualAnimeLoss dans la config Redux ; fix persistance du poids GAN
 - **Dégradations custom** — groupes Custom 3+4 maintenant correctement appliqués à l'entraînement (câblés dans l'UI mais absents du sidecar) ; 3 nouveaux effets (disc_blur, vignette, quantize_depth) ; 2 clusters couplés ; bouton preset de sévérité ; 68 clés au total (était 29)
 - **Fix RCAN 1×** — contournement du bug spandrel (n_feats incorrect pour les modèles 1×) ; construction directe depuis le state_dict
 - **Fixes crashs** — nettoyage automatique Thumbs.db avant validation ; chemin TensorBoard dans l'exe portable ; UnicodeEncodeError sur stdout Windows ; processus zombie à la fermeture ; garde anti-double-lancement
@@ -227,40 +216,29 @@ Interface graphique pour l'entraînement et la gestion de modèles d'IA super-r�
 
 ### Fonctionnalités
 
-**Entraînement**
-- **Assistant de configuration** — éditeur visuel TOML/YAML pour NeoSR et traiNNer-Redux ; estimation VRAM live selon l'architecture et la patch size
-- **GAN Phase 2** — `RealESRGANModel` + `UNetDiscriminatorSN` ; Adaptive D (pause auto du discriminateur) ; SparkLoss + PerceptualAnimeLoss
-- **Moniteur d'entraînement** — courbes de perte en temps réel, PSNR/SSIM, TensorBoard, stats GPU live (pynvml)
-- **Analyse IA (🤖)** — envoyer le log + la config à un provider IA pour analyser l'entraînement et suggérer des réglages
-- **File d'entraînements** — planifier plusieurs sessions à la suite
-- **Entraînement distribué** — coordination multi-machines
+> Entraîner des modèles de super-résolution demande habituellement d'éditer des YAML à la main et de surveiller un terminal.
+> Universal SR Studio change ça — tout est visuel, tout est au même endroit.
 
-**Upscale**
-- **Quick Upscale** — subprocess batch persistant (modèle reste en VRAM), numérotation séquentielle pour réassemblage vidéo, skip frames dupliquées (MAE), Color Fix ATWT, fallback CUDA pour GPU Pascal
-- **30+ architectures** — ParagonSR (8 variants), ParagonSR2 (6 variants), AetherNet, FIGSR, GFISRv2, SMoSR, SPANpp, SRFormer/v2, FDAT, TFDAT, SpanF, SpanC, SpanPlus, MoESR/MoSR/MoSRv2, Temporal SPAN v2, et plus
+| | |
+|--|--|
+| 🎯 **Éditeur de config visuel** | TOML/YAML avec estimation VRAM live — savoir si le setup tient *avant* de lancer |
+| 📊 **Monitoring en temps réel** | Courbes de pertes, PSNR/SSIM, TensorBoard, stats GPU |
+| 🤖 **Analyse IA d'entraînement** | Envoyer le log à Claude/GPT-4o/Gemini/Nemotron et recevoir des suggestions de réglages en secondes |
+| ⚡ **30+ architectures** | ParagonSR, ParagonSR2, AetherNet, FIGSR, SPAN, SRFormer, FDAT, MoESR, et plus — un clic suffit |
+| 🎛 **Entraînement GAN** | Adaptive D anti-collapse, SparkLoss FD, PerceptualAnimeLoss — stable d'emblée |
+| ⚗ **Chaîne Post Processing** | 9 étapes : Temporal Fix neural, Undistort, Couleur, Resize, Netteté CAS, Deband, Renforcement lignes, Amincissement lignes, Edge Cleanup |
+| 🎨 **Générateur LQ** | ~30 dégradations, pipeline multi-passes probabiliste — données d'entraînement variées depuis une seule config |
+| 🚀 **Quick Upscale** | Batch de milliers de frames avec numérotation vidéo prête, skip doublons, Color Fix ATWT |
+| 📋 **File d'entraînements** | Enchaîner plusieurs jobs sans surveillance |
+| 🌐 **IA multi-providers** | OpenRouter, Nemotron, Claude, GPT-4o, Gemini — choisir le provider |
+| 🗂 **Outils dataset** | Découpeur de tuiles, convertisseur LMDB, rotation de validation |
+| 🎨 **20+ thèmes** | Sombre, clair, personnalisé — selon vos préférences |
+| 🌍 **Bilingue** | Interface entièrement en Français / Anglais |
 
-**Post Processing (⚗)**
-- Chaîne ordonnée : **Temporal Fix → Undistort → Correction couleur → Redimensionnement → Netteté → Deband → Renforcement lignes → Amincissement lignes → Edge Cleanup**
-- Temporal Fix neural (S1/S2/S3, pifroggi) et Undistort (TMT, xg416) avec backends PyTorch / OnnxRuntime / TensorRT
-- Modes sharpen CAS (AMD FidelityFX) et UnsharpMask
-- Modules line-art : Deband (style neo_f3kdb), Renforcement lignes (style Hysteria), Amincissement lignes (style aWarpSharp2), Edge Cleanup (style havsfunc)
-- Chaque étape : toggle enable + popup ⚙ de réglages, preview Avant/Après, log live
-
-**Dataset & Dégradation**
-- **Générateur LQ** — ~30 dégradations en 5 onglets (Basique · Couleur · Vidéo · Avancé · Pipeline) : flou, bruit, JPEG/H.264, postérisation, banding, chroma, aliasing, entrelacement, CRT, VHS, screentone, dithering, flou disque, vignette, pixel shift, grain, motion blur, halation, auto-crop…
-- **Pipeline probabiliste** (style wtp_dataset_destroyer) : N passes (1–5) + probabilité par dégradation → résultats variés sur tout un dataset
-- **Aperçu OTF** — prévisualisation live dans l'onglet Configuration
-- **Outils dataset** — découpeur de tuiles, rotation de validation, convertisseur LMDB
-
-**Assistant IA**
-- Multi-providers : OpenRouter (Nemotron, Claude, GPT-4o, Gemini…), modèles locaux
-- Analyse des logs d'entraînement assistée par IA
-
-**Autre**
-- **Suite de benchmarks** — 30+ benchmarks architectures/features automatisés avec reprise (SpanF, SpanC, GFISRv2, SMoSR, ECO mode, tests modèle perso)
-- **Outils modèles** — export (safetensors), packaging
-- **20+ thèmes** — UI personnalisable
-- **Interface bilingue** — Français / Anglais
+**Idéal pour :**
+- 🖼 Upscale anime / manga — post-processing adapté aux lignes, screentone et dithering
+- 📷 Restauration photo et vidéo — VHS, grain film, artefacts optiques, entrelacement
+- 🎬 Super-résolution vidéo — sortie frame-exact, cohérence temporelle, support architecture TSPAN
 
 ### Démarrage rapide — Portable (recommandé)
 
