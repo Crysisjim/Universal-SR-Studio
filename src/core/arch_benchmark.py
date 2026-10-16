@@ -19,7 +19,7 @@ Usage:
     --val-lq PATH          Override val LQ path
     --amp                  Enable mixed-precision (use_amp = true)
     --bf16                 Enable bfloat16
-    --output-dir PATH      Results directory (default: ~/IA_Engine/benchmark_results)
+    --output-dir PATH      Results directory (default: ~/USRS/benchmark_results)
     --keep-toml            Don't delete temp TOML files after run
     --no-upscale           Skip quick upscale test after each arch
     --enable-val           Enable val/PSNR (needs val_lq at same scale as archs)
@@ -36,9 +36,16 @@ import threading
 import subprocess
 import argparse
 from pathlib import Path
+
+# Racine moteur : ~/USRS (seul dossier généré/utilisé par l'app).
+try:
+    from src.core.engine_paths import base_engine_path as _ebp
+except ImportError:  # venv runner: engine_paths.py ships loose next to this file
+    from engine_paths import base_engine_path as _ebp
+_ENG_ROOT = Path(_ebp())
 from datetime import datetime
 
-_SHARED_VENV_PY = Path.home() / "IA_Engine" / "runtimes" / ".venv" / "Scripts" / "python.exe"
+_SHARED_VENV_PY = _ENG_ROOT / "runtimes" / ".venv" / "Scripts" / "python.exe"
 
 def _engine_python(engine_root: Path) -> Path:
     """v2.5.6: prefer shared runtimes/.venv, fall back to legacy per-engine .venv."""
@@ -46,11 +53,11 @@ def _engine_python(engine_root: Path) -> Path:
         return _SHARED_VENV_PY
     return engine_root / ".venv" / "Scripts" / "python.exe"
 
-NEOSR_PATH     = Path.home() / "IA_Engine" / "neosr"
+NEOSR_PATH     = _ENG_ROOT / "neosr"
 NEOSR_PYTHON   = _engine_python(NEOSR_PATH)
 TRAIN_SCRIPT   = NEOSR_PATH / "train.py"
 
-TRAINNER_PATH   = Path.home() / "IA_Engine" / "traiNNer-redux"
+TRAINNER_PATH   = _ENG_ROOT / "traiNNer-redux"
 TRAINNER_PYTHON = _engine_python(TRAINNER_PATH)
 
 _THIS_DIR = Path(__file__).parent
@@ -58,9 +65,9 @@ NEOSR_RUNNER         = _THIS_DIR / "neosr_runner.py"
 NEOSR_GENERAL_RUNNER = _THIS_DIR / "neosr_general_runner.py"
 UNIVERSAL_RUNNER     = _THIS_DIR / "universal_runner.py"
 
-DEFAULT_TRAIN_GT = str(Path.home() / "IA_Engine" / "datasets" / "train" / "HR")
-DEFAULT_VAL_GT   = str(Path.home() / "IA_Engine" / "datasets" / "val" / "GT")
-DEFAULT_VAL_LQ   = str(Path.home() / "IA_Engine" / "datasets" / "val" / "LQ")
+DEFAULT_TRAIN_GT = str(_ENG_ROOT / "datasets" / "train" / "HR")
+DEFAULT_VAL_GT   = str(_ENG_ROOT / "datasets" / "val" / "GT")
+DEFAULT_VAL_LQ   = str(_ENG_ROOT / "datasets" / "val" / "LQ")
 DEFAULT_TEST_IMG = ""  # Set via --train-gt or leave empty to skip upscale test
 
 # Precision modes for laptop (RTX) benchmark
@@ -1014,7 +1021,7 @@ def main():
     parser.add_argument("--bf16",       action="store_true",
                         help="(desktop override) force BF16 — ignored in laptop mode")
     parser.add_argument("--output-dir", type=str,
-                        default=str(Path.home() / "IA_Engine" / "benchmark_results"))
+                        default=str(_ENG_ROOT / "benchmark_results"))
     parser.add_argument("--keep-toml",  action="store_true")
     parser.add_argument("--no-upscale",  action="store_true")
     parser.add_argument("--enable-val",  action="store_true",
@@ -1024,7 +1031,15 @@ def main():
                         help="Laptop mode: 4 precision modes per arch (NORMAL, FP16, BF16, TF32)")
     parser.add_argument("--desktop", action="store_true",
                         help="Desktop mode: single NORMAL run per arch")
+    parser.add_argument("--list", action="store_true", help="List the archs and exit")
+    parser.add_argument("--modes", type=str, default="",
+                        help="Exact precision modes, e.g. normal,fp16 (overrides --laptop/--desktop)")
     args = parser.parse_args()
+    if args.list:
+        for _k in ARCHS_TO_TEST:
+            print(f"  {_k}")
+        print(f"\n{len(ARCHS_TO_TEST)} archs")
+        sys.exit(0)
 
     if not NEOSR_PYTHON.exists():
         print(f"[Benchmark] ERROR: neosr venv not found: {NEOSR_PYTHON}")
@@ -1039,8 +1054,16 @@ def main():
     test_image = Path(args.test_image)
 
     # Machine type selection (prompt if neither flag given)
-    machine = _ask_machine_type(args.laptop, args.desktop)
-    precision_modes = PRECISION_MODES if machine == "laptop" else DESKTOP_MODE
+    if args.modes:
+        _want = [m.strip().upper() for m in args.modes.split(",") if m.strip()]
+        precision_modes = [m for m in PRECISION_MODES if m["label"] in _want]
+        machine = "modes"
+    elif not args.laptop and not args.desktop and not sys.stdin.isatty():
+        # launched from the app: no terminal to answer the prompt
+        machine = "desktop"; precision_modes = DESKTOP_MODE
+    else:
+        machine = _ask_machine_type(args.laptop, args.desktop)
+        precision_modes = PRECISION_MODES if machine == "laptop" else DESKTOP_MODE
     # In desktop mode, --amp / --bf16 flags still override the single NORMAL mode
     if machine == "desktop":
         precision_modes = [{"label": "NORMAL", "use_amp": args.amp,

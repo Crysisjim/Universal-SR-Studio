@@ -19,6 +19,18 @@ except Exception:
     pass
 
 
+def _imwrite_u(path, arr):
+    """cv2.imwrite that also works with non-ASCII Windows paths (imencode + tofile)."""
+    import os as _os
+    import cv2 as _cv2
+    ext = _os.path.splitext(path)[1] or ".png"
+    ok, buf = _cv2.imencode(ext, arr)
+    if not ok:
+        return False
+    buf.tofile(path)
+    return True
+
+
 def _save_output(arr, path, out_format, bit_depth, quality):
     import numpy as np
     from PIL import Image
@@ -26,16 +38,10 @@ def _save_output(arr, path, out_format, bit_depth, quality):
     if bit_depth == 16 and out_format in ("PNG", "TIFF"):
         a16 = (arr.clip(0, 1) * 65535.0).round().astype(np.uint16)
         # PIL doesn't support uint16 RGB directly — use cv2 (always in venv)
-        try:
-            import cv2
-            bgr = a16[:, :, ::-1] if a16.ndim == 3 else a16  # RGB→BGR for cv2
-            cv2.imwrite(path, bgr)
-            return
-        except Exception:
-            pass
-        # Fallback: save as 8-bit if cv2 unavailable
-        a8 = (arr.clip(0, 1) * 255.0).round().astype(np.uint8)
-        Image.fromarray(a8).save(path)
+        import cv2
+        bgr = a16[:, :, ::-1] if a16.ndim == 3 else a16  # RGB→BGR for cv2
+        if not _imwrite_u(path, np.ascontiguousarray(bgr)):
+            raise RuntimeError(f"16-bit write failed: {path}")
         return
     a8 = (arr.clip(0, 1) * 255.0).round().astype(np.uint8)
     im = Image.fromarray(a8)
@@ -57,14 +63,8 @@ def main():
     bit_depth = int(sys.argv[5]) if len(sys.argv) > 5 else 8
     quality = int(sys.argv[6]) if len(sys.argv) > 6 else 95
 
-    try:
-        import onnxruntime as ort
-    except ImportError:
-        print("[ONNX] ERREUR : onnxruntime non installé dans le venv.", flush=True)
-        sys.exit(1)
-    import numpy as np
-    from PIL import Image
-
+    # torch BEFORE onnxruntime: onnxruntime-gpu then reuses the CUDA 12 / cuDNN 9 DLLs
+    # shipped with torch (no separate CUDA install needed).
     providers = []
     try:
         import torch
@@ -73,14 +73,32 @@ def main():
     except Exception:
         pass
     providers.append("CPUExecutionProvider")
+    try:
+        import onnxruntime as ort
+    except ImportError:
+        print("[ONNX] ERREUR : onnxruntime non installé dans le venv.", flush=True)
+        sys.exit(1)
+    try:
+        ort.set_default_logger_severity(4)  # native ORT log = UTF-16 text -> garbage in the UI log
+    except Exception:
+        pass
+    import numpy as np
+    from PIL import Image
 
     print("[ONNX] Chargement du modele...", flush=True)
     try:
-        sess = ort.InferenceSession(model_path, providers=providers)
+        so = ort.SessionOptions()
+        so.log_severity_level = 4
+        sess = ort.InferenceSession(model_path, so, providers=providers)
     except Exception as e:
         print(f"[ONNX] ERREUR chargement : {e}", flush=True)
         sys.exit(1)
     print(f"[ONNX] Providers actifs = {sess.get_providers()}", flush=True)
+    if "CUDAExecutionProvider" in providers and "CUDAExecutionProvider" not in sess.get_providers():
+        print(f"[ONNX] ⚠ GPU refusé par onnxruntime {ort.__version__} → calcul sur CPU (lent). "
+              "onnxruntime-gpu >= 1.27 est compilé pour CUDA 13 (incompatible avec PyTorch CUDA 12 "
+              "et les GPU Pascal) : Paramètres → « Installer / Réinstaller dépendances » remet la "
+              "bonne version.", flush=True)
 
     img = Image.open(input_path).convert("RGB")
     img_np = np.array(img).astype(np.float32) / 255.0

@@ -137,19 +137,6 @@ def test_api_connection(provider: str, api_key: str, model: str, timeout: int = 
                 "messages": [{"role": "user", "content": test_prompt}],
                 "max_tokens": 10,
             }
-        elif "GitHub" in provider:
-            url = "https://models.github.ai/inference/chat/completions"
-            headers = {
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-                "X-GitHub-Api-Version": "2022-11-28",
-                "Accept": "application/vnd.github+json",
-            }
-            payload = {
-                "model": model,
-                "messages": [{"role": "user", "content": test_prompt}],
-                "max_tokens": 10,
-            }
         elif "Anthropic" in provider:
             url = "https://api.anthropic.com/v1/messages"
             headers = {
@@ -193,6 +180,19 @@ def test_api_connection(provider: str, api_key: str, model: str, timeout: int = 
             }
         elif "DeepSeek" in provider:
             url = "https://api.deepseek.com/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            }
+            payload = {
+                "model": model,
+                "messages": [{"role": "user", "content": test_prompt}],
+                "max_tokens": 10,
+            }
+        elif "NVIDIA" in provider:
+            # Was missing entirely — fell through to "Provider inconnu" for every
+            # NVIDIA NIM test, and (per user report) crashed the app on top of that.
+            url = "https://integrate.api.nvidia.com/v1/chat/completions"
             headers = {
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",

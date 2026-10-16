@@ -1,3 +1,5 @@
+# FIGSR — enhancr, https://github.com/enhancr/figsr (MIT, see licenses/FIGSR-MIT.txt).
+# Registry hook added for traiNNer training; architecture code unchanged.
 import math
 from typing import Literal
 

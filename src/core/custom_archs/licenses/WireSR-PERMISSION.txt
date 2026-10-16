@@ -1,0 +1,17 @@
+WireSR — permission to include
+
+Author: CF2lter — source: the author's Google Drive (spandrel2.zip), model release
+"1x_Wired" (Enhance Everything! Discord).
+
+On 2026-10-16 the Universal SR Studio maintainer (Crysisjim) asked the author, in a
+Discord direct message, for permission to include the WireSR architecture code in
+this free, open-source application (inference + training), with clear credit and a
+link to the author's work. On 2026-10-26 the author answered: "Yeah sure, no
+problems".
+
+The upstream source still ships no LICENSE file. The code is redistributed here on
+the basis of that permission, with credit to CF2lter. If the author publishes a
+license, that license applies and this file will be updated.
+
+The 1x_Wired model weights are NOT bundled and stay under CC BY-NC-SA 4.0, as
+published by the author.

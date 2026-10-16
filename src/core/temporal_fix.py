@@ -133,6 +133,8 @@ class TemporalFixProcessor:
                            else torch.float32)
         else:
             self._dtype = None
+        if self._dtype is not None and self._device != "cuda":
+            self._dtype = torch.float32   # float16 is a CUDA-only option (A20)
 
         # Neural modes use fixed window=7
         if mode in _NEURAL_MODES:
@@ -143,7 +145,9 @@ class TemporalFixProcessor:
         self.window = window
         self.half   = window // 2
 
-        self._buf: deque   = deque()
+        self._buf: deque   = deque()      # the window being processed
+        self._frames: deque = deque()     # pushed frames still needed, from index _base
+        self._base         = 0
         self._n_pushed     = 0
         self._n_yielded    = 0
 
@@ -160,53 +164,49 @@ class TemporalFixProcessor:
 
     # ── Public API ────────────────────────────────────────────────────────────
 
-    def push(self, frame_np: np.ndarray) -> Optional[np.ndarray]:
-        if not _TORCH_AVAILABLE or self.strength <= 0.0:
-            return self._push_passthrough(frame_np)
+    # Output k is the frame k corrected with the window k-half .. k+half (edge frames
+    # replicated). Outputs come out in input order, `half` pushes late, so callers can
+    # pair them FIFO with the pushed paths. Before, the first output was the centre of
+    # the first full window (frame `half`) and got written over frame 0 (A23), and
+    # strength 0 reordered frames instead of passing them through (A24).
 
-        t = _np_to_tensor(frame_np, self._device, self._dtype)
-        self._buf.append(t)
-        self._n_pushed += 1
+    def _passthrough(self) -> bool:
+        return not _TORCH_AVAILABLE or self.strength <= 0.0
 
-        if len(self._buf) < self.window:
-            return None
-        while len(self._buf) > self.window:
-            self._buf.popleft()
-
-        if self.mode in _ORT_MODES:
-            result_t = self._process_centre_ort()
+    def _emit(self) -> np.ndarray:
+        c, last = self._n_yielded, self._n_pushed - 1
+        idx = [min(max(j, 0), last) - self._base for j in range(c - self.half, c + self.half + 1)]
+        self._buf = deque(self._frames[i] for i in idx)
+        if self._passthrough():
+            raw = self._buf[self.half]
+            out = _tensor_to_np(raw) if hasattr(raw, "cpu") else np.clip(raw, 0.0, 1.0)
+        elif self.mode in _ORT_MODES:
+            out = _tensor_to_np(self._process_centre_ort())
         elif self.mode in _PTH_MODES:
-            result_t = self._process_centre_pth()
+            out = _tensor_to_np(self._process_centre_pth())
         else:
-            result_t = self._process_centre_classic()
-
-        self._buf.popleft()
+            out = _tensor_to_np(self._process_centre_classic())
         self._n_yielded += 1
-        return _tensor_to_np(result_t)
+        while self._base < self._n_yielded - self.half:
+            self._frames.popleft(); self._base += 1
+        return out
+
+    def push(self, frame_np: np.ndarray) -> Optional[np.ndarray]:
+        self._frames.append(frame_np if self._passthrough()
+                            else _np_to_tensor(frame_np, self._device, self._dtype))
+        self._n_pushed += 1
+        if self._n_pushed - 1 >= self._n_yielded + self.half:
+            return self._emit()
+        return None
 
     def flush(self) -> Iterator[np.ndarray]:
-        if not self._buf:
-            return
-        last = self._buf[-1]
-        n_pending = len(self._buf)
-        for _ in range(n_pending):
-            while len(self._buf) < self.window:
-                self._buf.append(last)
-            if not _TORCH_AVAILABLE or self.strength <= 0.0:
-                raw = self._buf[0]
-                yield (_tensor_to_np(raw)
-                       if hasattr(raw, "cpu")   # torch tensor; numpy also has .squeeze()
-                       else np.clip(raw, 0.0, 1.0))
-            elif self.mode in _ORT_MODES:
-                yield _tensor_to_np(self._process_centre_ort())
-            elif self.mode in _PTH_MODES:
-                yield _tensor_to_np(self._process_centre_pth())
-            else:
-                yield _tensor_to_np(self._process_centre_classic())
-            self._buf.popleft()
+        while self._n_yielded < self._n_pushed:
+            yield self._emit()
 
     def reset(self) -> None:
         self._buf.clear()
+        self._frames.clear()
+        self._base = 0
         self._n_pushed = 0
         self._n_yielded = 0
 
@@ -215,19 +215,6 @@ class TemporalFixProcessor:
         return self.half
 
     # ── Classic ───────────────────────────────────────────────────────────────
-
-    def _push_passthrough(self, frame_np: np.ndarray) -> Optional[np.ndarray]:
-        self._buf.append(frame_np)
-        self._n_pushed += 1
-        if len(self._buf) > self.window:
-            oldest = self._buf.popleft()
-            self._n_yielded += 1
-            return oldest
-        if len(self._buf) == self.window:
-            centre = self._buf[self.half]
-            self._n_yielded += 1
-            return centre
-        return None
 
     def _process_centre_classic(self) -> "torch.Tensor":
         frames  = list(self._buf)[:self.window]
@@ -267,6 +254,8 @@ class TemporalFixProcessor:
         if use_fp16:
             model.half()
         model.to(self._device)
+        # the input follows the model: float16 only where the model really is half (A20)
+        self._pth_dtype    = torch.float16 if use_fp16 else torch.float32
         self._pth_model    = model
         self._pth_model_hw = (h, w)
 
@@ -280,7 +269,7 @@ class TemporalFixProcessor:
         centre = frames[3].to(torch.float32)
         with torch.inference_mode():
             corrected = self._pth_model(
-                stack.to(self._device, dtype=self._dtype)
+                stack.to(self._device, dtype=self._pth_dtype)
             ).to(torch.float32)
 
         if self.strength < 1.0:

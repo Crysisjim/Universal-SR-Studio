@@ -97,6 +97,15 @@ class PostProcSession:
             raise RuntimeError("Post-proc worker closed stdout unexpectedly")
         return json.loads(resp.strip())
 
+    def set_quality(self, quality: int) -> None:
+        """JPEG/WEBP quality used when the worker rewrites frames."""
+        self._send({"cmd": "save_opts", "quality": int(quality)})
+
+    def chain_ud_tf(self, on: bool = True) -> None:
+        """Undistort output feeds Temporal Fix: push_ud/flush_ud forward each written
+        frame to TF, so the caller pushes to UD only, then flushes UD before TF."""
+        self._send({"cmd": "chain", "on": bool(on)})
+
     # ── TemporalFix ───────────────────────────────────────────────────────────
 
     def init_tf(self, mode: str = "classic", strength: float = 0.5,

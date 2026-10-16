@@ -1,30 +1,37 @@
-# ─── Universal SR Studio — Python dependencies ────────────────────────────────
-# Install: pip install -r requirements.txt
+# ─── Universal SR Studio — Python dependencies (GUI) ──────────────────────────
+# Install: pip install -r requirements.txt   then run: python main_qt.py
 #
 # Notes:
-#   - Python 3.11+ recommended (tomllib built-in, no `toml` fallback needed)
-#   - torch/torchvision NOT listed here: install from https://pytorch.org/
-#     matching your CUDA version BEFORE running the training engines.
+#   - Python 3.11+ (tomllib built-in).
+#   - These are the GUI's own dependencies. The training engines (traiNNer-redux /
+#     NeoSR), PyTorch CUDA and their dependencies are installed by the app itself
+#     into ~/USRS/runtimes/.venv from the ⚙️ Settings tab — nothing to install by hand.
 
 # ─── GUI ──────────────────────────────────────────────────────────────────────
-customtkinter>=5.2.0
+PySide6>=6.7
 
 # ─── Image processing ────────────────────────────────────────────────────────
 Pillow>=10.0.0
 numpy>=1.24.0
+scipy>=1.10           # live OTF degradation preview, line filters
+pyvips>=2.2.3         # 16-bit image I/O (Quick Upscale video pipeline)
+pyvips-binary>=8.16.0
+pepedpid>=0.1.2       # DPID downscale (LQ Generator)
+pepeline>=0.1.0       # pepedpid's array I/O dependency
 
 # ─── Config file parsing ──────────────────────────────────────────────────────
 PyYAML>=6.0
-toml>=0.10.2          # fallback for Python < 3.11 (tomllib built-in since 3.11)
-tomli-w>=1.0.0        # writing TOML files
+toml>=0.10.2
+tomli-w>=1.0.0        # writing TOML (Assistant; falls back to `toml` if missing)
 
 # ─── System monitoring ────────────────────────────────────────────────────────
 psutil>=5.9.0
-nvidia-ml-py>=12.0.0  # GPU stats (NVIDIA only) — drop-in replacement pour pynvml
+nvidia-ml-py>=12.0.0  # GPU stats (NVIDIA only)
 
-# ─── Extra features (notifications, model export, QR gallery, LMDB) ─────────
-win11toast>=0.9       # Windows 11 toast notifications
-safetensors>=0.4.0    # Model export (.safetensors format)
-comtypes>=1.2.0       # Windows taskbar progress bar
-qrcode[pil]>=7.4      # QR code generation for remote gallery
-lmdb>=1.4.0           # LMDB dataset support
+# ─── Extra features ───────────────────────────────────────────────────────────
+win11toast>=0.9       # Windows notifications
+safetensors>=0.4.0    # model files without torch (Model Info, converter headers)
+comtypes>=1.2.0       # Windows taskbar progress
+qrcode[pil]>=7.4      # QR code for the remote gallery
+lmdb>=1.4.0           # LMDB dataset tool
+imageio-ffmpeg>=0.5.0 # portable ffmpeg (video features) — optional if ffmpeg is on PATH

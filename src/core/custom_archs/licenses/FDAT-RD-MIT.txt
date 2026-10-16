@@ -1,0 +1,6 @@
+Supposed MIT License
+
+Author: stinkybread — source: https://github.com/stinkybread/FDAT-RD.
+The upstream source does not ship a LICENSE file yet. It is included in Universal SR
+Studio as supposed MIT, as stated to the maintainer. If the author publishes a
+different license, that license applies and this file will be updated.

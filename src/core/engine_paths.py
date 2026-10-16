@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-engine_paths.py — Single source of truth for all IA_Engine paths.
+engine_paths.py — Single source of truth for all USRS engine paths.
 
 v2.5.6 refactor: one SHARED virtual-env (``runtimes/.venv``) replaces the two
 per-engine ``.venv`` folders (``neosr/.venv`` + ``traiNNer-redux/.venv``).
@@ -11,7 +11,7 @@ the user re-runs the installer. NOTHING is deleted.
 
 Layout (target)::
 
-    ~/IA_Engine/
+    ~/USRS/
         runtimes/
             python-3.12.x/        # portable CPython 3.12 (neosr requires 3.12)
             .venv/                # ONE shared venv for BOTH engines
@@ -51,7 +51,29 @@ def user_home() -> str:
 
 
 def base_engine_path() -> str:
-    return os.path.join(user_home(), "IA_Engine")
+    # "USRS" is the only engine folder the app uses/generates now (the old
+    # "IA_Engine" name confused English-speaking users). Nothing is ever
+    # deleted or migrated automatically — existing "IA_Engine" installs are
+    # simply left untouched on disk, unused by the app going forward.
+    #
+    # === Dev isolation ===
+    # Public builds use ~/USRS. On the developer's machine the stable copy's live
+    # training lives in ~/USRS and must never be touched by dev builds, so a dev
+    # root ~/USRS-EXPERIMENTAL is used instead — but ONLY when it carries the
+    # marker file below (created by hand on that machine, never shipped). Every
+    # runner and tool resolves the engine root through this function.
+    # USRS_EXPERIMENTAL_ROOT (env var) overrides both.
+    override = os.environ.get("USRS_EXPERIMENTAL_ROOT")
+    if override:
+        return override
+    dev_root = os.path.join(user_home(), "USRS-EXPERIMENTAL")
+    if os.path.isfile(os.path.join(dev_root, DEV_ISOLATION_MARKER)):
+        return dev_root
+    return os.path.join(user_home(), "USRS")
+
+
+#: File whose presence in ~/USRS-EXPERIMENTAL routes the app to that dev root.
+DEV_ISOLATION_MARKER = ".usrs_dev_isolation"
 
 
 def runtimes_path() -> str:
@@ -133,10 +155,17 @@ def any_engine_python() -> str:
 
 
 # ── traiNNer-redux engine branch ──────────────────────────────────────────────
-# v2.5.6: track the official *dev* branch — it ships ECO (EcoOptions /
-# network_g_teacher), spanf3 and srformerv2 natively, removing the need for our
-# old custom ECO injection.
+# v2.6: track *master*. Since mid-2026 master is ahead of dev: it merged the dev work we
+# relied on (ECO, spanf3, srformerv2) plus HEART/NERVE archs, >8bpc training and
+# OOM/checkpoint fixes. The only dev-only commit is the Python 3.14 / newer-torch
+# migration, which our Python 3.12 + torch 2.7 runtime must not pick up.
 REDUX_GIT_URL = "https://github.com/the-database/traiNNer-redux"
-REDUX_GIT_BRANCH = "dev"
-NEOSR_GIT_URL = "https://github.com/muslll/neosr"
+REDUX_GIT_BRANCH = "master"
+# Exact master commit this release is tested against (2026-10-03, HEART/NERVE merge).
+# master moved on 2026-10-09 to a Python 3.14 / torch>=2.14 migration that our
+# Python 3.12 runtime must not pick up: installs/updates check this commit out.
+# Set to "" to follow the branch head again.
+REDUX_GIT_PIN = "3db1bf5b5ac6a79e95ed92e9611d26b9a2397666"
+NEOSR_GIT_PIN = ""
+NEOSR_GIT_URL = "https://github.com/neosr-project/neosr"  # moved from muslll/neosr
 NEOSR_GIT_BRANCH = "master"

@@ -16,7 +16,7 @@ Usage:
                            gan/augmentation/precision/system)
     --tests baseline,loss_mse  Tests nommés seulement (virgule)
     --no-upscale           Passer le test upscale
-    --output-dir PATH      Dossier résultats (défaut : ~/IA_Engine/benchmark_results/feature_bench)
+    --output-dir PATH      Dossier résultats (défaut : ~/USRS/benchmark_results/feature_bench)
     --train-gt PATH        Dataset training GT
     --keep-toml            Conserver les TOML temporaires
     --list                 Lister tous les tests disponibles et quitter
@@ -30,11 +30,28 @@ import threading
 import subprocess
 import argparse
 from pathlib import Path
+
+# Encodage UTF-8 (consoles cp1252 sur Windows — sans ça, tout print() contenant un
+# accent ou "→" plante en UnicodeEncodeError, ex. le message "Pascal détecté →
+# ..." dans main()). Les 3 autres scripts de benchmark (arch_benchmark.py,
+# redux_arch_benchmark.py, redux_feature_benchmark.py) ont ce reconfigure ;
+# celui-ci ne l'avait jamais eu (2026-09-17 fix).
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+# Racine moteur : ~/USRS (seul dossier généré/utilisé par l'app).
+try:
+    from src.core.engine_paths import base_engine_path as _ebp
+except ImportError:  # venv runner: engine_paths.py ships loose next to this file
+    from engine_paths import base_engine_path as _ebp
+_ENG_ROOT = Path(_ebp())
 from datetime import datetime
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
-_SHARED_VENV_PY = Path.home() / "IA_Engine" / "runtimes" / ".venv" / "Scripts" / "python.exe"
-NEOSR_PATH   = Path.home() / "IA_Engine" / "neosr"
+_SHARED_VENV_PY = _ENG_ROOT / "runtimes" / ".venv" / "Scripts" / "python.exe"
+NEOSR_PATH   = _ENG_ROOT / "neosr"
 # v2.5.6: prefer shared runtimes/.venv, fall back to legacy per-engine .venv.
 NEOSR_PYTHON = _SHARED_VENV_PY if _SHARED_VENV_PY.exists() else (NEOSR_PATH / ".venv" / "Scripts" / "python.exe")
 TRAIN_SCRIPT = NEOSR_PATH / "train.py"
@@ -42,9 +59,9 @@ TRAIN_SCRIPT = NEOSR_PATH / "train.py"
 _THIS_DIR            = Path(__file__).parent
 NEOSR_GENERAL_RUNNER = _THIS_DIR / "neosr_general_runner.py"
 
-DEFAULT_TRAIN_GT = str(Path.home() / "IA_Engine" / "datasets" / "train" / "HR")
-DEFAULT_VAL_GT   = str(Path.home() / "IA_Engine" / "datasets" / "val" / "GT")
-DEFAULT_VAL_LQ   = str(Path.home() / "IA_Engine" / "datasets" / "val" / "LQ")
+DEFAULT_TRAIN_GT = str(_ENG_ROOT / "datasets" / "train" / "HR")
+DEFAULT_VAL_GT   = str(_ENG_ROOT / "datasets" / "val" / "GT")
+DEFAULT_VAL_LQ   = str(_ENG_ROOT / "datasets" / "val" / "LQ")
 DEFAULT_TEST_IMG = ""  # Set via --train-gt or leave empty to skip upscale test
 
 # ── compact network_g (base arch for all tests) ────────────────────────────────
@@ -1031,7 +1048,7 @@ def main():
 
     # Output dir
     output_dir = Path(args.output_dir) if args.output_dir else (
-        Path.home() / "IA_Engine" / "benchmark_results" / "feature_bench")
+        _ENG_ROOT / "benchmark_results" / "feature_bench")
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Filter tests

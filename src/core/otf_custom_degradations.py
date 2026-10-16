@@ -28,7 +28,9 @@ DO NOT EDIT — regenerated each training launch.
 
 Custom degradations: banding, posterize, chroma subsampling,
 chromatic aberration, halation, salt & pepper, VHS/analog,
-aliasing, interlacing, film grain, oversharpening, scanlines.
+aliasing, interlacing, film grain, oversharpening, scanlines,
+screentone (rotation/shape/color-space), dithering (ordered/random),
+configurable chroma subsampling (format + YUV matrix).
 """
 import torch
 import torch.nn.functional as F
@@ -44,11 +46,40 @@ def apply_posterize(tensor: torch.Tensor, bits: int) -> torch.Tensor:
 
 
 def apply_banding(tensor: torch.Tensor, levels: int) -> torch.Tensor:
-    """Palette quantization — creates banding in smooth gradients. BCHW [0,1]."""
+    """Quantize each channel to `levels` levels — banding in smooth gradients. BCHW [0,1].
+    `levels` is the per-channel level count (16 = strong, 64 = subtle, 128+ = very light).
+    The old formula took levels ** (1/3), so a [32, 64] range gave 3-4 levels per channel
+    (a 30-colour image), far stronger than what the setting promised."""
     if levels >= 256:
         return tensor
-    per_channel = max(2, int(round(levels ** (1.0 / 3.0))))
+    per_channel = max(2, int(levels))
     return (torch.round(tensor * (per_channel - 1)) / (per_channel - 1)).clamp(0.0, 1.0)
+
+
+def apply_smooth_banding(tensor: torch.Tensor, levels: int, linear: bool) -> torch.Tensor:
+    """Codec-style banding restricted to flat areas (gradients, skies, shading).
+    Quantizes the luma only (chroma kept, like an encoder), and only where the local
+    gradient is small, so lines and textures are untouched. With linear=True the
+    quantization happens in linear light, which makes the steps larger in dark tones
+    (the typical 'dark gradient' banding of Blu-ray/web encodes)."""
+    B, C, H, W = tensor.shape
+    if C != 3 or levels >= 1024:
+        return tensor
+    y = 0.299 * tensor[:, 0:1] + 0.587 * tensor[:, 1:2] + 0.114 * tensor[:, 2:3]
+    gx = F.pad((y[:, :, :, 1:] - y[:, :, :, :-1]).abs(), (0, 1, 0, 0))
+    gy = F.pad((y[:, :, 1:, :] - y[:, :, :-1, :]).abs(), (0, 0, 0, 1))
+    g = F.avg_pool2d(gx + gy, 7, stride=1, padding=3, count_include_pad=False)
+    # flat (mask 1) below ~1/255 mean gradient, untouched above ~3/255
+    mask = ((0.012 - g) / 0.008).clamp(0.0, 1.0)
+    lv = float(max(2, int(levels)))
+    if linear:
+        lin = y.clamp(0.0, 1.0) ** 2.2
+        yq = (torch.round(lin * lv) / lv).clamp(0.0, 1.0) ** (1.0 / 2.2)
+    else:
+        yq = torch.round(y * lv) / lv
+    # linear light explodes the steps near pure black: cap at ±4/255 (real encode banding)
+    dq = (yq - y).clamp(-4.0 / 255.0, 4.0 / 255.0)
+    return (tensor + dq * mask).clamp(0.0, 1.0)
 
 
 def apply_chroma_subsampling(tensor: torch.Tensor) -> torch.Tensor:
@@ -73,8 +104,8 @@ def apply_chromatic_aberration(tensor: torch.Tensor, shift: int) -> torch.Tensor
     if tensor.shape[1] < 3 or shift == 0:
         return tensor
     result = tensor.clone()
-    result[:, 0] = torch.roll(tensor[:, 0],  shift, dims=3)
-    result[:, 2] = torch.roll(tensor[:, 2], -shift, dims=3)
+    result[:, 0] = torch.roll(tensor[:, 0],  shift, dims=2)
+    result[:, 2] = torch.roll(tensor[:, 2], -shift, dims=2)
     return result.clamp(0.0, 1.0)
 
 
@@ -100,8 +131,8 @@ def apply_vhs(tensor: torch.Tensor, strength: float) -> torch.Tensor:
     B, C, H, W = tensor.shape
     shift = max(1, int(W * 0.015 * strength))
     result = tensor.clone()
-    result[:, 1] = torch.roll(tensor[:, 1], shift,     dims=3)
-    result[:, 2] = torch.roll(tensor[:, 2], shift * 2, dims=3)
+    result[:, 1] = torch.roll(tensor[:, 1], shift,     dims=2)
+    result[:, 2] = torch.roll(tensor[:, 2], shift * 2, dims=2)
     dropout_prob = strength * 0.25
     line_mask = (torch.rand(B, 1, H, 1, device=tensor.device, dtype=tensor.dtype)
                  > (1.0 - dropout_prob)).float()
@@ -188,17 +219,185 @@ def apply_scanlines(tensor: torch.Tensor, spacing: int, strength: float) -> torc
 
 # ─── Custom 3 — Torch implementations ────────────────────────────────────────
 
-def apply_screentone_t(tensor: torch.Tensor, dot_size: int) -> torch.Tensor:
-    """Halftone screentone: luma-based dot mask. dot_size = cell size in px."""
+def apply_screentone_t(tensor: torch.Tensor, dot_size: int, angle_deg: float = 0.0,
+                       dot_type: str = "circle", color_space: str = "rgb") -> torch.Tensor:
+    """Halftone screentone: luma-based dot mask, rotated grid, selectable dot shape.
+    dot_size = cell size in px. dot_type: circle/ellipse/square/cross.
+    color_space is accepted for parity with the preview (which also treats
+    gray == rgb for this effect — the mask darkens all channels either way)."""
     B, C, H, W = tensor.shape
     ds = max(2, int(dot_size))
     luma = (0.299 * tensor[:, 0:1] + 0.587 * tensor[:, 1:2] + 0.114 * tensor[:, 2:3])
-    cy = (torch.arange(H, device=tensor.device, dtype=tensor.dtype) % ds) / ds - 0.5
-    cx = (torch.arange(W, device=tensor.device, dtype=tensor.dtype) % ds) / ds - 0.5
-    dist = (cx.unsqueeze(0) ** 2 + cy.unsqueeze(1) ** 2).sqrt()  # (H, W)
+    theta = float(angle_deg) * 3.14159265 / 180.0
+    cos_a = torch.cos(torch.tensor(theta, device=tensor.device, dtype=tensor.dtype))
+    sin_a = torch.sin(torch.tensor(theta, device=tensor.device, dtype=tensor.dtype))
+    ys = torch.arange(H, device=tensor.device, dtype=tensor.dtype).view(H, 1)
+    xs = torch.arange(W, device=tensor.device, dtype=tensor.dtype).view(1, W)
+    xr = xs * cos_a + ys * sin_a
+    yr = -xs * sin_a + ys * cos_a
+    cx = (xr % ds) / ds - 0.5
+    cy = (yr % ds) / ds - 0.5
+    if dot_type == "square":
+        dist = torch.maximum(cx.abs(), cy.abs())
+    elif dot_type == "cross":
+        dist = torch.minimum(cx.abs(), cy.abs())
+    else:  # circle / ellipse
+        dist = (cx ** 2 + cy ** 2).sqrt()
     radius = (1.0 - luma) * 0.46  # (B, 1, H, W)
-    mask = (dist.unsqueeze(0).unsqueeze(0) < radius).float()
+    mask = (dist.view(1, 1, H, W) < radius).float()
     return (tensor * (1.0 - mask)).clamp(0.0, 1.0)
+
+
+def apply_dithering_t(tensor: torch.Tensor, n_colors: int, dither_type: str = "ordered") -> torch.Tensor:
+    """Color-depth reduction with dithering, fully GPU-vectorized.
+
+    True per-pixel error-diffusion (Floyd-Steinberg/Jarvis-Judice/Stucki/Atkinson)
+    is inherently sequential (each pixel depends on already-diffused neighbours) —
+    too slow to run every batch in the training hot path. 'ordered' uses a real
+    tiled 4x4 Bayer matrix (genuinely faithful, GPU-native). 'quantize' is a plain
+    posterize-style rounding, no dithering. The 4 error-diffusion names fall back
+    to fast per-pixel random-threshold dithering — visually similar grainy texture
+    to diffusion dithering, not the exact same kernel.
+    """
+    B, C, H, W = tensor.shape
+    levels = max(2, int(n_colors))
+    step = 1.0 / (levels - 1)
+    if dither_type == "quantize":
+        thresh = 0.0
+    elif dither_type == "ordered":
+        bayer = torch.tensor([[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]],
+                             device=tensor.device, dtype=tensor.dtype) / 16.0 - 0.5
+        reps_h, reps_w = (H + 3) // 4, (W + 3) // 4
+        tiled = bayer.repeat(reps_h, reps_w)[:H, :W]
+        thresh = tiled.view(1, 1, H, W) * step
+    else:  # floyd_steinberg / jarvis_judice / stucki / atkinson (approximated)
+        thresh = (torch.rand(B, 1, H, W, device=tensor.device, dtype=tensor.dtype) - 0.5) * step
+    return (torch.round((tensor + thresh) / step) * step).clamp(0.0, 1.0)
+
+
+_YUV_MATRICES = {"601": (0.299, 0.587, 0.114), "709": (0.2126, 0.7152, 0.0722),
+                 "2020": (0.2627, 0.6780, 0.0593)}
+
+
+def apply_subsampling_t(tensor: torch.Tensor, subsampling_format: str = "4:2:0",
+                        yuv_matrix: str = "601") -> torch.Tensor:
+    """Configurable chroma subsampling (4:4:4/4:2:2/4:2:0/4:1:1) with selectable
+    YUV matrix (BT.601/709/2020) — distinct from the fixed 4:2:0/BT.601-only
+    apply_chroma_subsampling above (that one is driven by chroma_prob)."""
+    B, C, H, W = tensor.shape
+    if C != 3:
+        return tensor
+    kr, kg, kb = _YUV_MATRICES.get(str(yuv_matrix), _YUV_MATRICES["601"])
+    fmt_map = {"4:4:4": (1, 1), "4:2:2": (2, 1), "4:2:0": (2, 2), "4:1:1": (4, 1)}
+    fw, fh = fmt_map.get(str(subsampling_format), (2, 2))
+    if fw == 1 and fh == 1:
+        return tensor
+    R, G, Bc = tensor[:, 0:1], tensor[:, 1:2], tensor[:, 2:3]
+    Y = kr * R + kg * G + kb * Bc
+    Cb = (Bc - Y) / (2 * (1 - kb)) + 0.5
+    Cr = (R - Y) / (2 * (1 - kr)) + 0.5
+
+    def _sub(ch):
+        small = F.avg_pool2d(ch, kernel_size=(fh, fw), stride=(fh, fw))
+        return F.interpolate(small, size=(H, W), mode="nearest")
+
+    cb_u, cr_u = _sub(Cb) - 0.5, _sub(Cr) - 0.5
+    r2 = Y + 2 * (1 - kr) * cr_u
+    b2 = Y + 2 * (1 - kb) * cb_u
+    g2 = (Y - kr * r2 - kb * b2) / max(kg, 1e-6)
+    return torch.cat([r2, g2, b2], dim=1).clamp(0.0, 1.0)
+
+
+_DCT_MATRIX_CACHE = {}
+
+
+def _dct_matrix(n: int, device, dtype):
+    """Orthonormal DCT-II basis matrix, size n×n. C[k,i] = alpha(k)*cos(pi/n*(i+0.5)*k).
+    2D forward: Y = C @ X @ C.T. Inverse (C orthonormal, C^-1 = C.T): X = C.T @ Y @ C."""
+    key = (n, str(device), dtype)
+    if key in _DCT_MATRIX_CACHE:
+        return _DCT_MATRIX_CACHE[key]
+    i = torch.arange(n, device=device, dtype=dtype).view(1, -1)
+    k = torch.arange(n, device=device, dtype=dtype).view(-1, 1)
+    C = torch.cos(3.14159265358979 / n * (i + 0.5) * k)
+    alpha = torch.full((n, 1), (2.0 / n) ** 0.5, device=device, dtype=dtype)
+    alpha[0, 0] = (1.0 / n) ** 0.5
+    C = C * alpha
+    _DCT_MATRIX_CACHE[key] = C
+    return C
+
+
+def _radial_quant_table(n: int, quality: float, device, dtype):
+    """Monotonically-increasing-with-radial-distance quantisation table, size n×n.
+    Q(u,v) = max(1, round((1 + slope*r) * jpeg_style_scale(quality) / 100)), r = sqrt(u^2+v^2).
+    Unlike the standard JPEG table (separate, direction-biased, fixed by the 1992
+    psychovisual study), this depends only on distance from the DC coefficient —
+    our own design, inspired by ArtCNN v1.6.2's changelog description
+    ("custom 4x4 DCT blocks with a monotonically increasing radial base
+    quantisation table"), not a verified port (technique was never published)."""
+    q = max(1.0, min(100.0, float(quality)))
+    scale = 5000.0 / q if q < 50 else 200.0 - 2.0 * q
+    scale = max(1.0, scale)
+    u = torch.arange(n, device=device, dtype=dtype).view(1, -1)
+    v = torch.arange(n, device=device, dtype=dtype).view(-1, 1)
+    r = torch.sqrt(u * u + v * v)
+    slope = 1.0  # linear radial falloff, DC (r=0) always quantised gentlest
+    table = torch.round((1.0 + slope * r) * scale / 100.0).clamp(min=1.0)
+    return table
+
+
+def apply_dct_block_degrade_t(tensor: torch.Tensor, block_size: int = 4, quality: float = 50.0,
+                              chroma_scale: float = 2.0, yuv_matrix: str = "601") -> torch.Tensor:
+    """Codec-style block-transform degradation: split into block_size×block_size
+    blocks, 2D DCT-II, quantise with a radial table (see _radial_quant_table),
+    dequantise, inverse DCT. Applied in YCbCr with a coarser table on chroma
+    (standard codec convention). tensor: BCHW float32 [0,1], C=3 (RGB).
+    Our own implementation of the technique ArtCNN v1.6.2's changelog describes
+    (4x4 blocks instead of JPEG's 8x8, radial instead of the JPEG table) — see
+    module docstring / _radial_quant_table for the "not a verified port" caveat."""
+    B, C, H, W = tensor.shape
+    if C != 3:
+        return tensor
+    n = max(2, int(block_size))
+    device, dtype = tensor.device, tensor.dtype
+
+    kr, kg, kb = _YUV_MATRICES.get(str(yuv_matrix), _YUV_MATRICES["601"])
+    R, G, Bc = tensor[:, 0:1], tensor[:, 1:2], tensor[:, 2:3]
+    Y = kr * R + kg * G + kb * Bc
+    Cb = (Bc - Y) / (2 * (1 - kb)) + 0.5
+    Cr = (R - Y) / (2 * (1 - kr)) + 0.5
+
+    pad_h = (n - H % n) % n
+    pad_w = (n - W % n) % n
+    Cmat = _dct_matrix(n, device, dtype)
+    Ct = Cmat.t()
+    q_luma = _radial_quant_table(n, quality, device, dtype)
+    q_chroma = (q_luma * max(1.0, float(chroma_scale))).clamp(min=1.0)
+
+    def _block_transform(plane, q_table):
+        p = F.pad(plane, (0, pad_w, 0, pad_h), mode="replicate") if (pad_h or pad_w) else plane
+        Hp, Wp = p.shape[-2], p.shape[-1]
+        # Quantisation tables below are calibrated against 8-bit pixel range
+        # (standard JPEG/codec convention: a quant step of 1 = 1 unit out of
+        # 255, not out of 1.0) — scale to 0-255 before the DCT, back to [0,1]
+        # after, or a step of 1 would round away nearly all signal.
+        p = p * 255.0
+        # [B,1,Hp,Wp] -> [B*nb, n, n] non-overlapping blocks.
+        blocks = p.view(B, 1, Hp // n, n, Wp // n, n).permute(0, 1, 2, 4, 3, 5).reshape(-1, n, n)
+        coeff = Cmat.unsqueeze(0) @ blocks @ Ct.unsqueeze(0)
+        coeff = torch.round(coeff / q_table.unsqueeze(0)) * q_table.unsqueeze(0)
+        rec = Ct.unsqueeze(0) @ coeff @ Cmat.unsqueeze(0)
+        rec = rec.view(B, 1, Hp // n, Wp // n, n, n).permute(0, 1, 2, 4, 3, 5).reshape(B, 1, Hp, Wp)
+        return (rec[:, :, :H, :W]) / 255.0
+
+    Y2 = _block_transform(Y, q_luma)
+    Cb2 = _block_transform(Cb, q_chroma) - 0.5
+    Cr2 = _block_transform(Cr, q_chroma) - 0.5
+
+    r2 = Y2 + 2 * (1 - kr) * Cr2
+    b2 = Y2 + 2 * (1 - kb) * Cb2
+    g2 = (Y2 - kr * r2 - kb * b2) / max(kg, 1e-6)
+    return torch.cat([r2, g2, b2], dim=1).clamp(0.0, 1.0)
 
 
 def apply_pixelate_t(tensor: torch.Tensor, block_size: int) -> torch.Tensor:
@@ -283,8 +482,9 @@ def apply_vignette(tensor: torch.Tensor, strength: float, radius: float) -> torc
 
 def apply_quantize_depth(tensor: torch.Tensor, bits: int) -> torch.Tensor:
     """Uniform sub-8-bit depth quantization (even steps, not per-channel rounding)."""
-    levels = float(2 ** max(1, int(bits)))
-    return (torch.floor(tensor * levels) / levels).clamp(0.0, 1.0)
+    # round (not floor): floor shifted the whole image down by half a step (darker LQ)
+    levels = float(2 ** max(1, int(bits)) - 1)
+    return (torch.round(tensor * levels) / levels).clamp(0.0, 1.0)
 
 
 def custom_degrade(lq_tensor: torch.Tensor, opt: dict) -> torch.Tensor:
@@ -306,6 +506,14 @@ def custom_degrade(lq_tensor: torch.Tensor, opt: dict) -> torch.Tensor:
     if _p("banding_prob") > 0 and random.random() < _p("banding_prob"):
         lo, hi = _rng("banding_levels_range", [16, 64])
         lq_tensor = apply_banding(lq_tensor, random.randint(int(lo), int(hi)))
+
+    if _p("smooth_banding_prob") > 0 and random.random() < _p("smooth_banding_prob"):
+        lo, hi = _rng("smooth_banding_levels_range", [48, 128])
+        lin_p = float(opt.get("smooth_banding_dark_prob", 0.5))
+        linear = random.random() < lin_p
+        lv = random.randint(int(lo), int(hi))
+        # linear-light levels must be ~6x higher for comparable mid-tone steps
+        lq_tensor = apply_smooth_banding(lq_tensor, lv * 6 if linear else lv, linear)
 
     if _p("chroma_prob") > 0 and random.random() < _p("chroma_prob"):
         lq_tensor = apply_chroma_subsampling(lq_tensor)
@@ -363,7 +571,11 @@ def custom_degrade(lq_tensor: torch.Tensor, opt: dict) -> torch.Tensor:
     # ── Custom 3 ──────────────────────────────────────────────────────────────
     if _p("screentone_prob") > 0 and random.random() < _p("screentone_prob"):
         lo, hi = _rng("screentone_dot_size", [7, 15])
-        lq_tensor = apply_screentone_t(lq_tensor, random.randint(int(lo), int(hi)))
+        lo_a, hi_a = _rng("screentone_angle", [0, 90])
+        dtp = opt.get("screentone_dot_type", "circle")
+        csp = opt.get("screentone_color_space", "rgb")
+        lq_tensor = apply_screentone_t(lq_tensor, random.randint(int(lo), int(hi)),
+                                       random.uniform(lo_a, hi_a), dtp, csp)
 
     if _p("pixelate_prob") > 0 and random.random() < _p("pixelate_prob"):
         lo, hi = _rng("pixelate_size", [2, 16])
@@ -381,8 +593,27 @@ def custom_degrade(lq_tensor: torch.Tensor, opt: dict) -> torch.Tensor:
                                        random.uniform(lo_b, hi_b) * 3.14159,
                                        vert)
 
-    # dithering: complex sequential algo → skip GPU impl; preview-only via PIL.
-    # subsampling_wtp: covered by chroma_subsampling; skip duplicate torch impl.
+    if _p("dithering_prob") > 0 and random.random() < _p("dithering_prob"):
+        lo, hi = _rng("dithering_color_ch", [2, 8])
+        dtype = opt.get("dithering_type", "floyd_steinberg")
+        lq_tensor = apply_dithering_t(lq_tensor, random.randint(int(lo), int(hi)), dtype)
+
+    if _p("subsampling_prob") > 0 and random.random() < _p("subsampling_prob"):
+        fmt = opt.get("subsampling_format", "4:2:0")
+        yuv = opt.get("subsampling_yuv", "601")
+        lq_tensor = apply_subsampling_t(lq_tensor, fmt, yuv)
+
+    if _p("dct_block_prob") > 0 and random.random() < _p("dct_block_prob"):
+        lo_q, hi_q = _rng("dct_block_quality_range", [20, 80])
+        lo_bs, hi_bs = _rng("dct_block_size_range", [4, 4])
+        lo_cs, hi_cs = _rng("dct_block_chroma_scale_range", [1.5, 2.5])
+        yuv_d = opt.get("dct_block_yuv", "601")
+        lq_tensor = apply_dct_block_degrade_t(
+            lq_tensor,
+            block_size=random.randint(int(lo_bs), max(int(lo_bs), int(hi_bs))),
+            quality=random.uniform(lo_q, hi_q),
+            chroma_scale=random.uniform(lo_cs, hi_cs),
+            yuv_matrix=yuv_d)
 
     # ── Custom 4 ──────────────────────────────────────────────────────────────
     if _p("color_level_prob") > 0 and random.random() < _p("color_level_prob"):
@@ -479,6 +710,7 @@ _ALL_CUSTOM_KEYS = [
     # Custom 1
     "posterize_prob", "posterize_bits_range",
     "banding_prob", "banding_levels_range",
+    "smooth_banding_prob", "smooth_banding_levels_range", "smooth_banding_dark_prob",
     "chroma_prob",
     "ca_prob", "ca_shift_range",
     "halation_prob", "halation_strength_range",
@@ -499,6 +731,8 @@ _ALL_CUSTOM_KEYS = [
     "pixelate_prob", "pixelate_size",
     "sin_prob", "sin_shape", "sin_alpha", "sin_bias", "sin_orientation",
     "subsampling_prob", "subsampling_format", "subsampling_yuv",
+    "dct_block_prob", "dct_block_quality_range", "dct_block_size_range",
+    "dct_block_chroma_scale_range", "dct_block_yuv",
     # Custom 4
     "color_level_prob", "color_level_high", "color_level_low", "color_level_gamma",
     "wtp_halo_prob", "wtp_halo_strength", "wtp_halo_radius",
@@ -619,6 +853,126 @@ def install_patches(engine_dir: str, has_posterize: bool, has_banding: bool,
     except Exception as e:
         print(f"[Custom Deg] Erreur patch OTF: {e}")
         return False
+
+
+# ── traiNNer-redux patcher ─────────────────────────────────────────────────────
+# Redux does the high-order OTF degradation on GPU inside RealESRGANModel.feed_data
+# (NOT in the dataset). So the custom-degradation hook must go THERE, applied to
+# self.lq right after the standard OTF pipeline finalizes it (training branch only).
+REDUX_HOOK_MARKER = "# === USR_STUDIO_CUSTOM_HOOK ==="
+# Anchor line inside RealESRGANModel.feed_data after which self.lq holds the OTF LQ.
+_REDUX_ANCHORS = (
+    "self.lq = self.lq.contiguous()",
+    "self._dequeue_and_enqueue()",
+)
+_REDUX_HOOK_LINES = [
+    "# === USR_STUDIO_CUSTOM_HOOK ===",
+    "try:",
+    "    import os as _uss_o, json as _uss_j",
+    "    _uss_root = _uss_o.path.dirname(_uss_o.path.dirname(_uss_o.path.dirname(_uss_o.path.abspath(__file__))))",
+    "    _uss_sc = _uss_o.path.join(_uss_root, '_usr_studio_custom_deg.json')",
+    "    if _uss_o.path.exists(_uss_sc) and getattr(self, 'lq', None) is not None:",
+    "        from traiNNer.models._usr_studio_custom_degradations import custom_degrade as _uss_cd",
+    "        with open(_uss_sc, 'r', encoding='utf-8') as _uss_f:",
+    "            _uss_opt = _uss_j.load(_uss_f)",
+    "        _uss_opt = getattr(self, '_uss_phase_custom', lambda _o: _o)(_uss_opt)",
+    "        self.lq = _uss_cd(self.lq, _uss_opt)",
+    "except Exception:",
+    "    pass",
+    "# === END USR_STUDIO_CUSTOM_HOOK ===",
+]
+
+
+# Present only in the current hook version (phase degradations, 2026-10-29).
+_REDUX_HOOK_VERSION_TAG = "getattr(self, '_uss_phase_custom'"
+
+
+def _strip_redux_hook(src: str) -> str:
+    """Remove an installed custom hook block (marker to END marker, both included)."""
+    out, skip = [], False
+    for ln in src.split("\n"):
+        stripped = ln.strip()
+        if stripped == REDUX_HOOK_MARKER:
+            skip = True
+            continue
+        if skip:
+            if stripped == "# === END USR_STUDIO_CUSTOM_HOOK ===":
+                skip = False
+            continue
+        out.append(ln)
+    return "\n".join(out)
+
+
+def install_patches_redux(engine_dir: str, has_any: bool) -> bool:
+    """Install the custom-degradation hook into traiNNer-redux's RealESRGANModel.
+    Returns True only if the hook marker is really present afterwards (real install)."""
+    models_dir = os.path.join(engine_dir, "traiNNer", "models")
+    if not os.path.isdir(models_dir):
+        return False
+    if not has_any:
+        return uninstall_patches_redux(engine_dir)
+
+    # 1. write the custom_degrade module where the hook imports it from
+    try:
+        with open(os.path.join(models_dir, PATCH_FILENAME), "w", encoding="utf-8") as f:
+            f.write(PATCH_CODE)
+    except Exception as e:
+        print(f"[Custom Deg redux] Erreur écriture module: {e}")
+        return False
+
+    target = os.path.join(models_dir, "realesrgan_model.py")
+    if not os.path.isfile(target):
+        return False
+    try:
+        with open(target, "r", encoding="utf-8") as f:
+            src = f.read()
+        if REDUX_HOOK_MARKER in src:
+            if _REDUX_HOOK_VERSION_TAG in src:
+                return True  # already patched (current hook version)
+            # Older hook (no phase-degradation blend): drop its block, reinsert below.
+            src = _strip_redux_hook(src)
+        lines = src.split("\n")
+        out, injected = [], False
+        for ln in lines:
+            out.append(ln)
+            if not injected:
+                stripped = ln.strip()
+                if any(stripped == a for a in _REDUX_ANCHORS):
+                    indent = " " * (len(ln) - len(ln.lstrip()))
+                    out.extend(indent + h for h in _REDUX_HOOK_LINES)
+                    injected = True
+        if not injected:
+            print("[Custom Deg redux] Point d'ancrage feed_data introuvable — hook non installé")
+            return False
+        backup = target + ".usr_studio_backup"
+        if not os.path.exists(backup):
+            shutil.copy2(target, backup)
+        with open(target, "w", encoding="utf-8") as f:
+            f.write("\n".join(out))
+        # verify
+        with open(target, "r", encoding="utf-8") as f:
+            return REDUX_HOOK_MARKER in f.read()
+    except Exception as e:
+        print(f"[Custom Deg redux] Erreur patch: {e}")
+        return False
+
+
+def uninstall_patches_redux(engine_dir: str) -> bool:
+    models_dir = os.path.join(engine_dir, "traiNNer", "models")
+    target = os.path.join(models_dir, "realesrgan_model.py")
+    backup = target + ".usr_studio_backup"
+    if os.path.exists(backup):
+        try:
+            shutil.copy2(backup, target)
+        except Exception:
+            pass
+    pm = os.path.join(models_dir, PATCH_FILENAME)
+    if os.path.exists(pm):
+        try:
+            os.remove(pm)
+        except Exception:
+            pass
+    return True
 
 
 def uninstall_patches(engine_dir: str) -> bool:

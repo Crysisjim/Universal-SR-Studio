@@ -73,3 +73,26 @@ temp_*.py
 # ─── LMDB datasets (binary, large) ───────────────────────────────────────────
 *.lmdb
 *.mdb
+
+# Bundled VapourSynth runtime (large binaries — populate via tools/bundle_vapoursynth.py)
+vendor/
+
+# ─── Model weights / downloaded data (fetched on first use, never committed) ──
+*.bin
+*.pth
+*.safetensors
+*.onnx
+*.ckpt
+src/core/nnedi3_weights.bin
+
+# ─── Vendored runtimes of standalone tools (rebuilt by their own scripts) ─────
+tools/gfisrv2_upscale/_vendor/
+
+# ─── Developer-machine helpers (hard-coded local paths) ────────────────────────
+run_dev.bat
+run_bench_variants_desktop.bat
+test_harness.py
+src/core/custom_archs_pending/
+
+# ─── Prebuilt wheels shipped in the portable build (too big for git) ───────────
+vendor_wheels/

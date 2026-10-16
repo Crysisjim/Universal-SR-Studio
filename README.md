@@ -3,7 +3,7 @@
   <h1>Universal SR Studio</h1>
   <p>Graphical interface for training super-resolution AI models<br>with <strong>NeoSR</strong> and <strong>traiNNer-Redux</strong> engines.</p>
 
-  <a href="https://github.com/Crysisjim/Universal-SR-Studio/releases"><img src="https://img.shields.io/badge/Version-2.5.7-blue" alt="Version"/></a>
+  <a href="https://github.com/Crysisjim/Universal-SR-Studio/releases"><img src="https://img.shields.io/badge/Version-2.6.0-blue" alt="Version"/></a>
   <a href="https://github.com/Crysisjim/Universal-SR-Studio/wiki"><img src="https://img.shields.io/badge/📖_Wiki-Documentation-informational" alt="Wiki"/></a>
   <img src="https://img.shields.io/badge/Platform-Windows-lightgrey" alt="Platform"/>
   <img src="https://img.shields.io/badge/License-MIT-green" alt="License"/>
@@ -22,6 +22,28 @@
 A graphical interface for training and managing super-resolution AI models with **NeoSR** and **traiNNer-Redux** engines.
 
 [![📖 Wiki — Full Documentation](https://img.shields.io/badge/📖_Wiki-Full_Documentation-blue?style=for-the-badge)](https://github.com/Crysisjim/Universal-SR-Studio/wiki)
+
+### What's new in v2.6.0
+
+The biggest update so far — full details in the **[v2.6.0 patch notes](CHANGELOG.md)**.
+
+- **New interface** — the app was rewritten in Qt (PySide6): every v2.5.7 feature ported and audited, full English interface (~1,200 strings), FR/EN tooltips on every setting (including per-architecture parameters), interface scale, taskbar progress.
+- **~45 architectures added or made usable everywhere** — new and trainable: TFDAT v2 (runs Bendel's 2x_bndl_animefilm_v3), MoTSR, MambaIR/MambaIRv2, HEART, NERVE, DocRes, WireSR, FDAT-RD; 40+ more now work in Quick Upscale (normal and persistent modes), AetherNet fixed.
+- **GAN** — new Spectral, NeXtSRGAN and Projected GAN discriminators, plus a **dual-discriminator** mode (any pair, independent Adaptive-D, warning on redundant pairs), **delayed GAN start** (at a fixed iteration or automatically on a PSNR plateau, with optional LR schedule restart); discriminator VRAM now counted.
+- **Video SR pipeline** — sequence training mode, video-file input for any model, encoding options (x264/x265/NVENC), true 16-bit sequences, LQ generator video mode, ONNX export of video models, video models in the portable build.
+- **Training you can trust** — validated on real runs and ~2,500 generated configs: Soft Stop that saves, validation tiling, faithful OTF preview, hidden degradation settings exposed, custom GPU degradations fixed, self-healing engine patches, VRAM / speed estimates benchmarked per loss and discriminator, PSNR → GAN phase degradations, resume that skips states corrupted by a full disk, warning on a mis-scaled validation set.
+- **Every function audited and tested** — three full audits (147 findings: Quick Upscale, tools, settings, post-processing, publishing) fixed one by one and checked on real data and real trainings: x3 OTF training fixed on both engines, Temporal Fix / Undistort frame order, 16-bit and quality everywhere, config import, LMDB, publish, resume, benchmark; VRAM and speed estimates recalibrated on real trainings (162 and 159 archs).
+- **Tools** — Frame Extraction, Guided Color Fix (aniCC), Model Converter in the portable build (fixed-size and video ONNX), native NNEDI3 anti-aliasing, DPID and DCT degradations, config importer.
+- **Portable & engines** — self-contained zip with on-first-use downloads; traiNNer-redux pinned to a tested `master` commit; NeoSR still supported.
+
+### Screenshots
+
+| | |
+|---|---|
+| ![Training](docs/screenshots/training.png) **Training** — live dashboard: GAN phase badge, loss transition, texture / edge / HF metrics, validation, Soft Stop | ![Quick Upscale](docs/screenshots/quick_upscale.png) **Quick Upscale** — any trained model (here a custom WSR checkpoint), image / folder / video, side-by-side result |
+| ![Configuration](docs/screenshots/configuration.png) **Configuration** — architecture, capability bars, VRAM / speed estimate, discriminator, delayed GAN start | ![Degradations](docs/screenshots/degradations.png) **Degradations** — OTF pipeline with live HQ → LQ preview |
+| ![Settings](docs/screenshots/settings_engines.png) **Settings** — one-click engine installer (both engines on a fresh install) | ![Post Processing](docs/screenshots/post_processing.png) **Post Processing** — Temporal Fix, Undistort, anti-aliasing, deband, line tools |
+| ![Assistant](docs/screenshots/assistant.png) **Assistant** — guided config wizard with GPU detection | ![LQ Generator](docs/screenshots/lq_generator.png) **LQ Generator** — build LQ datasets from HQ images or video |
 
 ### What's new in v2.5.7
 
@@ -58,14 +80,14 @@ A graphical interface for training and managing super-resolution AI models with 
 | 🎯 **Visual config editor** | Edit TOML/YAML with live VRAM estimation — know if your setup fits *before* starting |
 | 📊 **Live training monitor** | Real-time loss curves, PSNR/SSIM, TensorBoard, GPU stats |
 | 🤖 **AI training analysis** | Send your training log to Claude/GPT-4o/Gemini/Nemotron and get tuning advice in seconds |
-| ⚡ **30+ architectures** | ParagonSR, ParagonSR2, AetherNet, FIGSR, SPAN, SRFormer, FDAT, MoESR, and more — all one click away |
-| 🎛 **GAN training** | Adaptive D anti-collapse, SparkLoss FD, PerceptualAnimeLoss — stable training out of the box |
+| ⚡ **90+ architectures** | ParagonSR, ParagonSR2, AetherNet, FIGSR, SPAN, SRFormer, FDAT, MoESR, DocRes, and more — all one click away |
+| 🎛 **GAN training** | Spectral / NeXtSRGAN / Projected discriminators, dual-discriminator mode, Adaptive D anti-collapse, SparkLoss FD, PerceptualAnimeLoss |
 | ⚗ **Post Processing chain** | 9 stages: neural Temporal Fix, Undistort, Color, Resize, CAS Sharpen, Deband, Line Darken, Line Thinning, Edge Cleanup |
 | 🎨 **LQ Dataset Generator** | ~30 degradations, probabilistic multi-pass pipeline — varied training data from a single config |
 | 🚀 **Quick Upscale** | Batch thousands of frames with video-ready output numbering, duplicate skip, Color Fix ATWT |
 | 📋 **Training queue** | Chain multiple training jobs back-to-back, unattended |
 | 🌐 **Multi-provider AI** | OpenRouter, Nemotron, Claude, GPT-4o, Gemini — pick your provider |
-| 🗂 **Dataset tools** | Tile splitter, LMDB converter, validation rotation |
+| 🗂 **Dataset tools** | Frame extraction, dataset checker (HR/LQ pairs), LMDB converter, auto-crop patches |
 | 🎨 **20+ themes** | Dark, light, custom — matches your workflow |
 | 🌍 **Bilingual** | Full French / English interface |
 
@@ -74,20 +96,138 @@ A graphical interface for training and managing super-resolution AI models with 
 - 📷 Photo and video restoration — VHS, film grain, lens artifacts, interlace simulation
 - 🎬 Video super-resolution — frame-exact batch output, temporal consistency, TSPAN architecture support
 
+<!-- ARCH_TABLE_EN_START -->
+### Supported architectures
+
+Every architecture below was **actually tested** (October 2026): its training config
+was generated by the app and the network built by each engine that provides it, at 2x and
+4x; the model was then run through Quick Upscale on a single image and on a folder with
+the persistent subprocess (model loaded once for the whole batch), with the output size
+checked.
+
+- ✅ works · — not provided by that engine / not applicable · ⚠️ see note
+- **Real trainings** (GTX 1080 Ti, 11 GB, 20 iterations, LQ 64): 134 of the 138 traiNNer-redux archs
+  trained for real at 2x (batch 2, or batch 1 for the heaviest), and 49/49 NeoSR archs; x1, x3, x8 and
+  the video archs at 2x/4x were trained too. GRL-B is too slow on this 11 GB card to be practical.
+  MambaIR / MambaIR v2 need their CUDA kernel, shipped with the app (~1.9 it/s at batch 2 with it).
+- **Video archs** run through Quick Upscale's sequence pipeline (multi-frame input), not
+  per image; MoTSR is 2x only.
+- **Scale not stored in the weights**: ParagonSR v1 and MSDAN use the scale chosen in Quick
+  Upscale; SpanPP (IGConv) decodes several scales and defaults to 2x. DocRes is 1x.
+- **ESCRealM**: its Flex attention needs `triton`, absent from a standard Windows install and
+  unsupported on GPUs older than RTX 20; the app then switches it to the equivalent SDPA
+  attention (training and Quick Upscale).
+
+| Architecture | Variants | Train · traiNNer-redux | Train · NeoSR | Quick Upscale | Persistent batch |
+|---|---|:-:|:-:|:-:|:-:|
+| **Light / Fast** | | | | | |
+| artcnn | `artcnn_r16f96`, `artcnn_r3f24`, `artcnn_r8f48`, `artcnn_r8f64` | ✅ | — | ✅ | ✅ |
+| compact |  | ✅ | ✅ | ✅ | ✅ |
+| cugan |  | — | ✅ | ✅ | ✅ |
+| esrgan | `esrgan`, `esrgan_lite` | ✅ | ✅ | ✅ | ✅ |
+| mosrv2 |  | ✅ | ✅ | ✅ | ✅ |
+| ninasr |  | — | ✅ | ✅ | ✅ |
+| plksr | `plksr`, `plksr_tiny` | ✅ | ✅ | ✅ | ✅ |
+| realcugan |  | ✅ | — | ✅ | ✅ |
+| realplksr | `realplksr`, `realplksr_tiny` | ✅ | ✅ | ✅ | ✅ |
+| rtmosr | `rtmosr`, `rtmosr_l`, `rtmosr_ul` | ✅ | — | ✅ | ✅ |
+| safmn | `safmn`, `safmn_l` | ✅ | ✅ | ✅ | ✅ |
+| sebica | `sebica`, `sebica_mini` | ✅ | — | ✅ | ✅ |
+| seemore_t |  | ✅ | — | ✅ | ✅ |
+| span | `span`, `span_s`, `spanf`, `spanpp` | ✅ | ✅ | ✅ | ✅ |
+| spanplus | `spanplus`, `spanplus_s`, `spanplus_st`, `spanplus_sts` | ✅ | ✅ | ✅ | ✅ |
+| superultracompact |  | ✅ | — | ✅ | ✅ |
+| ultracompact |  | ✅ | — | ✅ | ✅ |
+| **Transformers / Attention** | | | | | |
+| atd | `atd`, `atd_light` | ✅ | ✅ | ✅ | ✅ |
+| dat | `dat`, `dat_2`, `dat_light`, `dat_s` | ✅ | ✅ | ✅ | ✅ |
+| dat_iln | `dat_iln`, `dat_iln_2`, `dat_iln_light`, `dat_iln_s` | ✅ | — | ✅ | ✅ |
+| drct | `drct`, `drct_l`, `drct_xl` | ✅ | ✅ | ✅ | ✅ |
+| elan | `elan`, `elan_light` | ✅ | — | ✅ | ✅ |
+| hat | `hat_l`, `hat_m`, `hat_s` | ✅ | ✅ | ✅ | ✅ |
+| hat_iln | `hat_iln_l`, `hat_iln_l_aligned`, `hat_iln_m`, `hat_iln_m_aligned`, `hat_iln_s` | ✅ | — | ✅ | ✅ |
+| omnisr |  | ✅ | ✅ | ✅ | ✅ |
+| srformer | `srformer`, `srformer_light`, `srformer_medium` | ✅ | ✅ | ✅ | ✅ |
+| srformerv2 |  | ✅ | — | ✅ | ✅ |
+| swin2sr | `swin2sr_l`, `swin2sr_m`, `swin2sr_s` | ✅ | — | ✅ | ✅ |
+| swinir | `swinir_l`, `swinir_m`, `swinir_medium`, `swinir_s`, `swinir_small` | ✅ | ✅ | ✅ | ✅ |
+| **GAN / Restoration** | | | | | |
+| rcan | `rcan`, `rcan_l`, `rcan_unshuffle` | ✅ | ✅ | ✅ | ✅ |
+| scunet_aaf6aa |  | ✅ | — | ✅ | ✅ |
+| **Video / Temporal** | | | | | |
+| motsr |  | ✅ | — | ✅ video (sequence) | — (video) |
+| temporalspan | `temporalspan`, `temporalspanv2` | ✅ | — | ✅ video (sequence) | — (video) |
+| tfdat |  | ✅ | — | ✅ video (sequence) | — (video) |
+| tfdatv2 |  | ✅ | — | ✅ video (sequence) | — (video) |
+| tscunet |  | ✅ | — | ✅ video (sequence) | — (video) |
+| **Document Restoration** | | | | | |
+| docres | `docres_base`, `docres_large` | ✅ | — | ✅ | ✅ |
+| **Experimental / Heavy** | | | | | |
+| cascadedgaze |  | ✅ | — | ✅ | ✅ |
+| craft |  | ✅ | ✅ | ✅ | ✅ |
+| dctlsa |  | ✅ | ✅ | ✅ | ✅ |
+| ditn | `ditn`, `ditn_real` | ✅ | ✅ | ✅ | ✅ |
+| dwt | `dwt`, `dwt_s` | ✅ | — | ✅ | ✅ |
+| eimn | `eimn`, `eimn_a`, `eimn_l` | ✅ | ✅ | ✅ | ✅ |
+| emt |  | ✅ | — | ✅ | ✅ |
+| escrealm | `escrealm`, `escrealm_xl` | ✅ | — | ✅ | ✅ |
+| fdat | `fdat`, `fdat_light`, `fdat_xl` | ✅ | — | ✅ | ✅ |
+| flexnet |  | ✅ | ✅ | ✅ | ✅ |
+| gaterv3 | `gaterv3`, `gaterv3_s` | ✅ | — | ✅ | ✅ |
+| grl | `grl_b`, `grl_s`, `grl_t` | ✅ | — | ✅ | ✅ |
+| hit_sir |  | ✅ | — | ✅ | ✅ |
+| hit_sng |  | ✅ | — | ✅ | ✅ |
+| lkfmixer | `lkfmixer_b`, `lkfmixer_l`, `lkfmixer_t` | ✅ | — | ✅ | ✅ |
+| lmlt | `lmlt`, `lmlt_base`, `lmlt_large`, `lmlt_tiny` | ✅ | ✅ | ✅ | ✅ |
+| man | `man`, `man_light`, `man_tiny` | ✅ | ✅ | ✅ | ✅ |
+| metaflexnet |  | ✅ | — | ✅ | ✅ |
+| moesr2 |  | ✅ | — | ✅ | ✅ |
+| mosr | `mosr`, `mosr_t` | ✅ | — | ✅ | ✅ |
+| rgt | `rgt`, `rgt_s` | ✅ | ✅ | ✅ | ✅ |
+| **New / Community** | | | | | |
+| aether | `aether_extreme`, `aether_large`, `aether_medium`, `aether_mobile`, `aether_pro`, `aether_small`, `aether_tiny` | — | ✅ | ✅ | ✅ |
+| catanet |  | — | ✅ | ✅ | ✅ |
+| fdat_rd | `fdat_rd_large`, `fdat_rd_medium`, `fdat_rd_small` | ✅ | — | ✅ | ✅ |
+| figsr |  | ✅ | — | ✅ | ✅ |
+| gfisrv2 |  | ✅ | — | ✅ | ✅ |
+| heart |  | ✅ | — | ✅ | ✅ |
+| mambair |  | ✅ | — | ✅ | ✅ |
+| mambairv2 |  | ✅ | — | ✅ | ✅ |
+| nerve |  | ✅ | — | ✅ | ✅ |
+| paragonsr | `paragonsr_anime`, `paragonsr_l`, `paragonsr_m`, `paragonsr_nano`, `paragonsr_s`, `paragonsr_tiny`, `paragonsr_xl`, `paragonsr_xs` | ✅ | — | ✅ | ✅ |
+| paragonsr2 | `paragonsr2_photo`, `paragonsr2_pro`, `paragonsr2_realtime`, `paragonsr2_stream`, `paragonsr2_ultimate`, `paragonsr2_ultimate_v2` | ✅ | — | ✅ | ✅ |
+| smosr |  | ✅ | — | ✅ | ✅ |
+| wiresr |  | ✅ | — | ✅ | ✅ |
+| **Other** | | | | | |
+| asid |  | — | ✅ | ✅ | ✅ |
+| cfsr |  | — | ✅ | ✅ | ✅ |
+| dct |  | — | ✅ | ✅ | ✅ |
+| esc |  | — | ✅ | ✅ | ✅ |
+| grformer |  | — | ✅ | ✅ | ✅ |
+| hasn |  | — | ✅ | ✅ | ✅ |
+| hit_srf |  | — | ✅ | ✅ | ✅ |
+| hma |  | — | ✅ | ✅ | ✅ |
+| krgn |  | — | ✅ | ✅ | ✅ |
+| moesr |  | — | ✅ | ✅ | ✅ |
+| msdan |  | — | ✅ | ✅ | ✅ |
+| plainusr |  | — | ✅ | ✅ | ✅ |
+<!-- ARCH_TABLE_EN_END -->
+
 ### Quick Start — Portable (recommended)
 
-1. Download `Universal_SR_Studio_v2.5.7_portable.zip` from [Releases](https://github.com/Crysisjim/Universal-SR-Studio/releases)
+1. Download `Universal_SR_Studio_v2.6.0_portable.zip` from [Releases](https://github.com/Crysisjim/Universal-SR-Studio/releases)
 2. Extract anywhere
-3. Run `Universal_SR_Studio.exe`
+3. Run `Universal_SR_Studio_QT\Universal_SR_Studio_QT.exe`
 4. On first launch, choose your language (FR/EN), then go to **⚙️ Settings** → the built-in installer handles everything else
 
-> No Python installation required. The portable version is fully self-contained.
+> No Python installation required: the portable build ships its own Python and installs the engines, PyTorch CUDA and every dependency itself. Optional model files (Guided Color Fix, NNEDI3 weights, Temporal Fix / Undistort models) are downloaded automatically the first time you use them.
 
 ### Prerequisites
 
 - **Windows 10/11**
 - **NVIDIA GPU** with CUDA support (8 GB+ VRAM recommended)
 - **Internet connection** for the first setup (engine download)
+- No Git, ffmpeg or Python needed: the app brings or downloads everything
 - **~11 GB free disk space** for a full install (both engines + PyTorch CUDA + dependencies)
 
 That's it. Universal SR Studio handles the rest automatically via the **⚙️ Settings** tab.
@@ -100,24 +240,25 @@ That's it. Universal SR Studio handles the rest automatically via the **⚙️ S
 | **Engine install** | Downloads and installs NeoSR and/or traiNNer-Redux from their official repositories |
 | **Virtual environment** | Creates a single shared `runtimes/.venv` (Python 3.12.9 + PyTorch CUDA) for all engines |
 | **PyTorch** | Installs the correct CUDA-compatible version automatically |
-| **Dependencies** | Installs all engine-specific packages |
+| **Dependencies** | Installs all engine-specific packages, pinned to the versions this release was tested with |
 
 Just open the **⚙️ Settings** tab, choose which engine(s) to install, and click — the console window shows live progress.
 
 ### Expected folder structure
 
 ```
-~/IA_Engine/
+~/USRS/
+├── traiNNer-redux/            (installed via Settings)
+├── neosr/                     (installed via Settings)
 ├── runtimes/
-│   ├── traiNNer-redux/        (installed via Settings)
-│   ├── neosr/                 (installed via Settings)
+│   ├── python-3.12.9/         (portable Python)
 │   └── .venv/                 (shared Python 3.12.9 + PyTorch CUDA environment)
 ├── datasets/
-│   ├── train/HR/          (your training images)
-│   └── val/
-│       ├── GT/
-│       └── LQ/
-└── Option Custom/         (custom degradation presets)
+│   ├── train/HR/ , train/LQ/  (your training images)
+│   └── val/GT/ , val/LQ/
+├── experiments/  Final model/  weights/
+├── models/                    (auto-downloaded helper models, e.g. colorfix/)
+└── Option Custom/             (custom degradation presets)
 ```
 
 ### Source installation (developers)
@@ -126,7 +267,7 @@ Just open the **⚙️ Settings** tab, choose which engine(s) to install, and cl
 git clone https://github.com/Crysisjim/Universal-SR-Studio.git
 cd Universal-SR-Studio
 pip install -r requirements.txt
-python main.py
+python main_qt.py
 ```
 
 Then use the **⚙️ Settings** tab to install the training engines.
@@ -157,13 +298,12 @@ python src/core/benchmark_runner.py --engine neosr --type feature
 python src/core/benchmark_runner.py --list
 ```
 
-### Roadmap — v2.6.0
+### Roadmap — next
 
 | Feature | Description |
 |---------|-------------|
-| **Temporal SR training** | Enter a video as GT reference, extract frame sequences, train TSPAN/TSPANv2 with sliding window input `[B, N, C, H, W]`. Full temporal consistency pipeline. |
-| **Temporal SR inference** | Sliding window N-frame inference with TSPAN/TSPANv2 and frame reassembly. |
-| **AA post-processing** | NNEDI3/EEDI3-ONNX antialiasing module in the Post Processing chain (insaneAA-quality). |
+| **EEDI3 without VapourSynth** | NNEDI3 anti-aliasing is native since v2.6; EEDI3 still needs VapourSynth. |
+| **Up-to-date stack (v2.6.1)** | Move the traiNNer-redux pin to current `master` (torch ≥ 2.15, Triton, CUDA graphs) and refresh the pinned Python packages, keeping GTX 10 → RTX 50 support. |
 
 > ⏸ **VOSR / OSEDiff** (diffusion-based SR, CVPR 2026) — integration paused indefinitely. Interest is limited due to very high VRAM requirements, making them impractical for most consumer GPUs.
 
@@ -180,6 +320,8 @@ Pull requests welcome. For major changes, open an issue first.
 
 [MIT](LICENSE) — free to use, modify, and distribute.
 
+Bundled third-party architectures and auto-downloaded models keep their own licenses (some are non-commercial): see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
 ---
 
 <a name="français"></a>
@@ -188,6 +330,28 @@ Pull requests welcome. For major changes, open an issue first.
 Interface graphique pour l'entraînement et la gestion de modèles d'IA super-résolution avec les moteurs **NeoSR** et **traiNNer-Redux**.
 
 [![📖 Wiki — Documentation complète](https://img.shields.io/badge/📖_Wiki-Documentation_complète-blue?style=for-the-badge)](https://github.com/Crysisjim/Universal-SR-Studio/wiki)
+
+### Nouveautés v2.6.0
+
+La plus grosse mise à jour à ce jour — tout le détail dans la **[patch note v2.6.0](CHANGELOG.md#v260--français)**.
+
+- **Nouvelle interface** — l'app a été réécrite en Qt (PySide6) : toutes les fonctions de la v2.5.7 portées et auditées, interface anglaise complète (~1 200 textes), infobulles FR/EN sur tous les réglages (y compris les paramètres par architecture), échelle de l'interface, progression dans la barre des tâches.
+- **~45 architectures ajoutées ou rendues utilisables partout** — nouvelles et entraînables : TFDAT v2 (fait tourner 2x_bndl_animefilm_v3 de Bendel), MoTSR, MambaIR/MambaIRv2, HEART, NERVE, DocRes, WireSR, FDAT-RD ; 40+ autres fonctionnent maintenant dans Quick Upscale (modes normal et persistant), AetherNet réparé.
+- **GAN** — nouveaux discriminateurs Spectral, NeXtSRGAN et Projected GAN, et un mode **double discriminateur** (n'importe quelle paire, Adaptive-D indépendant, avertissement sur les paires redondantes), **démarrage différé du GAN** (à une itération fixe ou automatiquement sur plateau du PSNR, avec relance optionnelle du planning LR) ; VRAM du discriminateur enfin comptée.
+- **Pipeline vidéo** — mode d'entraînement séquence, entrée fichier vidéo pour n'importe quel modèle, options d'encodage (x264/x265/NVENC), séquences en vrai 16 bits, mode vidéo du générateur LQ, export ONNX des modèles vidéo, modèles vidéo dans la version portable.
+- **Entraînement fiable** — validé sur de vrais entraînements et ~2 500 configurations générées : Soft Stop qui sauvegarde, tuilage de validation, aperçu OTF fidèle, réglages de dégradation cachés exposés, dégradations custom GPU corrigées, patchs moteur auto-réparants, estimations VRAM / vitesse mesurées par loss et par discriminateur, dégradations par phase PSNR → GAN, reprise qui ignore les états corrompus par un disque plein, alerte sur un set de validation à la mauvaise échelle.
+- **Chaque fonction auditée et testée** — trois audits complets (147 constats : Quick Upscale, outils, réglages, post-traitement, publication) corrigés un par un et vérifiés sur données et entraînements réels : entraînement x3 OTF corrigé sur les deux moteurs, ordre des frames Temporal Fix / Undistort, 16 bits et qualité partout, import de config, LMDB, publication, reprise, benchmark ; estimations VRAM et vitesse recalibrées sur entraînements réels (162 et 159 archs).
+- **Outils** — Extraction de frames, Color Fix guidé (aniCC), Convertisseur dans la version portable (ONNX taille fixe et vidéo), anti-crénelage NNEDI3 natif, dégradations DPID et DCT, import de configs.
+- **Portable et moteurs** — zip autonome avec téléchargements au premier usage ; traiNNer-redux épinglé sur un commit `master` testé ; NeoSR toujours supporté.
+
+### Captures d'écran
+
+| | |
+|---|---|
+| ![Entraînement](docs/screenshots/training.png) **Entraînement** — tableau de bord en direct : badge de phase GAN, transition des losses, métriques texture / contours / HF, validation, Soft Stop | ![Quick Upscale](docs/screenshots/quick_upscale.png) **Quick Upscale** — n'importe quel modèle entraîné (ici un checkpoint WSR custom), image / dossier / vidéo, résultat côte à côte |
+| ![Configuration](docs/screenshots/configuration.png) **Configuration** — architecture, barres de capacités, estimation VRAM / vitesse, discriminateur, démarrage GAN différé | ![Dégradations](docs/screenshots/degradations.png) **Dégradations** — pipeline OTF avec aperçu HQ → LQ en direct |
+| ![Paramètres](docs/screenshots/settings_engines.png) **Paramètres** — installation des moteurs en un clic (les deux moteurs sur une installation neuve) | ![Post Processing](docs/screenshots/post_processing.png) **Post Processing** — Temporal Fix, Undistort, anti-crénelage, deband, outils de lignes |
+| ![Assistant](docs/screenshots/assistant.png) **Assistant** — assistant de configuration guidé avec détection du GPU | ![Générateur LQ](docs/screenshots/lq_generator.png) **Générateur LQ** — crée des datasets LQ depuis des images HQ ou une vidéo |
 
 ### Nouveautés v2.5.7
 
@@ -224,14 +388,14 @@ Interface graphique pour l'entraînement et la gestion de modèles d'IA super-r�
 | 🎯 **Éditeur de config visuel** | TOML/YAML avec estimation VRAM live — savoir si le setup tient *avant* de lancer |
 | 📊 **Monitoring en temps réel** | Courbes de pertes, PSNR/SSIM, TensorBoard, stats GPU |
 | 🤖 **Analyse IA d'entraînement** | Envoyer le log à Claude/GPT-4o/Gemini/Nemotron et recevoir des suggestions de réglages en secondes |
-| ⚡ **30+ architectures** | ParagonSR, ParagonSR2, AetherNet, FIGSR, SPAN, SRFormer, FDAT, MoESR, et plus — un clic suffit |
-| 🎛 **Entraînement GAN** | Adaptive D anti-collapse, SparkLoss FD, PerceptualAnimeLoss — stable d'emblée |
+| ⚡ **90+ architectures** | ParagonSR, ParagonSR2, AetherNet, FIGSR, SPAN, SRFormer, FDAT, MoESR, DocRes, et plus — un clic suffit |
+| 🎛 **Entraînement GAN** | Discriminateurs Spectral / NeXtSRGAN / Projected, mode double discriminateur, Adaptive D anti-collapse, SparkLoss FD, PerceptualAnimeLoss |
 | ⚗ **Chaîne Post Processing** | 9 étapes : Temporal Fix neural, Undistort, Couleur, Resize, Netteté CAS, Deband, Renforcement lignes, Amincissement lignes, Edge Cleanup |
 | 🎨 **Générateur LQ** | ~30 dégradations, pipeline multi-passes probabiliste — données d'entraînement variées depuis une seule config |
 | 🚀 **Quick Upscale** | Batch de milliers de frames avec numérotation vidéo prête, skip doublons, Color Fix ATWT |
 | 📋 **File d'entraînements** | Enchaîner plusieurs jobs sans surveillance |
 | 🌐 **IA multi-providers** | OpenRouter, Nemotron, Claude, GPT-4o, Gemini — choisir le provider |
-| 🗂 **Outils dataset** | Découpeur de tuiles, convertisseur LMDB, rotation de validation |
+| 🗂 **Outils dataset** | Extraction de frames, vérification de dataset (paires HR/LQ), convertisseur LMDB, découpe en patchs |
 | 🎨 **20+ thèmes** | Sombre, clair, personnalisé — selon vos préférences |
 | 🌍 **Bilingue** | Interface entièrement en Français / Anglais |
 
@@ -240,20 +404,140 @@ Interface graphique pour l'entraînement et la gestion de modèles d'IA super-r�
 - 📷 Restauration photo et vidéo — VHS, grain film, artefacts optiques, entrelacement
 - 🎬 Super-résolution vidéo — sortie frame-exact, cohérence temporelle, support architecture TSPAN
 
+<!-- ARCH_TABLE_FR_START -->
+### Architectures supportées
+
+Chaque architecture ci-dessous a été **réellement testée** (octobre 2026) : config
+d'entraînement générée par l'app et réseau construit par chaque moteur qui la fournit, en
+2x et 4x ; le modèle est ensuite passé dans Quick Upscale sur une image seule et sur un
+dossier avec le subprocess persistant (modèle chargé une seule fois pour tout le lot), avec
+contrôle de la taille de sortie.
+
+- ✅ fonctionne · — absent de ce moteur / sans objet · ⚠️ voir la note
+- **Entraînements réels** (GTX 1080 Ti, 11 Go, 20 itérations, LQ 64) : 134 des 138 archs traiNNer-redux
+  entraînées pour de vrai en 2x (batch 2, ou batch 1 pour les plus lourdes), et 49/49 archs
+  NeoSR ; x1, x3, x8 et les archs vidéo en 2x/4x ont été entraînés aussi. Sur cette
+  carte de 11 Go, GRL-B est trop lent pour un usage pratique. MambaIR / MambaIR v2 ont besoin de
+  leur kernel CUDA, livré avec l'app (~1,9 it/s en batch 2 avec lui).
+- **Archs vidéo** : elles passent par le pipeline séquence de Quick Upscale (plusieurs
+  images en entrée), pas image par image ; MoTSR est 2x uniquement.
+- **Échelle absente des poids** : ParagonSR v1 et MSDAN utilisent l'échelle choisie dans
+  Quick Upscale ; SpanPP (IGConv) sait décoder plusieurs échelles, 2x par défaut. DocRes
+  est en 1x.
+- **ESCRealM** : son attention Flex demande `triton`, absent d'une installation Windows
+  standard et non supporté avant les RTX 20 ; l'app bascule alors sur l'attention SDPA
+  équivalente (entraînement et Quick Upscale).
+
+| Architecture | Variantes | Entraînement · traiNNer-redux | Entraînement · NeoSR | Quick Upscale | Batch persistant |
+|---|---|:-:|:-:|:-:|:-:|
+| **Légères / rapides** | | | | | |
+| artcnn | `artcnn_r16f96`, `artcnn_r3f24`, `artcnn_r8f48`, `artcnn_r8f64` | ✅ | — | ✅ | ✅ |
+| compact |  | ✅ | ✅ | ✅ | ✅ |
+| cugan |  | — | ✅ | ✅ | ✅ |
+| esrgan | `esrgan`, `esrgan_lite` | ✅ | ✅ | ✅ | ✅ |
+| mosrv2 |  | ✅ | ✅ | ✅ | ✅ |
+| ninasr |  | — | ✅ | ✅ | ✅ |
+| plksr | `plksr`, `plksr_tiny` | ✅ | ✅ | ✅ | ✅ |
+| realcugan |  | ✅ | — | ✅ | ✅ |
+| realplksr | `realplksr`, `realplksr_tiny` | ✅ | ✅ | ✅ | ✅ |
+| rtmosr | `rtmosr`, `rtmosr_l`, `rtmosr_ul` | ✅ | — | ✅ | ✅ |
+| safmn | `safmn`, `safmn_l` | ✅ | ✅ | ✅ | ✅ |
+| sebica | `sebica`, `sebica_mini` | ✅ | — | ✅ | ✅ |
+| seemore_t |  | ✅ | — | ✅ | ✅ |
+| span | `span`, `span_s`, `spanf`, `spanpp` | ✅ | ✅ | ✅ | ✅ |
+| spanplus | `spanplus`, `spanplus_s`, `spanplus_st`, `spanplus_sts` | ✅ | ✅ | ✅ | ✅ |
+| superultracompact |  | ✅ | — | ✅ | ✅ |
+| ultracompact |  | ✅ | — | ✅ | ✅ |
+| **Transformers / attention** | | | | | |
+| atd | `atd`, `atd_light` | ✅ | ✅ | ✅ | ✅ |
+| dat | `dat`, `dat_2`, `dat_light`, `dat_s` | ✅ | ✅ | ✅ | ✅ |
+| dat_iln | `dat_iln`, `dat_iln_2`, `dat_iln_light`, `dat_iln_s` | ✅ | — | ✅ | ✅ |
+| drct | `drct`, `drct_l`, `drct_xl` | ✅ | ✅ | ✅ | ✅ |
+| elan | `elan`, `elan_light` | ✅ | — | ✅ | ✅ |
+| hat | `hat_l`, `hat_m`, `hat_s` | ✅ | ✅ | ✅ | ✅ |
+| hat_iln | `hat_iln_l`, `hat_iln_l_aligned`, `hat_iln_m`, `hat_iln_m_aligned`, `hat_iln_s` | ✅ | — | ✅ | ✅ |
+| omnisr |  | ✅ | ✅ | ✅ | ✅ |
+| srformer | `srformer`, `srformer_light`, `srformer_medium` | ✅ | ✅ | ✅ | ✅ |
+| srformerv2 |  | ✅ | — | ✅ | ✅ |
+| swin2sr | `swin2sr_l`, `swin2sr_m`, `swin2sr_s` | ✅ | — | ✅ | ✅ |
+| swinir | `swinir_l`, `swinir_m`, `swinir_medium`, `swinir_s`, `swinir_small` | ✅ | ✅ | ✅ | ✅ |
+| **GAN / restauration** | | | | | |
+| rcan | `rcan`, `rcan_l`, `rcan_unshuffle` | ✅ | ✅ | ✅ | ✅ |
+| scunet_aaf6aa |  | ✅ | — | ✅ | ✅ |
+| **Vidéo / temporel** | | | | | |
+| motsr |  | ✅ | — | ✅ vidéo (séquence) | — (vidéo) |
+| temporalspan | `temporalspan`, `temporalspanv2` | ✅ | — | ✅ vidéo (séquence) | — (vidéo) |
+| tfdat |  | ✅ | — | ✅ vidéo (séquence) | — (vidéo) |
+| tfdatv2 |  | ✅ | — | ✅ vidéo (séquence) | — (vidéo) |
+| tscunet |  | ✅ | — | ✅ vidéo (séquence) | — (vidéo) |
+| **Restauration de documents** | | | | | |
+| docres | `docres_base`, `docres_large` | ✅ | — | ✅ | ✅ |
+| **Expérimentales / lourdes** | | | | | |
+| cascadedgaze |  | ✅ | — | ✅ | ✅ |
+| craft |  | ✅ | ✅ | ✅ | ✅ |
+| dctlsa |  | ✅ | ✅ | ✅ | ✅ |
+| ditn | `ditn`, `ditn_real` | ✅ | ✅ | ✅ | ✅ |
+| dwt | `dwt`, `dwt_s` | ✅ | — | ✅ | ✅ |
+| eimn | `eimn`, `eimn_a`, `eimn_l` | ✅ | ✅ | ✅ | ✅ |
+| emt |  | ✅ | — | ✅ | ✅ |
+| escrealm | `escrealm`, `escrealm_xl` | ✅ | — | ✅ | ✅ |
+| fdat | `fdat`, `fdat_light`, `fdat_xl` | ✅ | — | ✅ | ✅ |
+| flexnet |  | ✅ | ✅ | ✅ | ✅ |
+| gaterv3 | `gaterv3`, `gaterv3_s` | ✅ | — | ✅ | ✅ |
+| grl | `grl_b`, `grl_s`, `grl_t` | ✅ | — | ✅ | ✅ |
+| hit_sir |  | ✅ | — | ✅ | ✅ |
+| hit_sng |  | ✅ | — | ✅ | ✅ |
+| lkfmixer | `lkfmixer_b`, `lkfmixer_l`, `lkfmixer_t` | ✅ | — | ✅ | ✅ |
+| lmlt | `lmlt`, `lmlt_base`, `lmlt_large`, `lmlt_tiny` | ✅ | ✅ | ✅ | ✅ |
+| man | `man`, `man_light`, `man_tiny` | ✅ | ✅ | ✅ | ✅ |
+| metaflexnet |  | ✅ | — | ✅ | ✅ |
+| moesr2 |  | ✅ | — | ✅ | ✅ |
+| mosr | `mosr`, `mosr_t` | ✅ | — | ✅ | ✅ |
+| rgt | `rgt`, `rgt_s` | ✅ | ✅ | ✅ | ✅ |
+| **Nouvelles / communauté** | | | | | |
+| aether | `aether_extreme`, `aether_large`, `aether_medium`, `aether_mobile`, `aether_pro`, `aether_small`, `aether_tiny` | — | ✅ | ✅ | ✅ |
+| catanet |  | — | ✅ | ✅ | ✅ |
+| fdat_rd | `fdat_rd_large`, `fdat_rd_medium`, `fdat_rd_small` | ✅ | — | ✅ | ✅ |
+| figsr |  | ✅ | — | ✅ | ✅ |
+| gfisrv2 |  | ✅ | — | ✅ | ✅ |
+| heart |  | ✅ | — | ✅ | ✅ |
+| mambair |  | ✅ | — | ✅ | ✅ |
+| mambairv2 |  | ✅ | — | ✅ | ✅ |
+| nerve |  | ✅ | — | ✅ | ✅ |
+| paragonsr | `paragonsr_anime`, `paragonsr_l`, `paragonsr_m`, `paragonsr_nano`, `paragonsr_s`, `paragonsr_tiny`, `paragonsr_xl`, `paragonsr_xs` | ✅ | — | ✅ | ✅ |
+| paragonsr2 | `paragonsr2_photo`, `paragonsr2_pro`, `paragonsr2_realtime`, `paragonsr2_stream`, `paragonsr2_ultimate`, `paragonsr2_ultimate_v2` | ✅ | — | ✅ | ✅ |
+| smosr |  | ✅ | — | ✅ | ✅ |
+| wiresr |  | ✅ | — | ✅ | ✅ |
+| **Autres (NeoSR)** | | | | | |
+| asid |  | — | ✅ | ✅ | ✅ |
+| cfsr |  | — | ✅ | ✅ | ✅ |
+| dct |  | — | ✅ | ✅ | ✅ |
+| esc |  | — | ✅ | ✅ | ✅ |
+| grformer |  | — | ✅ | ✅ | ✅ |
+| hasn |  | — | ✅ | ✅ | ✅ |
+| hit_srf |  | — | ✅ | ✅ | ✅ |
+| hma |  | — | ✅ | ✅ | ✅ |
+| krgn |  | — | ✅ | ✅ | ✅ |
+| moesr |  | — | ✅ | ✅ | ✅ |
+| msdan |  | — | ✅ | ✅ | ✅ |
+| plainusr |  | — | ✅ | ✅ | ✅ |
+<!-- ARCH_TABLE_FR_END -->
+
 ### Démarrage rapide — Portable (recommandé)
 
-1. Télécharger `Universal_SR_Studio_v2.5.7_portable.zip` depuis les [Releases](https://github.com/Crysisjim/Universal-SR-Studio/releases)
+1. Télécharger `Universal_SR_Studio_v2.6.0_portable.zip` depuis les [Releases](https://github.com/Crysisjim/Universal-SR-Studio/releases)
 2. Extraire n'importe où
-3. Lancer `Universal_SR_Studio.exe`
+3. Lancer `Universal_SR_Studio_QT\Universal_SR_Studio_QT.exe`
 4. Au premier lancement, choisir la langue (FR/EN), puis aller dans **⚙️ Paramètres** → l'installeur intégré gère le reste
 
-> Aucune installation Python requise. La version portable est entièrement autonome.
+> Aucune installation Python requise : la version portable embarque son propre Python et installe elle-même les moteurs, PyTorch CUDA et toutes les dépendances. Les fichiers de modèles optionnels (Color Fix guidé, poids NNEDI3, modèles Temporal Fix / Undistort) sont téléchargés automatiquement à leur première utilisation.
 
 ### Prérequis
 
 - **Windows 10/11**
 - **GPU NVIDIA** avec support CUDA (8 Go+ VRAM recommandé)
 - **Connexion internet** pour le premier setup (téléchargement des moteurs)
+- Ni Git, ni ffmpeg, ni Python à installer : l'app fournit ou télécharge tout
 - **~11 Go d'espace disque libre** pour une installation complète (les deux moteurs + PyTorch CUDA + dépendances)
 
 C'est tout. Universal SR Studio gère le reste automatiquement via l'onglet **⚙️ Paramètres**.
@@ -266,24 +550,25 @@ C'est tout. Universal SR Studio gère le reste automatiquement via l'onglet **�
 | **Installation moteur** | Télécharge et installe NeoSR et/ou traiNNer-Redux depuis leurs dépôts officiels |
 | **Environnement virtuel** | Crée un seul `runtimes/.venv` partagé (Python 3.12.9 + PyTorch CUDA) pour tous les moteurs |
 | **PyTorch** | Installe la version compatible CUDA automatiquement |
-| **Dépendances** | Installe tous les packages spécifiques au moteur |
+| **Dépendances** | Installe tous les packages spécifiques au moteur, figés sur les versions testées pour cette version |
 
 Ouvrir l'onglet **⚙️ Paramètres**, choisir le(s) moteur(s) à installer, et cliquer — la console affiche la progression en direct.
 
 ### Structure de dossiers attendue
 
 ```
-~/IA_Engine/
+~/USRS/
+├── traiNNer-redux/            (installé via Paramètres)
+├── neosr/                     (installé via Paramètres)
 ├── runtimes/
-│   ├── traiNNer-redux/        (installé via Paramètres)
-│   ├── neosr/                 (installé via Paramètres)
+│   ├── python-3.12.9/         (Python portable)
 │   └── .venv/                 (environnement Python 3.12.9 + PyTorch CUDA partagé)
 ├── datasets/
-│   ├── train/HR/          (vos images d'entraînement)
-│   └── val/
-│       ├── GT/
-│       └── LQ/
-└── Option Custom/         (presets de dégradation personnalisés)
+│   ├── train/HR/ , train/LQ/  (vos images d'entraînement)
+│   └── val/GT/ , val/LQ/
+├── experiments/  Final model/  weights/
+├── models/                    (modèles annexes téléchargés automatiquement, ex. colorfix/)
+└── Option Custom/             (presets de dégradation personnalisés)
 ```
 
 ### Installation source (développeurs)
@@ -292,7 +577,7 @@ Ouvrir l'onglet **⚙️ Paramètres**, choisir le(s) moteur(s) à installer, et
 git clone https://github.com/Crysisjim/Universal-SR-Studio.git
 cd Universal-SR-Studio
 pip install -r requirements.txt
-python main.py
+python main_qt.py
 ```
 
 Puis utiliser l'onglet **⚙️ Paramètres** pour installer les moteurs d'entraînement.
@@ -310,13 +595,12 @@ Puis utiliser l'onglet **⚙️ Paramètres** pour installer les moteurs d'entra
 | 🌐 Distribué | Entraînement multi-machines (expérimental) |
 | 📖 Wiki | Ouvre la documentation wiki GitHub dans le navigateur |
 
-### Roadmap — v2.6.0
+### Roadmap — à venir
 
-| Feature | Description |
+| Fonctionnalité | Description |
 |---------|-------------|
-| **Entraînement Temporal SR** | Vidéo GT en entrée → extraction séquences frames → entraînement TSPAN/TSPANv2 avec fenêtre glissante `[B, N, C, H, W]`. Pipeline temporel complet. |
-| **Inférence Temporal SR** | Inférence N frames en fenêtre glissante avec TSPAN/TSPANv2 + réassemblage. |
-| **AA post-processing** | Module antialiasing NNEDI3/EEDI3-ONNX dans la chaîne Post Processing (qualité insaneAA). |
+| **EEDI3 sans VapourSynth** | L'anti-crénelage NNEDI3 est natif depuis la v2.6 ; EEDI3 demande encore VapourSynth. |
+| **Pile à jour (v2.6.1)** | Avancer l'épinglage traiNNer-redux sur le `master` actuel (torch ≥ 2.15, Triton, CUDA graphs) et rafraîchir les paquets Python figés, en gardant le support GTX 10 → RTX 50. |
 
 > ⏸ **VOSR / OSEDiff** (SR par diffusion, CVPR 2026) — intégration en pause indéfinie. Intérêt limité en raison d'une consommation VRAM très élevée, peu pratique sur la majorité des GPU grand public.
 
@@ -332,3 +616,5 @@ Les pull requests sont les bienvenues. Pour les changements majeurs, ouvrir une 
 ### Licence
 
 [MIT](LICENSE) — libre d'utilisation, de modification et de distribution.
+
+Les architectures tierces incluses et les modèles téléchargés automatiquement gardent leurs propres licences (certaines non commerciales) : voir [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

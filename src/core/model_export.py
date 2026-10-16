@@ -212,6 +212,10 @@ def detect_model_format(model_path: str) -> dict:
                 hints.append("GFISRv2 (GatedCNN + Fourier-inspired)")
             if "blocks.0.0.irca_attn.to_k.weight" in keys_str and "first_conv.weight" in keys_str:
                 hints.append("CATANet (Token Aggregation + LRSA, NeoSR)")
+            if ".self_attention.x_proj_weight" in keys_str:
+                hints.append("MambaIR (ECCV2024, State Space Model — scan pur-PyTorch, pas de kernel CUDA)")
+            if ".embeddinga.weight" in keys_str and ".assm.selectivescan.x_proj_weight" in keys_str:
+                hints.append("MambaIRv2 (CVPR2025, Attentive State Space — scan pur-PyTorch, pas de kernel CUDA)")
 
             # ── Generic patterns when architecture-specific keys are absent ──
             if not hints:
@@ -264,15 +268,83 @@ def detect_model_format(model_path: str) -> dict:
                 from safetensors import safe_open
                 total = 0
                 tensors_count = 0
+                param_dtypes = {}
+                layer_groups = {}
                 with safe_open(model_path, framework="pt") as f:
                     keys = list(f.keys())
                     for k in keys:
                         t = f.get_tensor(k)
-                        total += t.numel()
+                        n = t.numel()
+                        total += n
                         tensors_count += 1
+                        parts = k.split(".")
+                        prefix = parts[0] if len(parts) >= 2 else k
+                        layer_groups.setdefault(prefix, [0, 0])
+                        layer_groups[prefix][0] += 1
+                        layer_groups[prefix][1] += n
+                        dt = str(t.dtype)
+                        param_dtypes[dt] = param_dtypes.get(dt, 0) + 1
                 info["num_tensors"] = tensors_count
                 info["total_params"] = total
                 info["sample_keys"] = keys[:5]
+                info["dtypes"] = param_dtypes
+                info["layer_groups"] = sorted(
+                    [(k, c, p) for k, (c, p) in layer_groups.items()],
+                    key=lambda x: -x[2]
+                )[:8]
+
+                # Same key-signature hints as the .pth branch above (net_g_*.safetensors
+                # is this app's default save format — this branch used to have none at all).
+                keys_str = " ".join(keys).lower()
+                hints = []
+                if "rrdb" in keys_str or "sub.0.rdb" in keys_str:
+                    hints.append("RRDBNet (ESRGAN/Real-ESRGAN)")
+                if "swin" in keys_str or ("patch_embed" in keys_str and "rstb" in keys_str):
+                    hints.append("SwinIR")
+                if "rcab" in keys_str or "rcan" in keys_str:
+                    hints.append("RCAN")
+                if "omni" in keys_str:
+                    hints.append("OmniSR")
+                if any(k in keys_str for k in ["hat.", "hab.", "ocab"]):
+                    hints.append("HAT")
+                if "drct" in keys_str:
+                    hints.append("DRCT")
+                if "span" in keys_str or "spab" in keys_str:
+                    hints.append("SPAN")
+                if "compact" in keys_str or "realesr-general" in keys_str:
+                    hints.append("RealESRGAN-Compact")
+                if "atd" in keys_str:
+                    hints.append("ATD")
+                if "plksr" in keys_str:
+                    hints.append("PLKSR")
+                if "dat" in keys_str and "spatial_block" in keys_str:
+                    hints.append("DAT")
+                if "blocks_2.0.body" in keys_str and "upsampler.metaupsample" in keys_str:
+                    hints.append("SMoSR (Self-Modulate SR)")
+                if "conv_near.weight" in keys_str and "block_5.conv1" in keys_str:
+                    hints.append("SpanF (SPAN simplifié, SPAB1 blocks)")
+                if "metaigconv" in keys_str and "upsampler.coord_map" in keys_str:
+                    hints.append("SpanC (multi-scale IGConv, reparamétrisable)")
+                if "gfisr_body.0.fc1" in keys_str and "upscale.metaupsample" in keys_str:
+                    hints.append("GFISRv2 (GatedCNN + Fourier-inspired)")
+                if "blocks.0.0.irca_attn.to_k.weight" in keys_str and "first_conv.weight" in keys_str:
+                    hints.append("CATANet (Token Aggregation + LRSA, NeoSR)")
+                if ".self_attention.x_proj_weight" in keys_str:
+                    hints.append("MambaIR (ECCV2024, State Space Model — scan pur-PyTorch, pas de kernel CUDA)")
+                if ".embeddinga.weight" in keys_str and ".assm.selectivescan.x_proj_weight" in keys_str:
+                    hints.append("MambaIRv2 (CVPR2025, Attentive State Space — scan pur-PyTorch, pas de kernel CUDA)")
+                if not hints:
+                    if "model.0.weight" in keys_str and "model.1.sub" in keys_str:
+                        hints.append("RRDBNet (ESRGAN old-style — model.X.sub.X.RDB...)")
+                    elif "model.0.weight" in keys_str and "model.1.weight" in keys_str:
+                        hints.append("Sequential (MSRResNet/SRResNet ESRGAN-light)")
+                    elif "body.0.weight" in keys_str and "body.1.weight" in keys_str:
+                        hints.append("EDSR/MSRResNet (body.N.weight)")
+                    elif "conv_first" in keys_str and "upconv" in keys_str:
+                        hints.append("ESRGAN-style (conv_first + upconv)")
+                    elif "head" in keys_str and "tail" in keys_str:
+                        hints.append("RCAN-like (head/body/tail)")
+                info["architecture_hints"] = hints if hints else ["unknown — voir 'Cles d'exemple'"]
             except ImportError:
                 info["error"] = "safetensors non installe (pip install safetensors)"
     except Exception as e:

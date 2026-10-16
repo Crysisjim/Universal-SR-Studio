@@ -20,7 +20,13 @@ if hasattr(sys.stdout, "reconfigure"):
 if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
-NEOSR_PATH = os.path.join(os.path.expanduser("~"), "IA_Engine", "neosr")
+_HOME = os.path.expanduser("~")
+try:
+    from src.core.engine_paths import base_engine_path as _ebp
+except ImportError:  # venv runner: engine_paths.py ships loose next to this file
+    from engine_paths import base_engine_path as _ebp
+_BASE = _ebp()
+NEOSR_PATH = os.path.join(_BASE, "neosr")
 if os.path.isdir(NEOSR_PATH) and NEOSR_PATH not in sys.path:
     sys.path.insert(0, NEOSR_PATH)
     os.chdir(NEOSR_PATH)
@@ -177,15 +183,30 @@ def run(model_path: str, input_path: str, output_path: str) -> None:
     img_np = np.array(img).astype(np.float32) / 255.0
     img_t = torch.from_numpy(np.transpose(img_np, (2, 0, 1))).unsqueeze(0).to(device)
 
+    from runner_save import infer_opts
+    _io = infer_opts()
+    _ac = lambda: torch.autocast("cuda", enabled=_io["amp"] and img_t.is_cuda)
     with torch.no_grad():
-        out = model(img_t)
+        if _io["tile"]:
+            T, P = _io["tile"], _io["tile_pad"]
+            H, W = img_t.shape[2], img_t.shape[3]
+            out = torch.zeros((1, 3, H * scale, W * scale), device=img_t.device)
+            for y0 in range(0, H, T):
+                for x0 in range(0, W, T):
+                    ys, xs = max(0, y0 - P), max(0, x0 - P)
+                    with _ac():
+                        t = model(img_t[:, :, ys:min(H, y0 + T + P), xs:min(W, x0 + T + P)]).float()
+                    oy, ox = (y0 - ys) * scale, (x0 - xs) * scale
+                    oh, ow = min(T, H - y0) * scale, min(T, W - x0) * scale
+                    out[:, :, y0 * scale:y0 * scale + oh, x0 * scale:x0 * scale + ow] = t[:, :, oy:oy + oh, ox:ox + ow]
+        else:
+            with _ac():
+                out = model(img_t).float()
 
     out = out.squeeze(0).clamp(0, 1).cpu().float().numpy()
     out = np.transpose(out, (1, 2, 0))
-    out = (out * 255.0).round().astype(np.uint8)
-
-    os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
-    Image.fromarray(out).save(output_path)
+    from runner_save import save_float
+    save_float(out, output_path)
     print(f"[NeoSR] Sauvegarde : {output_path}", flush=True)
 
     del model, img_t, out

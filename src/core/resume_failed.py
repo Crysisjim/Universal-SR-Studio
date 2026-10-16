@@ -1,5 +1,5 @@
 """
-resume_failed.py — Scan ~/IA_Engine/.../experiments/ for interrupted trainings.
+resume_failed.py — Scan ~/USRS/.../experiments/ for interrupted trainings.
 
 A training is "interrupted" if its log doesn't contain "End of training"
 and there's a recent .state file we could resume from.
@@ -86,9 +86,11 @@ def scan_interrupted_trainings(engine_paths: list = None) -> list:
     """
     if engine_paths is None:
         home = os.path.expanduser("~")
+        from src.core.engine_paths import base_engine_path as _ebp
+        _base = _ebp()
         engine_paths = [
-            os.path.join(home, "IA_Engine", "neosr", "experiments"),
-            os.path.join(home, "IA_Engine", "traiNNer-redux", "experiments"),
+            os.path.join(_base, "neosr", "experiments"),
+            os.path.join(_base, "traiNNer-redux", "experiments"),
         ]
 
     interrupted = []
@@ -119,9 +121,15 @@ def scan_interrupted_trainings(engine_paths: list = None) -> list:
             log_pattern = os.path.join(exp_dir, "*.log")
             logs = glob.glob(log_pattern)
             log_tail = ""
+            running = False
             if logs:
                 log_path = max(logs, key=os.path.getmtime)
                 log_tail = _read_log_tail(log_path, n_lines=10)
+                try:
+                    import time as _t
+                    running = (_t.time() - os.path.getmtime(log_path)) < 120
+                except OSError:
+                    pass
             interrupted.append({
                 "name": entry,
                 "path": exp_dir,
@@ -129,6 +137,7 @@ def scan_interrupted_trainings(engine_paths: list = None) -> list:
                 "last_iter": last_iter,
                 "state_file": state_file,
                 "log_tail": log_tail,
+                "running": running,
                 "mtime": mtime,
                 "mtime_str": datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M") if mtime else "?",
             })
@@ -146,9 +155,11 @@ def find_associated_config(exp_dir: str) -> str:
     name = os.path.basename(exp_dir)
     name_lower = name.lower()
     home = os.path.expanduser("~")
+    from src.core.engine_paths import base_engine_path as _ebp
+    _base = _ebp()
     base_roots = [
-        os.path.join(home, "IA_Engine", "Option Custom"),
-        os.path.join(home, "IA_Engine"),
+        os.path.join(_base, "Option Custom"),
+        _base,
     ]
     search_dirs = []
     for root in base_roots:
@@ -168,6 +179,9 @@ def find_associated_config(exp_dir: str) -> str:
                 except Exception:
                     pass
 
+    # The engines copy the options file into the experiment folder: look there first.
+    search_dirs = [exp_dir] + search_dirs
+    exact, partial = [], []
     for sd in search_dirs:
         if not os.path.isdir(sd):
             continue
@@ -176,9 +190,38 @@ def find_associated_config(exp_dir: str) -> str:
                 if not f.endswith((".toml", ".yml", ".yaml")):
                     continue
                 stem = os.path.splitext(f)[0].lower()
-                # Match if exp name in stem OR stem in exp name (handles "Deband" vs "Deband Plus")
-                if name_lower == stem or name_lower in stem or stem in name_lower:
-                    return os.path.join(sd, f)
+                p = os.path.join(sd, f)
+                if sd == exp_dir or name_lower == stem:
+                    exact.append(p)
+                elif name_lower in stem or stem in name_lower:
+                    partial.append(p)
         except Exception:
             pass
+    # B51: a partial file-name match is accepted only when the config's own `name` is
+    # this experiment — the first partial match used to be another experiment's config.
+    for p in exact + partial:
+        if _config_name(p) == name_lower:
+            return p
+    for p in exact:
+        if _config_name(p) in ("", None):
+            return p
     return ""
+
+
+def _config_name(path):
+    """`name` field of a .yml/.toml config, lower case; "" when absent; None if unreadable."""
+    try:
+        if path.endswith(".toml"):
+            try:
+                import tomllib
+            except ImportError:
+                import tomli as tomllib
+            with open(path, "rb") as f:
+                d = tomllib.load(f)
+        else:
+            import yaml
+            with open(path, "r", encoding="utf-8") as f:
+                d = yaml.safe_load(f)
+        return str((d or {}).get("name", "")).strip().lower()
+    except Exception:
+        return None

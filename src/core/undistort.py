@@ -56,7 +56,7 @@ if _TORCH_OK:
 # ─────────────────────────────────────────────────────────────────────────────
 
 _ORT_TMT_MODES = {"ort_tmt", "trt_tmt"}
-_PTH_TMT_MODES = {"model_tmt"}
+_PTH_TMT_MODES = {"model_tmt", "cpu_tmt"}   # cpu_tmt = PTH forced on CPU (A19)
 _NEURAL_MODES  = _ORT_TMT_MODES | _PTH_TMT_MODES
 
 
@@ -94,7 +94,9 @@ class UndistortProcessor:
         self.strength = float(max(0.0, min(1.0, strength)))
         self._dtype   = torch.float16 if precision == "float16" else torch.float32
 
-        if device == "auto":
+        if mode.startswith("cpu_"):
+            self._device = torch.device("cpu")
+        elif device == "auto":
             self._device = torch.device("cuda" if _CUDA_OK else "cpu")
         elif device == "cuda":
             self._device = torch.device("cuda" if _CUDA_OK else "cpu")
@@ -113,8 +115,9 @@ class UndistortProcessor:
             sigma=gaussian_sigma, ksize=7
         ).to(self._device, dtype=self._dtype)
 
-        self._buf: deque     = deque(maxlen=window)
+        self._buf: deque     = deque()   # pushed frames still needed, from index _base
         self._pending: deque = deque()
+        self._base = self._n_in = self._n_out = 0
 
         # ── Neural / ORT batch mode ──────────────────────────────────────────
         self._tmt_window = max(2, tmt_window)
@@ -149,33 +152,34 @@ class UndistortProcessor:
     def reset(self) -> None:
         self._buf.clear()
         self._pending.clear()
+        self._base = self._n_in = self._n_out = 0
         self._raw_batch.clear()
         self._output_q.clear()
 
     # ── Classic ───────────────────────────────────────────────────────────────
 
+    # Same ordering contract as TemporalFixProcessor: output k = frame k corrected with
+    # the window k-latency .. k+latency (edges replicated), in input order (A23).
+    def _emit_classic(self) -> np.ndarray:
+        c, last = self._n_out, self._n_in - 1
+        frames = [self._buf[min(max(j, 0), last) - self._base]
+                  for j in range(c - self.latency, c + self.latency + 1)]
+        out = self._to_numpy(self._process_classic(frames))
+        self._n_out += 1
+        while self._base < self._n_out - self.latency:
+            self._buf.popleft(); self._base += 1
+        return out
+
     def _push_classic(self, frame_np: np.ndarray) -> Optional[np.ndarray]:
-        t = self._to_tensor(frame_np)
-        self._buf.append(t)
-        self._pending.append(frame_np)
-        if len(self._buf) < self.window:
-            return None
-        result_t = self._process_classic(list(self._buf))
-        self._pending.popleft()
-        return self._to_numpy(result_t)
+        self._buf.append(self._to_tensor(frame_np))
+        self._n_in += 1
+        if self._n_in - 1 >= self._n_out + self.latency:
+            return self._emit_classic()
+        return None
 
     def _flush_classic(self) -> Iterator[np.ndarray]:
-        if not self._pending or not self._buf:
-            return
-        last_tensor = self._buf[-1]
-        while self._pending:
-            buf_list = list(self._buf)
-            while len(buf_list) < self.window:
-                buf_list.append(last_tensor)
-            result_t = self._process_classic(buf_list[:self.window])
-            self._pending.popleft()
-            self._buf.append(last_tensor)
-            yield self._to_numpy(result_t)
+        while self._n_out < self._n_in:
+            yield self._emit_classic()
 
     def _process_classic(self, frames: list) -> "torch.Tensor":
         centre  = frames[self.latency]
@@ -219,6 +223,9 @@ class UndistortProcessor:
             for _ in range(n_real):
                 if self._output_q:
                     yield self._output_q.popleft()
+            # the padding frames' outputs are not real frames: drop them (12 frames in
+            # used to give 20 frames out)
+            self._output_q.clear()
         while self._output_q:
             yield self._output_q.popleft()
 
@@ -255,11 +262,8 @@ class UndistortProcessor:
         state = torch.load(weight_path, map_location="cpu", weights_only=True)
         model.load_state_dict(state, strict=True)
         model.eval()
-        use_fp16 = (self._dtype == torch.float16
-                    and self._device.type == "cuda"
-                    and torch.cuda.get_device_capability()[0] >= 7)
-        if use_fp16:
-            model.half()
+        # TMT PTH runs float32: its tiled inference feeds float32 blocks, a half model
+        # would get mismatched inputs (A20). The dialog locks the precision for it.
         model.to(self._device)
         self._tmt_model = model
         return model
@@ -270,6 +274,12 @@ class UndistortProcessor:
         tensors = [torch.from_numpy(np.ascontiguousarray(f).transpose(2, 0, 1))
                    for f in frames]
         batch = torch.stack(tensors, dim=0).to(torch.float32)  # [T,C,H,W]
+        # H/W to a multiple of 16 (UNet levels): 60x70 frames failed with
+        # "Sizes of tensors must match ... Expected size 14 but got size 15"
+        H, W = batch.shape[-2], batch.shape[-1]
+        ph, pw = (-H) % 16, (-W) % 16
+        if ph or pw:
+            batch = torch.nn.functional.pad(batch, (0, pw, 0, ph), mode="reflect")
         input_blk = batch.unsqueeze(0)                          # [1,T,C,H,W]
         with torch.inference_mode():
             recovered = test_spatial_overlap(
@@ -280,7 +290,7 @@ class UndistortProcessor:
                 scales=[True, True, True],
                 tile_device=torch.device("cpu"),
             )
-        recovered = recovered.squeeze(0).float()  # [T,C,H,W]
+        recovered = recovered.squeeze(0).float()[:, :, :H, :W]  # [T,C,H,W]
         return [recovered[i].permute(1, 2, 0).numpy() for i in range(len(frames))]
 
     # ── ORT inference ─────────────────────────────────────────────────────────
@@ -339,8 +349,19 @@ class UndistortProcessor:
         session  = self._get_ort_session()
         inp_name, dynamic_hw = self._ort_meta(session)
 
-        out_np = session.run(None, {inp_name: stack})[0]  # [1, T, C, H, W] fp16
-        out    = out_np.astype(np.float32)[0]             # [T, C, H, W]
+        C, H, W = stack.shape[2], stack.shape[3], stack.shape[4]
+        if len(session.get_inputs()[0].shape) == 4:
+            # current upstream model (UNet3d_TMT_*_op19): frames stacked on the channel
+            # axis, [1, T*C, H, W]; H/W padded to a multiple of 16 for the UNet levels
+            ph, pw = (-H) % 16, (-W) % 16
+            x = stack.reshape(1, T * C, H, W)
+            if ph or pw:
+                x = np.pad(x, ((0, 0), (0, 0), (0, ph), (0, pw)), mode="reflect")
+            out_np = session.run(None, {inp_name: x})[0]
+            out = out_np.astype(np.float32).reshape(T, C, H + ph, W + pw)[:, :, :H, :W]
+        else:
+            out_np = session.run(None, {inp_name: stack})[0]  # [1, T, C, H, W] fp16
+            out    = out_np.astype(np.float32)[0]             # [T, C, H, W]
 
         return [out[i].transpose(1, 2, 0) for i in range(T)]  # list of [H,W,C]
 

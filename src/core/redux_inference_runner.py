@@ -26,7 +26,13 @@ _arch_hint   = sys.argv[4] if len(sys.argv) > 4 else ""
 
 # ── traiNNer path ──────────────────────────────────────────────────────────────
 import os
-_REDUX = os.path.join(os.path.expanduser("~"), "IA_Engine", "traiNNer-redux")
+_HOME = os.path.expanduser("~")
+try:
+    from src.core.engine_paths import base_engine_path as _ebp
+except ImportError:  # venv runner: engine_paths.py ships loose next to this file
+    from engine_paths import base_engine_path as _ebp
+_BASE = _ebp()
+_REDUX = os.path.join(_BASE, "traiNNer-redux")
 if os.path.isdir(_REDUX) and _REDUX not in sys.path:
     sys.path.insert(0, _REDUX)
 
@@ -140,6 +146,11 @@ def run(model_path: str, input_path: str, output_path: str, arch_hint: str = "")
     model = None
     try:
         import spandrel
+        try:
+            import spandrel_extra_arches
+            spandrel_extra_arches.install()
+        except Exception:
+            pass
         loader = spandrel.ModelLoader(device=device)
         model_info = loader.load_from_file(model_path)
         model = model_info.model.eval()

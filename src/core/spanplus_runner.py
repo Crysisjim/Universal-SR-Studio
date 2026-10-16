@@ -21,7 +21,13 @@ if hasattr(sys.stdout, "reconfigure"):
 if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
-TRAINNER_PATH = os.path.join(os.path.expanduser("~"), "IA_Engine", "traiNNer-redux")
+_HOME = os.path.expanduser("~")
+try:
+    from src.core.engine_paths import base_engine_path as _ebp
+except ImportError:  # venv runner: engine_paths.py ships loose next to this file
+    from engine_paths import base_engine_path as _ebp
+_BASE = _ebp()
+TRAINNER_PATH = os.path.join(_BASE, "traiNNer-redux")
 if TRAINNER_PATH not in sys.path:
     sys.path.insert(0, TRAINNER_PATH)
 if os.path.isdir(TRAINNER_PATH):
@@ -94,10 +100,8 @@ def run(model_path: str, input_path: str, output_path: str) -> None:
     # --- Save ---
     out = out.squeeze(0).clamp(0, 1).cpu().float().numpy()
     out = np.transpose(out, (1, 2, 0))
-    out = (out * 255.0).round().astype(np.uint8)
-
-    os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
-    Image.fromarray(out).save(output_path, quality=95)
+    from runner_save import save_float
+    save_float(out, output_path)
     print(f"[Runner] ✅ Sauvegardé : {output_path}", flush=True)
 
     del model, img_t, out

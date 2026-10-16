@@ -6,6 +6,10 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+try:  # only DWconvTFL needs it (not used by the TMT checkpoints we load)
+    from einops.layers.torch import Rearrange
+except ImportError:  # pragma: no cover
+    Rearrange = None
 
 class LayerNorm3D(nn.Module):
     def __init__(self, dim, bias=True):

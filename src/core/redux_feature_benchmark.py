@@ -13,7 +13,7 @@ Usage:
     --n-iter 500           Itérations par test (défaut : 500)
     --timeout 900          Timeout par test en secondes (défaut : 900)
     --tests loss_l1,...    Tester seulement ces features
-    --output-dir PATH      Dossier résultats (défaut : ~/IA_Engine/benchmark_results/redux_feat)
+    --output-dir PATH      Dossier résultats (défaut : ~/USRS/benchmark_results/redux_feat)
     --train-gt PATH        Dataset training GT
     --reset                Remettre à zéro (ignorer état existant)
     --list                 Lister tous les tests disponibles
@@ -28,10 +28,17 @@ import threading
 import subprocess
 import argparse
 from pathlib import Path
+
+# Racine moteur : ~/USRS (seul dossier généré/utilisé par l'app).
+try:
+    from src.core.engine_paths import base_engine_path as _ebp
+except ImportError:  # venv runner: engine_paths.py ships loose next to this file
+    from engine_paths import base_engine_path as _ebp
+_ENG_ROOT = Path(_ebp())
 from datetime import datetime
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
-REDUX_PATH   = Path.home() / "IA_Engine" / "traiNNer-redux"
+REDUX_PATH   = _ENG_ROOT / "traiNNer-redux"
 TRAIN_SCRIPT = REDUX_PATH / "train.py"
 
 # ── Chemin racine du Studio (pour importer quick_upscale dans le subprocess) ──
@@ -39,19 +46,19 @@ _STUDIO_ROOT = Path(__file__).resolve().parent.parent.parent  # Universal SR Stu
 
 # ── Modèle perso de référence pour les tests ECO + upscale ────────────────────
 _PERSONAL_MODEL = (
-    Path.home() / "IA_Engine" / "Final model" /
+    _ENG_ROOT / "Final model" /
     "Crysisjim SPANPlus Deband_HARD 1.0" /
     "Crysisjim SPANPlus Deband_HARD 1.0.safetensors"
 )
 _DEFAULT_TEST_IMG = (
-    Path.home() / "IA_Engine" / "datasets" / "val" / "LQ" / "Overlord (1).png"
+    _ENG_ROOT / "datasets" / "val" / "LQ" / "Overlord (1).png"
 )
 
 
 def _find_venv_python(base: Path) -> Path:
     """Cherche python.exe dans les emplacements courants du venv (Windows + Linux)."""
     candidates = [
-        Path.home() / "IA_Engine" / "runtimes" / ".venv" / "Scripts" / "python.exe",  # v2.5.6 shared
+        _ENG_ROOT / "runtimes" / ".venv" / "Scripts" / "python.exe",  # v2.5.6 shared
         base / ".venv" / "Scripts" / "python.exe",   # Windows .venv (géré par Universal SR Studio)
         base / "venv"  / "Scripts" / "python.exe",   # Windows venv
         base / ".venv" / "bin"     / "python",        # Linux .venv
@@ -67,9 +74,9 @@ def _find_venv_python(base: Path) -> Path:
 
 REDUX_PYTHON = _find_venv_python(REDUX_PATH)
 
-DEFAULT_TRAIN_GT = str(Path.home() / "IA_Engine/datasets/train/HR")
-DEFAULT_VAL_GT   = str(Path.home() / "IA_Engine/datasets/val/GT")
-DEFAULT_VAL_LQ   = str(Path.home() / "IA_Engine/datasets/val/LQ")
+DEFAULT_TRAIN_GT = str(_ENG_ROOT / "datasets/train/HR")
+DEFAULT_VAL_GT   = str(_ENG_ROOT / "datasets/val/GT")
+DEFAULT_VAL_LQ   = str(_ENG_ROOT / "datasets/val/LQ")
 
 # ── YAML fragments ─────────────────────────────────────────────────────────────
 _OPTIM_ADAMW = """\
@@ -834,6 +841,14 @@ def main() -> None:
                     help="batch_size_per_gpu de l'arch de base (défaut: 8).")
     args = ap.parse_args()
 
+    # Must run BEFORE any print() that could contain non-cp1252 chars (→ / accents) —
+    # was placed after the --list early-return below, so --list crashed with
+    # UnicodeEncodeError on any Windows console still on the default cp1252 codepage
+    # (i.e. every French Windows install) before ever reaching this line
+    # (2026-09-17 fix).
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
     if args.list:
         cats: dict = {}
         for f in FEATURE_LIST:
@@ -843,9 +858,6 @@ def main() -> None:
             for f in items:
                 print(f"    {f['name']:<25}  {f['desc']}")
         return
-
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
     # ── Validation de l'environnement ────────────────────────────────────────
     print(f"[INFO] traiNNer-redux : {REDUX_PATH}", flush=True)
@@ -860,7 +872,7 @@ def main() -> None:
     # --no-amp : on utilise un sous-dossier séparé pour ne pas mélanger desktop/laptop
     _suffix = "_noamp" if args.no_amp else ""
     out_dir = Path(args.output_dir) if args.output_dir else (
-        Path.home() / "IA_Engine" / "benchmark_results" / f"redux_feat{_suffix}"
+        _ENG_ROOT / "benchmark_results" / f"redux_feat{_suffix}"
     )
     out_dir.mkdir(parents=True, exist_ok=True)
     state_path = out_dir / f"redux_feat{_suffix}_state.json"

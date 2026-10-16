@@ -20,6 +20,7 @@ import os
 import json
 import traceback
 import math
+import re
 
 # Force UTF-8 stdout
 if hasattr(sys.stdout, "reconfigure"):
@@ -28,7 +29,13 @@ if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 # Add traiNNer-redux to path (worker runs in traiNNer venv)
-TRAINNER_PATH = os.path.join(os.path.expanduser("~"), "IA_Engine", "traiNNer-redux")
+_HOME = os.path.expanduser("~")
+try:
+    from src.core.engine_paths import base_engine_path as _ebp
+except ImportError:  # venv runner: engine_paths.py ships loose next to this file
+    from engine_paths import base_engine_path as _ebp
+_BASE = _ebp()
+TRAINNER_PATH = os.path.join(_BASE, "traiNNer-redux")
 if os.path.isdir(TRAINNER_PATH) and TRAINNER_PATH not in sys.path:
     sys.path.insert(0, TRAINNER_PATH)
     os.chdir(TRAINNER_PATH)
@@ -53,8 +60,27 @@ _use_amp: bool = False
 _last_hw: "tuple | None" = None   # (H, W) of previous frame — detect resolution change
 
 
+# stdout carries the JSON protocol only: any other print() (an arch constructor, e.g.
+# DocRes "Enabling Auto-Coordinate Injection") goes to stderr instead of breaking it.
+_PROTO_OUT = sys.stdout
+sys.stdout = sys.stderr
+
+
+def _imwrite_u(path, arr):
+    """cv2.imwrite that also works with non-ASCII Windows paths (imencode + tofile)."""
+    import os as _os
+    import cv2 as _cv2
+    ext = _os.path.splitext(path)[1] or ".png"
+    ok, buf = _cv2.imencode(ext, arr)
+    if not ok:
+        return False
+    buf.tofile(path)
+    return True
+
+
 def _emit(obj: dict) -> None:
-    print(json.dumps(obj, ensure_ascii=False), flush=True)
+    _PROTO_OUT.write(json.dumps(obj, ensure_ascii=False) + "\n")
+    _PROTO_OUT.flush()
 
 
 def _load_state_dict(path: str) -> dict:
@@ -334,8 +360,9 @@ def cmd_init(payload: dict) -> None:
                 _ig_k = max(1, int(round(_math.sqrt(_k2))))
             else:
                 _ig_k = 3
-            # Prefer user-selected scale if valid, else auto (max trained scale)
-            _requested = _scale_hint if _scale_hint > 0 else max(_scale_list)
+            # Prefer user-selected scale if valid, else traiNNer-redux's eval_base_scale
+            # default (2) — max (4) made 2x-trained models come out 4x
+            _requested = _scale_hint if _scale_hint > 0 else (2 if 2 in _scale_list else min(_scale_list))
             _eval_scale = _requested if _requested in _scale_list else min(_scale_list)
             _model = SpanC(feature_channels=_fc, scale_list=_scale_list,
                            eval_base_scale=_eval_scale,
@@ -416,7 +443,14 @@ def cmd_init(payload: dict) -> None:
 
     # 3) Spandrel (universel — pour tout ce qui n'est pas GFISRV2/SpanPP)
     try:
+        if "groups.0.blocks.2.attn.dictionary" in sd:  # FDAT-RD: spandrel would take it for FDAT
+            raise RuntimeError("skip spandrel")
         import spandrel
+        try:
+            import spandrel_extra_arches
+            spandrel_extra_arches.install()
+        except Exception:
+            pass
         model_desc = spandrel.ModelLoader(device=_device).load_from_file(model_path)
         _model = model_desc.model.eval().to(_device)
         _scale = getattr(model_desc, "scale", _scale)
@@ -425,6 +459,26 @@ def cmd_init(payload: dict) -> None:
         return
     except Exception:
         pass
+
+    # 3a) HEART / NERVE (traiNNer-redux master) — hyperparams read from the weights
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import arch_infer
+        _ai = arch_infer.detect(sd)
+        if _ai and _ai not in arch_infer.IMAGE_ARCHS:
+            _emit({"status": "error", "msg": f"{_ai.upper()} est un modèle vidéo : utilisez l'entrée Vidéo de Quick Upscale."})
+            return
+        if _ai:
+            _m, _sc, _kw = arch_infer.build(_ai, sd)
+            _model = _m.eval().to(_device)
+            _scale = _sc
+            _arch = _ai.upper()
+            _emit({"status": "ready", "arch": _arch, "scale": _scale,
+                   "backend": f"{_ai}-manual dim={_kw.get('dim', _kw.get('embed_dim'))}"})
+            return
+    except Exception as _e:
+        _emit({"status": "error", "msg": f"HEART/NERVE load failed: {_e}"})
+        return
 
     # 3b) RCAN manual — spandrel mis-detects n_feats for scale-1 (deband) RCAN
     # because it reads n_feats from the absent pixelshuffle tail.0 → size mismatch.
@@ -463,12 +517,11 @@ def cmd_init(payload: dict) -> None:
     _fc_w = sd.get("feats.0.eval_conv.weight", sd.get("feats.0.sk.weight", None))
     if _fc_w is not None:
         try:
-            from traiNNer.archs.spanplus_arch import SpanPlus
-            _fc  = int(_fc_w.shape[0])
-            _up  = "dys" if "upsampler.offset.weight" in sd else "conv"
-            _model = SpanPlus(feature_channels=_fc, upscale=_scale, upsampler=_up).eval()
-            _model.load_state_dict(sd, strict=False)
-            _model = _model.to(_device)
+            # strict rebuild from the weights (was strict=False with blocks=[4]: the
+            # _s / _st / _sts variants loaded partly and produced garbage silently)
+            import arch_infer
+            _model, _scale, _kw = arch_infer.build("spanplus", sd)
+            _model = _model.eval().to(_device)
             _arch  = "SPANPlus"
             _emit({"status": "ready", "arch": _arch, "scale": _scale, "backend": "spanplus-fallback"})
             return
@@ -493,8 +546,9 @@ def cmd_init(payload: dict) -> None:
             # Detect ffn_expansion from project_in_g ratio
             _pig = sd.get("body.0.blocks.0.transformer.project_in_g.weight")
             _ffn_exp = round(_pig.shape[0] / _pig.shape[1], 4) if (_pig is not None and _pig.shape[1] > 0) else 1.5
-            # ParagonSR is always 1x (Magic Kernel Sharp = identity for 1x)
-            _psr_scale = _scale_hint if _scale_hint > 0 else 1
+            # The scale is not in the weights (parameter-free Magic Kernel upsampler): the
+            # user's choice, else 4x like the single-image runner.
+            _psr_scale = _scale_hint if _scale_hint > 0 else 4
             _model = ParagonSR(scale=max(1, _psr_scale), num_feat=_num_feat,
                                num_groups=_num_groups, num_blocks=_num_blocks,
                                ffn_expansion=_ffn_exp).eval()
@@ -510,25 +564,1093 @@ def cmd_init(payload: dict) -> None:
             return
 
     # ── ParagonSR v2 (Phhofm) — dual-path architecture ───────────────────────
-    # Signature: detail_gain + base.conv_in or base.body prefix
-    if "detail_gain" in sd and any(k.startswith("base.conv_in") or k.startswith("base.body") for k in sd):
+    # Signature: detail_gain + conv_in/body at root (no "base." prefix — that's
+    # the MagicKernelSharp2021Upsample submodule, not the main path).
+    if "detail_gain" in sd and "conv_in.weight" in sd and any(k.startswith("body.") for k in sd):
         try:
             from traiNNer.archs.paragonsr2_arch import ParagonSR2
+            import re as _re2
             _ci2 = sd.get("conv_in.weight")
             _nf2 = int(_ci2.shape[0]) if _ci2 is not None else 64
-            _var2 = ("realtime" if _nf2 <= 16 else "stream" if _nf2 <= 32 else
-                     "photo" if _nf2 <= 64 else "pro" if _nf2 <= 128 else "ultimate")
-            _psr2_scale = _scale_hint if _scale_hint > 0 else 1
-            _model = ParagonSR2(scale=max(1, _psr2_scale), num_feat=_nf2, variant=_var2).eval()
+            _keys2 = list(sd.keys())
+            _keys2_str = " ".join(_keys2)
+            # Detect variant from block signature keys first (photo/pro both
+            # default to num_feat=64, so the threshold alone can't tell them apart).
+            # NOTE: check gated_conv (ultimate) BEFORE token_ca (pro) — ultimate blocks
+            # also carry a token_ca submodule in their staged curriculum, so checking
+            # token_ca first would misclassify ultimate checkpoints as pro.
+            if ".gated_conv." in _keys2_str:
+                _var2 = "ultimate"
+            elif ".token_ca." in _keys2_str or ".channel_attn." in _keys2_str:
+                _var2 = "pro"
+            elif ".proj." in _keys2_str and ".gate." in _keys2_str:
+                _var2 = "stream"
+            else:
+                _var2 = "realtime" if _nf2 <= 16 else "photo"
+            _grp2, _blk2 = set(), set()
+            for _k in _keys2:
+                _m = _re2.match(r"body\.(\d+)\.blocks\.(\d+)\.", _k)
+                if _m:
+                    _grp2.add(int(_m.group(1)))
+                    if int(_m.group(1)) == 0:
+                        _blk2.add(int(_m.group(2)))
+            _ng2 = len(_grp2) if _grp2 else 4
+            _nb2 = len(_blk2) if _blk2 else 4
+            # up.0 = conv num_feat -> num_feat * scale^2 (pixel shuffle): the scale is in the
+            # weights (it used to default to 1, so 2x/4x models ran at 1x).
+            _up2 = sd.get("up.0.weight")
+            _s2 = 0
+            if _up2 is not None and _up2.shape[1] > 0:
+                _r2 = int(round((_up2.shape[0] / _up2.shape[1]) ** 0.5))
+                _s2 = _r2 if _r2 >= 1 and _r2 * _r2 * _up2.shape[1] == _up2.shape[0] else 0
+            _psr2_scale = _scale_hint if _scale_hint > 0 else (_s2 or 4)
+            _model = ParagonSR2(scale=max(1, _psr2_scale), num_feat=_nf2,
+                                 num_groups=_ng2, num_blocks=_nb2, variant=_var2).eval()
             _model.load_state_dict(sd, strict=False)
             _model = _model.to(_device)
             _arch = "ParagonSR2"
             _scale = max(1, _psr2_scale)
             _emit({"status": "ready", "arch": _arch, "scale": _scale,
-                   "backend": f"paragonsr2-manual feat={_nf2} var={_var2}"})
+                   "backend": f"paragonsr2-manual feat={_nf2} var={_var2} g={_ng2} b={_nb2}"})
             return
         except Exception as _e:
             _emit({"status": "error", "msg": f"ParagonSR2 load failed: {_e}"})
+            return
+
+    # ── MambaIR (ECCV2024) — VSSBlock's SS2D signature ───────────────────────
+    if any(".self_attention.x_proj_weight" in k for k in sd):
+        try:
+            import re as _re
+            from traiNNer.archs.mambair_arch import MambaIR
+            _cf = sd.get("conv_first.weight")
+            _embed_dim = int(_cf.shape[0]) if _cf is not None else 96
+            _grp = {}
+            for _k in sd:
+                _mm = _re.match(r"^layers\.(\d+)\.residual_group\.blocks\.(\d+)\.", _k)
+                if _mm:
+                    _i, _j = int(_mm.group(1)), int(_mm.group(2))
+                    _grp.setdefault(_i, set()).add(_j)
+            _depths = tuple(len(_grp[i]) for i in sorted(_grp)) if _grp else (6, 6, 6, 6)
+            _alogs = sd.get("layers.0.residual_group.blocks.0.self_attention.A_logs")
+            _d_state = int(_alogs.shape[-1]) if _alogs is not None else 16
+            _d_inner = int(_alogs.shape[0] // 4) if _alogs is not None else _embed_dim * 2
+            _mlp_ratio = round(_d_inner / max(1, _embed_dim), 4)
+            _resi = "1conv" if "layers.0.conv.weight" in sd else "3conv"
+            if "conv_up1.weight" in sd:
+                _up = "nearest+conv"; _up_scale = 4
+            elif "conv_before_upsample.0.weight" in sd:
+                _up = "pixelshuffle"
+                _stages = sorted({int(m.group(1)) for k in sd
+                                  if (m := _re.match(r"^upsample\.(\d+)\.weight$", k))})
+                if len(_stages) == 1:
+                    _outc = sd[f"upsample.{_stages[0]}.weight"].shape[0]
+                    _up_scale = 3 if _outc == 9 * 64 else 2
+                else:
+                    _up_scale = 2 ** max(1, len(_stages))
+            elif "upsample.0.weight" in sd:
+                _up = "pixelshuffledirect"
+                _outc = sd["upsample.0.weight"].shape[0]
+                _s = round(math.sqrt(_outc / 3.0))
+                _up_scale = _s if _s >= 1 and _s * _s * 3 == _outc else 4
+            else:
+                _up = ""; _up_scale = 1
+            _mamba_scale = _scale_hint if _scale_hint > 0 else _up_scale
+            _model = MambaIR(embed_dim=_embed_dim, depths=_depths, d_state=_d_state,
+                             mlp_ratio=_mlp_ratio, upscale=max(1, _mamba_scale),
+                             upsampler=_up, resi_connection=_resi)
+            _model.load_state_dict(sd, strict=False)
+            _model = _model.to(_device).eval()
+            _arch = "MambaIR"
+            _scale = max(1, _mamba_scale)
+            _emit({"status": "ready", "arch": _arch, "scale": _scale,
+                   "backend": f"mambair-manual embed_dim={_embed_dim} depths={_depths}"})
+            return
+        except Exception as _e:
+            _emit({"status": "error", "msg": f"MambaIR load failed: {_e}"})
+            return
+
+    # ── MambaIRv2 (CVPR2025) — ASSM/AttentiveLayer signature ─────────────────
+    if (any(".embeddingA.weight" in k for k in sd)
+            and any(".assm.selectiveScan.x_proj_weight" in k for k in sd)):
+        try:
+            import re as _re
+            from traiNNer.archs.mambairv2_arch import MambaIRv2
+            _cf = sd.get("conv_first.weight")
+            _embed_dim = int(_cf.shape[0]) if _cf is not None else 48
+            _grp = {}
+            for _k in sd:
+                _mm = _re.match(r"^layers\.(\d+)\.residual_group\.layers\.(\d+)\.", _k)
+                if _mm:
+                    _i, _j = int(_mm.group(1)), int(_mm.group(2))
+                    _grp.setdefault(_i, set()).add(_j)
+            _depths = tuple(len(_grp[i]) for i in sorted(_grp)) if _grp else (6, 6, 6, 6)
+            _alogs = sd.get("layers.0.residual_group.layers.0.assm.selectiveScan.A_logs")
+            _d_state = int(_alogs.shape[-1]) if _alogs is not None else 8
+            _inproj = sd.get("layers.0.residual_group.layers.0.assm.in_proj.0.weight")
+            _mlp_ratio = round(int(_inproj.shape[0]) / max(1, _embed_dim), 4) if _inproj is not None else 1.5
+            _embB = sd.get("layers.0.residual_group.layers.0.assm.embeddingB.weight")
+            _num_tokens = int(_embB.shape[0]) if _embB is not None else 64
+            _inner_rank = int(_embB.shape[1]) if _embB is not None else 32
+            _rpbt = sd.get("layers.0.residual_group.layers.0.win_mhsa.relative_position_bias_table")
+            if _rpbt is not None:
+                _num_heads = int(_rpbt.shape[-1])
+                _window_size = max(2, round((math.sqrt(_rpbt.shape[0]) + 1) / 2))
+            else:
+                _num_heads, _window_size = 4, 16
+            _dw = sd.get("layers.0.residual_group.layers.0.convffn1.dwconv.depthwise_conv.0.weight")
+            _convffn_ks = int(_dw.shape[-1]) if _dw is not None else 5
+            _resi = "1conv" if "layers.0.conv.weight" in sd else "3conv"
+            if "conv_up1.weight" in sd:
+                _up = "nearest+conv"; _up_scale = 4
+            elif "conv_before_upsample.0.weight" in sd:
+                _up = "pixelshuffle"
+                _stages = sorted({int(m.group(1)) for k in sd
+                                  if (m := _re.match(r"^upsample\.(\d+)\.weight$", k))})
+                if len(_stages) == 1:
+                    _outc = sd[f"upsample.{_stages[0]}.weight"].shape[0]
+                    _up_scale = 3 if _outc == 9 * 64 else 2
+                else:
+                    _up_scale = 2 ** max(1, len(_stages))
+            elif "upsample.0.weight" in sd:
+                _up = "pixelshuffledirect"
+                _outc = sd["upsample.0.weight"].shape[0]
+                _s = round(math.sqrt(_outc / 3.0))
+                _up_scale = _s if _s >= 1 and _s * _s * 3 == _outc else 4
+            else:
+                _up = ""; _up_scale = 1
+            _mamba_scale = _scale_hint if _scale_hint > 0 else _up_scale
+            _model = MambaIRv2(embed_dim=_embed_dim, depths=_depths,
+                               num_heads=(_num_heads,) * len(_depths),
+                               d_state=_d_state, mlp_ratio=_mlp_ratio, window_size=_window_size,
+                               inner_rank=_inner_rank, num_tokens=_num_tokens,
+                               convffn_kernel_size=_convffn_ks, upscale=max(1, _mamba_scale),
+                               upsampler=_up, resi_connection=_resi)
+            _model.load_state_dict(sd, strict=False)
+            _model = _model.to(_device).eval()
+            _arch = "MambaIRv2"
+            _scale = max(1, _mamba_scale)
+            _emit({"status": "ready", "arch": _arch, "scale": _scale,
+                   "backend": f"mambairv2-manual embed_dim={_embed_dim} depths={_depths}"})
+            return
+        except Exception as _e:
+            _emit({"status": "error", "msg": f"MambaIRv2 load failed: {_e}"})
+            return
+
+    # ── ArtCNN ─────────────────────────────────────────────────────────────
+    if "depth_to_space.upscale.0.weight" in sd and "res_block.0.conv.0.0.weight" in sd:
+        try:
+            import re as _re
+            from traiNNer.archs.artcnn_arch import ArtCNN
+            _w0 = sd.get("conv0.weight")
+            _filters = int(_w0.shape[0]) if _w0 is not None else 96
+            _in_ch = int(_w0.shape[1]) if _w0 is not None else 3
+            _ks = int(_w0.shape[-1]) if _w0 is not None else 3
+            _nb = len({int(m.group(1)) for k in sd
+                       if (m := _re.match(r"^res_block\.(\d+)\.conv\.0\.0\.weight$", k))})
+            _nb = _nb if _nb > 0 else 16
+            _up_w = sd.get("depth_to_space.upscale.0.weight")
+            if _up_w is not None and _in_ch > 0:
+                _sq = _up_w.shape[0] / _in_ch
+                _s = round(math.sqrt(_sq))
+                _det_scale = _s if _s >= 1 and _s * _s == round(_sq) else 4
+            else:
+                _det_scale = 4
+            _art_scale = _scale_hint if _scale_hint > 0 else _det_scale
+            _model = ArtCNN(in_ch=_in_ch, scale=max(1, _art_scale), filters=_filters,
+                            n_block=_nb, kernel_size=_ks).eval()
+            _model.load_state_dict(sd, strict=False)
+            _model = _model.to(_device)
+            _arch = "ArtCNN"
+            _scale = max(1, _art_scale)
+            _emit({"status": "ready", "arch": _arch, "scale": _scale,
+                   "backend": f"artcnn-manual filters={_filters} n_block={_nb}"})
+            return
+        except Exception as _e:
+            _emit({"status": "error", "msg": f"ArtCNN load failed: {_e}"})
+            return
+
+    # ── LKFMixer ───────────────────────────────────────────────────────────
+    if any(k.startswith("layers.layers.") and ".FDB.c1_d.weight" in k for k in sd):
+        try:
+            import re as _re
+            from traiNNer.archs.lkfmixer_arch import LKFMixer
+            _w0 = sd.get("conv_first.weight")
+            _channels = int(_w0.shape[0]) if _w0 is not None else 40
+            _in_channels = int(_w0.shape[1]) if _w0 is not None else 3
+            _nblk = len({int(m.group(1)) for k in sd
+                         if (m := _re.match(r"^layers\.layers\.(\d+)\.FDB\.c1_d\.weight$", k))})
+            _nblk = _nblk if _nblk > 0 else 6
+            _lk_w = sd.get("layers.layers.0.FDB.c1_r.PLKB.DWConv_Kx1.weight")
+            _large_kernel = int(_lk_w.shape[2]) if _lk_w is not None else 31
+            _split_ch = int(_lk_w.shape[0]) if _lk_w is not None else 10
+            _split_factor = round(_split_ch / max(1, _channels), 4)
+            _up_w = sd.get("upsampler.upsampleOneStep.0.weight")
+            _out_channels = 3
+            if _up_w is not None:
+                _sq = _up_w.shape[0] / _out_channels
+                _s = round(math.sqrt(_sq))
+                _det_scale = _s if _s >= 1 and _s * _s == round(_sq) else 4
+            else:
+                _det_scale = 4
+            _lkf_scale = _scale_hint if _scale_hint > 0 else _det_scale
+            _model = LKFMixer(in_channels=_in_channels, channels=_channels, out_channels=_out_channels,
+                              upscale=max(1, _lkf_scale), num_block=_nblk, large_kernel=_large_kernel,
+                              split_factor=_split_factor).eval()
+            _model.load_state_dict(sd, strict=False)
+            _model = _model.to(_device)
+            _arch = "LKFMixer"
+            _scale = max(1, _lkf_scale)
+            _emit({"status": "ready", "arch": _arch, "scale": _scale,
+                   "backend": f"lkfmixer-manual channels={_channels} num_block={_nblk}"})
+            return
+        except Exception as _e:
+            _emit({"status": "error", "msg": f"LKFMixer load failed: {_e}"})
+            return
+
+    # ── RTMoSR ─────────────────────────────────────────────────────────────
+    if "to_img.0.conv2.weight" in sd and any(k.startswith("body.") and ".fc1." in k for k in sd) \
+            and any(".conv.0.poll.1." in k for k in sd):
+        try:
+            import re as _re
+            from traiNNer.archs.rtmosr_arch import RTMoSR
+            if "to_feat.1.conv2.weight" in sd:
+                _feat_w = sd["to_feat.1.conv2.weight"]
+                _unshuffle = max(1, round(math.sqrt(_feat_w.shape[1] / 3.0)))
+            else:
+                _feat_w = sd.get("to_feat.conv2.weight")
+                _unshuffle = 0
+            _dim = int(_feat_w.shape[0]) if _feat_w is not None else 32
+            _img_w = sd.get("to_img.0.conv2.weight")
+            _scale_internal = round(math.sqrt(_img_w.shape[0] / 3.0)) if _img_w is not None else 2
+            _det_scale = (4 // _unshuffle) if _unshuffle > 0 else _scale_internal
+            _rtm_scale = _scale_hint if _scale_hint > 0 else max(1, _det_scale)
+            _nblocks = len({int(m.group(1)) for k in sd
+                            if (m := _re.match(r"^body\.(\d+)\.norm\.scale$", k))})
+            _nblocks = _nblocks if _nblocks > 0 else 2
+            _fc1_w = sd.get("body.0.fc1.conv2.weight")
+            _ffn_exp = round((_fc1_w.shape[0] / 2.0) / _dim, 4) if (_fc1_w is not None and _dim > 0) else 2.0
+            _dccm = "body.0.fc2.conv2.weight" in sd
+            _se = "body.0.conv.2.squeezing.0.weight" in sd
+            _model = RTMoSR(scale=max(1, _rtm_scale), dim=_dim, ffn_expansion=_ffn_exp,
+                            n_blocks=_nblocks, unshuffle_mod=(_unshuffle > 0), dccm=_dccm, se=_se).eval()
+            _model.load_state_dict(sd, strict=False)
+            _model = _model.to(_device)
+            _arch = "RTMoSR"
+            _scale = max(1, _rtm_scale)
+            _emit({"status": "ready", "arch": _arch, "scale": _scale,
+                   "backend": f"rtmosr-manual dim={_dim} n_blocks={_nblocks}"})
+            return
+        except Exception as _e:
+            _emit({"status": "error", "msg": f"RTMoSR load failed: {_e}"})
+            return
+
+    # ── MoSRv2 ─────────────────────────────────────────────────────────────
+    if "to_img.MetaUpsample" in sd and any(k.startswith("gblocks.") for k in sd):
+        try:
+            import re as _re
+            from traiNNer.archs.mosrv2_arch import MoSRv2
+            from traiNNer.archs.arch_util import SampleMods3
+            if "gblocks.0.weight" in sd:
+                _in_w = sd["gblocks.0.weight"]
+                _unshuffle = 0
+            else:
+                _in_w = sd.get("gblocks.1.weight")
+                _unshuffle = max(1, round(math.sqrt(_in_w.shape[1] / 3.0))) if _in_w is not None else 0
+            _dim = int(_in_w.shape[0]) if _in_w is not None else 64
+            _nblock = len({int(m.group(1)) for k in sd
+                           if (m := _re.match(r"^gblocks\.(\d+)\.gamma$", k))})
+            _nblock = _nblock if _nblock > 0 else 24
+            _norm_key = next((k for k in sd if _re.match(r"^gblocks\.\d+\.norm\.(scale|weight)$", k)), None)
+            _rms_norm = bool(_norm_key and _norm_key.endswith(".scale"))
+            _fc1_w = None
+            for k, v in sd.items():
+                if _re.match(r"^gblocks\.\d+\.fc1\.weight$", k):
+                    _fc1_w = v
+                    break
+            _exp_ratio = round((_fc1_w.shape[0] / 2.0) / _dim, 4) if (_fc1_w is not None and _dim > 0) else 1.5
+            _meta = sd.get("to_img.MetaUpsample")
+            _mid_dim = 32
+            _upsampler = "pixelshuffledirect"
+            _scale_internal = 4
+            if _meta is not None:
+                try:
+                    _upsampler = list(SampleMods3.__args__)[int(_meta[1].item())]
+                    _scale_internal = max(1, int(_meta[2].item()))
+                    _mid_dim = int(_meta[5].item())
+                except Exception:
+                    pass
+            _det_scale = (4 // _unshuffle) if _unshuffle > 0 else _scale_internal
+            _mosr_scale = _scale_hint if _scale_hint > 0 else max(1, _det_scale)
+            _model = MoSRv2(in_ch=3, scale=max(1, _mosr_scale), n_block=_nblock, dim=_dim,
+                            upsampler=_upsampler, expansion_ratio=_exp_ratio, mid_dim=_mid_dim,
+                            unshuffle_mod=(_unshuffle > 0), rms_norm=_rms_norm).eval()
+            _model.load_state_dict(sd, strict=False)
+            _model = _model.to(_device)
+            _arch = "MoSRv2"
+            _scale = max(1, _mosr_scale)
+            _emit({"status": "ready", "arch": _arch, "scale": _scale,
+                   "backend": f"mosrv2-manual dim={_dim} n_block={_nblock}"})
+            return
+        except Exception as _e:
+            _emit({"status": "error", "msg": f"MoSRv2 load failed: {_e}"})
+            return
+
+    # ── Sebica ─────────────────────────────────────────────────────────────
+    if "tail.0.weight" in sd and any(".channel_attention_forward." in k for k in sd):
+        try:
+            from traiNNer.archs.sebica_arch import Sebica
+            _head_w = sd.get("head.0.weight")
+            _n_val = int(_head_w.shape[0]) if _head_w is not None else 16
+            _tail_w = sd.get("tail.0.weight")
+            _det_scale = round(math.sqrt(_tail_w.shape[0] / 3.0)) if _tail_w is not None else 4
+            _seb_scale = _scale_hint if _scale_hint > 0 else max(1, _det_scale)
+            _model = Sebica(scale=max(1, _seb_scale), N=_n_val).eval()
+            _model.load_state_dict(sd, strict=False)
+            _model = _model.to(_device)
+            _arch = "Sebica"
+            _scale = max(1, _seb_scale)
+            _emit({"status": "ready", "arch": _arch, "scale": _scale, "backend": f"sebica-manual N={_n_val}"})
+            return
+        except Exception as _e:
+            _emit({"status": "error", "msg": f"Sebica load failed: {_e}"})
+            return
+
+    # ── LMLT ───────────────────────────────────────────────────────────────
+    if ("to_feat.weight" in sd
+            and any(re.match(r"^feats\.\d+\.norm1\.weight$", k) for k in sd)
+            and any(".lhsb." in k for k in sd)):
+        try:
+            import re as _re
+            from traiNNer.archs.lmlt_arch import LMLT
+            _feat_w = sd.get("to_feat.weight")
+            _dim = int(_feat_w.shape[0]) if _feat_w is not None else 60
+            _nblocks = len({int(m.group(1)) for k in sd
+                            if (m := _re.match(r"^feats\.(\d+)\.norm1\.weight$", k))})
+            _nblocks = _nblocks if _nblocks > 0 else 8
+            _ccm_w = sd.get("feats.0.ccm.ccm.0.weight")
+            _ffn_scale = round(_ccm_w.shape[0] / _dim, 4) if (_ccm_w is not None and _dim > 0) else 2.0
+            _img_w = sd.get("to_img.0.weight")
+            _det_scale = round(math.sqrt(_img_w.shape[0] / 3.0)) if _img_w is not None else 4
+            _lmlt_scale = _scale_hint if _scale_hint > 0 else max(1, _det_scale)
+            _model = LMLT(dim=_dim, n_blocks=_nblocks, ffn_scale=_ffn_scale, scale=max(1, _lmlt_scale)).eval()
+            _model.load_state_dict(sd, strict=False)
+            _model = _model.to(_device)
+            _arch = "LMLT"
+            _scale = max(1, _lmlt_scale)
+            _emit({"status": "ready", "arch": _arch, "scale": _scale,
+                   "backend": f"lmlt-manual dim={_dim} n_blocks={_nblocks}"})
+            return
+        except Exception as _e:
+            _emit({"status": "error", "msg": f"LMLT load failed: {_e}"})
+            return
+
+    # ── MAN ────────────────────────────────────────────────────────────────
+    if any(k.startswith("body.") and ".body_t." in k for k in sd) and "tail.0.weight" in sd \
+            and "sub_mean.weight" in sd:
+        try:
+            import re as _re
+            from traiNNer.archs.man_arch import MAN
+            _head_w = sd.get("head.weight")
+            _n_feats = int(_head_w.shape[0]) if _head_w is not None else 180
+            _nrg = len({int(m.group(1)) for k in sd
+                        if (m := _re.match(r"^body\.(\d+)\.body_t\.", k))})
+            _nrg = _nrg if _nrg > 0 else 1
+            _nrb = len({int(m.group(1)) for k in sd
+                        if (m := _re.match(r"^body\.0\.body\.(\d+)\.", k))})
+            _nrb = _nrb if _nrb > 0 else 36
+            _tail_w = sd.get("tail.0.weight")
+            _det_scale = round(math.sqrt(_tail_w.shape[0] / 3.0)) if _tail_w is not None else 2
+            _man_scale = _scale_hint if _scale_hint > 0 else max(1, _det_scale)
+            _model = MAN(n_resblocks=_nrb, n_resgroups=_nrg, n_feats=_n_feats,
+                        scale=max(1, _man_scale)).eval()
+            _model.load_state_dict(sd, strict=False)
+            _model = _model.to(_device)
+            _arch = "MAN"
+            _scale = max(1, _man_scale)
+            _emit({"status": "ready", "arch": _arch, "scale": _scale,
+                   "backend": f"man-manual n_feats={_n_feats} nrg={_nrg} nrb={_nrb}"})
+            return
+        except Exception as _e:
+            _emit({"status": "error", "msg": f"MAN load failed: {_e}"})
+            return
+
+    # ── EIMN ───────────────────────────────────────────────────────────────
+    if (any(k.startswith("block1.") and ".mlp.DFFM." in k for k in sd)
+            and any(re.match(r"^norm\d+\.weight$", k) for k in sd)):
+        try:
+            import re as _re
+            from traiNNer.archs.eimn_arch import EIMN
+            _head_w = sd.get("head.0.weight")
+            _embed_dims = int(_head_w.shape[0]) if _head_w is not None else 64
+            _num_stages = len({int(m.group(1)) for k in sd
+                               if (m := _re.match(r"^norm(\d+)\.weight$", k))})
+            _num_stages = _num_stages if _num_stages > 0 else 16
+            _depths = len({int(m.group(1)) for k in sd
+                           if (m := _re.match(r"^block1\.(\d+)\.", k))})
+            _depths = _depths if _depths > 0 else 1
+            _mlp_w = sd.get("block1.0.mlp.linear_in.weight")
+            if _mlp_w is not None and _embed_dims > 0:
+                _hidden = int(_mlp_w.shape[0] // 2)
+                _mlp_ratios = (_hidden + 0.5) / _embed_dims  # +0.5 epsilon: int(dim*ratio) truncates safely back to _hidden
+            else:
+                _mlp_ratios = 2.66
+            _tail_w = sd.get("tail.0.weight")
+            _det_scale = round(math.sqrt(_tail_w.shape[0] / 3.0)) if _tail_w is not None else 2
+            _eimn_scale = _scale_hint if _scale_hint > 0 else max(1, _det_scale)
+            _model = EIMN(embed_dims=_embed_dims, scale=max(1, _eimn_scale), depths=_depths,
+                         mlp_ratios=_mlp_ratios, num_stages=_num_stages).eval()
+            _model.load_state_dict(sd, strict=False)
+            _model = _model.to(_device)
+            _arch = "EIMN"
+            _scale = max(1, _eimn_scale)
+            _emit({"status": "ready", "arch": _arch, "scale": _scale,
+                   "backend": f"eimn-manual embed_dims={_embed_dims} num_stages={_num_stages}"})
+            return
+        except Exception as _e:
+            _emit({"status": "error", "msg": f"EIMN load failed: {_e}"})
+            return
+
+    # ── ELAN ───────────────────────────────────────────────────────────────
+    if "head.0.weight" in sd and "tail.0.weight" in sd \
+            and any(".modules_lfe.lfe_0." in k for k in sd) \
+            and any(".modules_gmsa.gmsa_0." in k for k in sd):
+        try:
+            import re as _re
+            from traiNNer.archs.elan_arch import ELAN
+            _head_w = sd.get("head.0.weight")
+            _c_elan = int(_head_w.shape[0]) if _head_w is not None else 180
+            _n_body = len({int(m.group(1)) for k in sd
+                          if (m := _re.match(r"^body\.(\d+)\.", k))})
+            _n_body = _n_body if _n_body > 0 else 36
+            _n_share = len({int(m.group(1)) for k in sd
+                            if (m := _re.match(r"^body\.0\.modules_lfe\.lfe_(\d+)\.", k))})
+            _n_share = (_n_share - 1) if _n_share > 0 else 0
+            _m_elan = _n_body * (1 + _n_share)
+            _tail_w = sd.get("tail.0.weight")
+            _det_scale = round(math.sqrt(_tail_w.shape[0] / 3.0)) if _tail_w is not None else 4
+            _elan_scale = _scale_hint if _scale_hint > 0 else max(1, _det_scale)
+            _model = ELAN(scale=max(1, _elan_scale), m_elan=_m_elan, c_elan=_c_elan, n_share=_n_share).eval()
+            _model.load_state_dict(sd, strict=False)
+            _model = _model.to(_device)
+            _arch = "ELAN"
+            _scale = max(1, _elan_scale)
+            _emit({"status": "ready", "arch": _arch, "scale": _scale,
+                   "backend": f"elan-manual c_elan={_c_elan} m_elan={_m_elan}"})
+            return
+        except Exception as _e:
+            _emit({"status": "error", "msg": f"ELAN load failed: {_e}"})
+            return
+
+    # ── GateRV3 — SISR span branch + gated U-Net (in_to_dim/sisr_cat_conv) ───
+    if "in_to_dim.weight" in sd and "sisr_cat_conv.weight" in sd:
+        try:
+            import re as _re
+            from traiNNer.archs.gaterv3_arch import GateRV3
+            from traiNNer.archs.arch_util import SampleMods
+            _idm = sd.get("in_to_dim.weight")
+            _dim = int(_idm.shape[0]) if _idm is not None else 32
+            _in_ch = int(_idm.shape[1]) if _idm is not None else 3
+            _enc = {}
+            for _k in sd:
+                _mm = _re.match(r"^gater_encode\.(\d+)\.gated\.(\d+)\.", _k)
+                if _mm:
+                    _enc.setdefault(int(_mm.group(1)), set()).add(int(_mm.group(2)))
+            _enc_blocks = tuple(len(_enc[i]) for i in sorted(_enc)) if _enc else (2, 2, 4, 6)
+            _dec = {}
+            for _k in sd:
+                _mm = _re.match(r"^decode\.(\d+)\.gated\.(\d+)\.", _k)
+                if _mm:
+                    _dec.setdefault(int(_mm.group(1)), set()).add(int(_mm.group(2)))
+            _dec_blocks = tuple(len(_dec[i]) for i in sorted(_dec)) if _dec else (2, 2, 2, 2)
+            _lat_idx = {int(m.group(1)) for k in sd if (m := _re.match(r"^latent\.(\d+)\.", k))}
+            _num_latent = len(_lat_idx) if _lat_idx else 8
+            _sisr_idx = {int(m.group(1)) for k in sd if (m := _re.match(r"^span_n_b\.(\d+)\.", k))}
+            _sisr_blocks = len(_sisr_idx) if _sisr_idx else 4
+            _attention = any(".token_mix.qkv.weight" in k for k in sd)
+            _up = "pixelshuffle"; _up_mid_dim = 48; _det_scale = 2
+            _meta = sd.get("dim_to_in.MetaUpsample")
+            if _meta is not None:
+                try:
+                    _up = list(SampleMods.__args__)[int(_meta[1].item())]
+                    _det_scale = max(1, int(_meta[2].item()))
+                    _up_mid_dim = int(_meta[5].item())
+                except Exception:
+                    pass
+            elif "dim_to_in.weight" in sd:
+                _det_scale = 1
+            _gaterv3_scale = _scale_hint if _scale_hint > 0 else _det_scale
+            _model = GateRV3(in_ch=_in_ch, dim=_dim, enc_blocks=_enc_blocks, dec_blocks=_dec_blocks,
+                             num_latent=_num_latent, scale=max(1, _gaterv3_scale), upsample=_up,
+                             upsample_mid_dim=_up_mid_dim, attention=_attention,
+                             sisr_blocks=_sisr_blocks)
+            _model.load_state_dict(sd, strict=True)
+            _model = _model.to(_device).eval()
+            _arch = "GateRV3"
+            _scale = max(1, _gaterv3_scale)
+            _emit({"status": "ready", "arch": _arch, "scale": _scale,
+                   "backend": f"gaterv3-manual dim={_dim} enc={_enc_blocks} dec={_dec_blocks}"})
+            return
+        except Exception as _e:
+            _emit({"status": "error", "msg": f"GateRV3 load failed: {_e}"})
+            return
+
+    # ── HiT-SNG — NGram context window partition (unique to SNG variant) ─────
+    if any(".ngram_window_partition.ngram_context.unigram_embed.weight" in k for k in sd):
+        try:
+            import re as _re
+            from traiNNer.archs.hit_sng_arch import HiT_SNG as _HiTCls
+            _hit_arch_name = "HiT-SNG"
+            _cf = sd.get("conv_first.weight")
+            _embed_dim = int(_cf.shape[0]) if _cf is not None else 60
+            _in_chans = int(_cf.shape[1]) if _cf is not None else 3
+            _grp = {}
+            for _k in sd:
+                _mm = _re.match(r"^layers\.(\d+)\.residual_group\.blocks\.(\d+)\.", _k)
+                if _mm:
+                    _grp.setdefault(int(_mm.group(1)), set()).add(int(_mm.group(2)))
+            _depths = tuple(len(_grp[i]) for i in sorted(_grp)) if _grp else (6, 6, 6, 6)
+            _headw = sd.get("layers.0.residual_group.blocks.0.correlation.pos.pos3.2.weight")
+            _num_heads_v = int(_headw.shape[0]) if _headw is not None else 6
+            _num_heads = (_num_heads_v,) * len(_depths)
+            _mlpw = sd.get("layers.0.residual_group.blocks.0.mlp.fc1.weight")
+            _mlp_ratio = round(_mlpw.shape[0] / max(1, _embed_dim), 4) if _mlpw is not None else 2.0
+            _resi = "1conv" if "layers.0.conv.weight" in sd else "3conv"
+            if "conv_up1.weight" in sd:
+                _up = "nearest+conv"; _up_scale = 4
+            elif "conv_before_upsample.0.weight" in sd:
+                _up = "pixelshuffle"
+                _stages = sorted({int(m.group(1)) for k in sd
+                                  if (m := _re.match(r"^upsample\.(\d+)\.weight$", k))})
+                if len(_stages) == 1:
+                    _outc = sd[f"upsample.{_stages[0]}.weight"].shape[0]
+                    _up_scale = 3 if _outc == 9 * 64 else 2
+                else:
+                    _up_scale = 2 ** max(1, len(_stages))
+            elif "upsample.0.weight" in sd:
+                _up = "pixelshuffledirect"
+                _outc = sd["upsample.0.weight"].shape[0]
+                _s = round(math.sqrt(_outc / 3.0))
+                _up_scale = _s if _s >= 1 and _s * _s * 3 == _outc else 4
+            else:
+                _up = ""; _up_scale = 1
+            _hit_scale = _scale_hint if _scale_hint > 0 else _up_scale
+            _model = _HiTCls(upscale=max(1, _hit_scale), in_chans=_in_chans, embed_dim=_embed_dim,
+                             depths=_depths, num_heads=_num_heads, mlp_ratio=_mlp_ratio,
+                             upsampler=_up, resi_connection=_resi)
+            # base_win_size/hier_win_ratios non dérivables des shapes → défauts du registre ;
+            # strict=False pour tolérer un éventuel mismatch de spatial_linear.
+            _model.load_state_dict(sd, strict=False)
+            _model = _model.to(_device).eval()
+            _arch = _hit_arch_name
+            _scale = max(1, _hit_scale)
+            _emit({"status": "ready", "arch": _arch, "scale": _scale,
+                   "backend": f"hit_sng-manual embed_dim={_embed_dim} depths={_depths}"})
+            return
+        except Exception as _e:
+            _emit({"status": "error", "msg": f"HiT-SNG load failed: {_e}"})
+            return
+
+    # ── HiT-SIR — Spatial-Channel Correlation (SCC/DFE), no NGram context ────
+    if any(".correlation.qv.linear.weight" in k for k in sd) and "conv_first.weight" in sd:
+        try:
+            import re as _re
+            from traiNNer.archs.hit_sir_arch import HiT_SIR as _HiTCls
+            _hit_arch_name = "HiT-SIR"
+            _cf = sd.get("conv_first.weight")
+            _embed_dim = int(_cf.shape[0]) if _cf is not None else 60
+            _in_chans = int(_cf.shape[1]) if _cf is not None else 3
+            _grp = {}
+            for _k in sd:
+                _mm = _re.match(r"^layers\.(\d+)\.residual_group\.blocks\.(\d+)\.", _k)
+                if _mm:
+                    _grp.setdefault(int(_mm.group(1)), set()).add(int(_mm.group(2)))
+            _depths = tuple(len(_grp[i]) for i in sorted(_grp)) if _grp else (6, 6, 6, 6)
+            _headw = sd.get("layers.0.residual_group.blocks.0.correlation.pos.pos3.2.weight")
+            _num_heads_v = int(_headw.shape[0]) if _headw is not None else 6
+            _num_heads = (_num_heads_v,) * len(_depths)
+            _mlpw = sd.get("layers.0.residual_group.blocks.0.mlp.fc1.weight")
+            _mlp_ratio = round(_mlpw.shape[0] / max(1, _embed_dim), 4) if _mlpw is not None else 2.0
+            _resi = "1conv" if "layers.0.conv.weight" in sd else "3conv"
+            if "conv_up1.weight" in sd:
+                _up = "nearest+conv"; _up_scale = 4
+            elif "conv_before_upsample.0.weight" in sd:
+                _up = "pixelshuffle"
+                _stages = sorted({int(m.group(1)) for k in sd
+                                  if (m := _re.match(r"^upsample\.(\d+)\.weight$", k))})
+                if len(_stages) == 1:
+                    _outc = sd[f"upsample.{_stages[0]}.weight"].shape[0]
+                    _up_scale = 3 if _outc == 9 * 64 else 2
+                else:
+                    _up_scale = 2 ** max(1, len(_stages))
+            elif "upsample.0.weight" in sd:
+                _up = "pixelshuffledirect"
+                _outc = sd["upsample.0.weight"].shape[0]
+                _s = round(math.sqrt(_outc / 3.0))
+                _up_scale = _s if _s >= 1 and _s * _s * 3 == _outc else 4
+            else:
+                _up = ""; _up_scale = 1
+            _hit_scale = _scale_hint if _scale_hint > 0 else _up_scale
+            _model = _HiTCls(upscale=max(1, _hit_scale), in_chans=_in_chans, embed_dim=_embed_dim,
+                             depths=_depths, num_heads=_num_heads, mlp_ratio=_mlp_ratio,
+                             upsampler=_up, resi_connection=_resi)
+            _model.load_state_dict(sd, strict=False)
+            _model = _model.to(_device).eval()
+            _arch = _hit_arch_name
+            _scale = max(1, _hit_scale)
+            _emit({"status": "ready", "arch": _arch, "scale": _scale,
+                   "backend": f"hit_sir-manual embed_dim={_embed_dim} depths={_depths}"})
+            return
+        except Exception as _e:
+            _emit({"status": "error", "msg": f"HiT-SIR load failed: {_e}"})
+            return
+
+    # ── CascadedGaze — NAFNet-style UNet with GlobalContextExtractor blocks ──
+    if ("intro.weight" in sd and "ending.weight" in sd
+            and any(".GCE.depthwise_separable_convs." in k for k in sd)):
+        try:
+            import re as _re
+            from traiNNer.archs.cgnet_arch import CascadedGaze
+            _introw = sd.get("intro.weight")
+            _width = int(_introw.shape[0]) if _introw is not None else 60
+            _img_channel = int(_introw.shape[1]) if _introw is not None else 3
+            _enc = {}
+            for _k in sd:
+                _mm = _re.match(r"^encoders\.(\d+)\.(\d+)\.", _k)
+                if _mm:
+                    _enc.setdefault(int(_mm.group(1)), set()).add(int(_mm.group(2)))
+            _enc_blk_nums = [len(_enc[i]) for i in sorted(_enc)] if _enc else [2, 2, 4, 6]
+            _dec = {}
+            for _k in sd:
+                _mm = _re.match(r"^decoders\.(\d+)\.(\d+)\.", _k)
+                if _mm:
+                    _dec.setdefault(int(_mm.group(1)), set()).add(int(_mm.group(2)))
+            _dec_blk_nums = [len(_dec[i]) for i in sorted(_dec)] if _dec else [2, 2, 2, 2]
+            _mid_idx = {int(m.group(1)) for k in sd if (m := _re.match(r"^middle_blks\.(\d+)\.", k))}
+            _middle_blk_num = len(_mid_idx) if _mid_idx else 10
+            _stage_ids = sorted(_enc) if _enc else list(range(4))
+            _gce_convs_nums = []
+            for i in _stage_ids:
+                _has3 = f"encoders.{i}.0.GCE.depthwise_separable_convs.2.pointwise.weight" in sd
+                _gce_convs_nums.append(3 if _has3 else 2)
+            if not _gce_convs_nums:
+                _gce_convs_nums = [3, 3, 2, 2]
+            # CascadedGaze est une arch restauration/débruitage — scale toujours 1
+            # (assert dans le constructeur) ; scale_hint UI ignoré pour cette arch.
+            _model = CascadedGaze(scale=1, img_channel=_img_channel, width=_width,
+                                  middle_blk_num=_middle_blk_num, enc_blk_nums=_enc_blk_nums,
+                                  dec_blk_nums=_dec_blk_nums, GCE_CONVS_nums=_gce_convs_nums)
+            _model.load_state_dict(sd, strict=True)
+            _model = _model.to(_device).eval()
+            _arch = "CascadedGaze"
+            _scale = 1
+            _emit({"status": "ready", "arch": _arch, "scale": _scale,
+                   "backend": f"cascadedgaze-manual width={_width} enc={_enc_blk_nums}"})
+            return
+        except Exception as _e:
+            _emit({"status": "error", "msg": f"CascadedGaze load failed: {_e}"})
+            return
+
+    # ── ESCRealM — ESC-style plk_filter + UniUpsampleV3 (distinct from neosr's
+    #    "esc" arch, which never has a to_img.MetaUpsample buffer) — DOIT tourner
+    #    avant le bloc _NEOSR_ONLY plus bas (qui rejette tout "plk_filter") ──────
+    if "plk_filter" in sd and "to_img.MetaUpsample" in sd:
+        try:
+            import re as _re
+            from traiNNer.archs.escreal_arch import ESCRealM
+            from traiNNer.archs.arch_util import SampleMods3
+            if "proj.1.weight" in sd:
+                _unshuffle_mod = True
+                _pw = sd["proj.1.weight"]
+                _dim = int(_pw.shape[0])
+                _in_ch2 = int(_pw.shape[1])
+                _unshuffle_factor = max(1, round(math.sqrt(_in_ch2 / 3.0)))
+                _exposed_scale = max(1, 4 // _unshuffle_factor)
+            else:
+                _unshuffle_mod = False
+                _pw = sd.get("proj.weight")
+                _dim = int(_pw.shape[0]) if _pw is not None else 64
+                _exposed_scale = None
+            _plk = sd.get("plk_filter")
+            _pdim = int(_plk.shape[0]) if _plk is not None else 16
+            _kernel_size = int(_plk.shape[-1]) if _plk is not None else 13
+            _blk_idx = {int(m.group(1)) for k in sd if (m := _re.match(r"^blocks\.(\d+)\.", k))}
+            _n_blocks = len(_blk_idx) if _blk_idx else 10
+            _conv_idx = {int(m.group(1)) for k in sd
+                         if (m := _re.match(r"^blocks\.0\.pconvs\.(\d+)\.", k))}
+            _conv_blocks = len(_conv_idx) if _conv_idx else 5
+            _rpb = sd.get("blocks.0.attn.relative_position_bias")
+            if _rpb is not None:
+                _num_heads = int(_rpb.shape[0])
+                _window_size = max(2, int(round((math.sqrt(_rpb.shape[1]) + 1) / 2)))
+            else:
+                _num_heads, _window_size = 4, 32
+            _cffw = sd.get("blocks.0.convffns.0.proj.weight")
+            _exp_ratio = round(_cffw.shape[0] / max(1, _dim), 4) if _cffw is not None else 2.0
+            _up = "transpose+conv"; _mid_dim = 64; _scale_internal = 4
+            _meta = sd.get("to_img.MetaUpsample")
+            if _meta is not None:
+                try:
+                    _up = list(SampleMods3.__args__)[int(_meta[1].item())]
+                    _scale_internal = max(1, int(_meta[2].item()))
+                    _mid_dim = int(_meta[5].item())
+                except Exception:
+                    pass
+            _det_scale = _exposed_scale if _exposed_scale is not None else _scale_internal
+            _escrealm_scale = _scale_hint if _scale_hint > 0 else _det_scale
+            # attn_type: jamais "Flex" (triton, absent / non supporté sous Windows et Pascal).
+            # Mêmes poids et même calcul dans les 3 modes : "SDPA" sur GPU (noyau économe,
+            # moitié de la VRAM de "Naive"), "Naive" sur CPU.
+            _model = ESCRealM(dim=_dim, pdim=_pdim, kernel_size=_kernel_size, n_blocks=_n_blocks,
+                              conv_blocks=_conv_blocks, window_size=_window_size, num_heads=_num_heads,
+                              scale=max(1, _escrealm_scale), exp_ratio=_exp_ratio,
+                              attn_type="SDPA" if str(_device).startswith("cuda") else "Naive",
+                              mid_dim=_mid_dim, upsampler=_up, unshuffle_mod=_unshuffle_mod)
+            _model.load_state_dict(sd, strict=True)
+            _model = _model.to(_device).eval()
+            _arch = "ESCRealM"
+            _scale = max(1, _escrealm_scale)
+            _emit({"status": "ready", "arch": _arch, "scale": _scale,
+                   "backend": f"escrealm-manual dim={_dim} n_blocks={_n_blocks} up={_up}"})
+            return
+        except Exception as _e:
+            _emit({"status": "error", "msg": f"ESCRealM load failed: {_e}"})
+            return
+
+    # ── EMT — Efficient Mixed Transformer (TransformerGroup sa_list/mlp_list) ─
+    if "sub_mean.weight" in sd and "head.weight" in sd and any(".sa_list." in k for k in sd):
+        try:
+            import re as _re
+            from traiNNer.archs.emt_arch import EMT
+            _headw = sd.get("head.weight")
+            _dim = int(_headw.shape[0]) if _headw is not None else 60
+            _num_in_ch = int(_headw.shape[1]) if _headw is not None else 3
+            _blk_idx = {int(m.group(1)) for k in sd if (m := _re.match(r"^body\.(\d+)\.", k))}
+            _n_blocks = len(_blk_idx) if _blk_idx else 6
+            _layer_idx = {int(m.group(1)) for k in sd
+                          if (m := _re.match(r"^body\.0\.sa_list\.(\d+)\.", k))}
+            _n_layers = len(_layer_idx) if _layer_idx else 6
+            _n_gtls = len([j for j in _layer_idx
+                           if f"body.0.sa_list.{j}.attn.0.weight" in sd]) if _layer_idx else 2
+            _n_gtls = max(1, _n_gtls)
+            _mlpw = sd.get("body.0.mlp_list.0.fc1.weight")
+            _mlp_ratio = round(_mlpw.shape[0] / max(1, _dim)) if _mlpw is not None else 2
+            _tidx = sorted({int(m.group(1)) for k in sd
+                            if (m := _re.match(r"^tail\.(\d+)\.weight$", k))})
+            if len(_tidx) >= 2:
+                _up = "pixelshuffle"
+                _stage0_w = sd[f"tail.{_tidx[0]}.weight"]
+                _ratio0 = round(_stage0_w.shape[0] / max(1, _dim))
+                _det_scale = 3 if _ratio0 == 9 else 2 ** max(1, len(_tidx) - 1)
+            else:
+                _up = "pixelshuffledirect"
+                _w0 = sd.get("tail.0.weight")
+                _det_scale = round(math.sqrt(_w0.shape[0] / 3.0)) if _w0 is not None else 4
+            _emt_scale = _scale_hint if _scale_hint > 0 else _det_scale
+            # num_heads/window_list/shift_list n'affectent aucune shape de poids — non
+            # dérivables du state_dict. SWSA rearrange (qv=2,head=num_heads) exige que
+            # dim soit divisible par 2*num_heads sous peine de crash au forward.
+            _num_heads = next((h for h in (3, 4, 5, 6, 2, 1, 8, 10, 12, 15, 20)
+                               if _dim % (2 * h) == 0), 1)
+            _model = EMT(scale=max(1, _emt_scale), num_in_ch=_num_in_ch, num_out_ch=3,
+                        upsampler=_up, dim=_dim, n_blocks=_n_blocks, n_layers=_n_layers,
+                        n_GTLs=_n_gtls, num_heads=_num_heads, mlp_ratio=_mlp_ratio)
+            _model.load_state_dict(sd, strict=True)
+            _model = _model.to(_device).eval()
+            _arch = "EMT"
+            _scale = max(1, _emt_scale)
+            _emit({"status": "ready", "arch": _arch, "scale": _scale,
+                   "backend": f"emt-manual dim={_dim} n_blocks={_n_blocks} n_layers={_n_layers}"})
+            return
+        except Exception as _e:
+            _emit({"status": "error", "msg": f"EMT load failed: {_e}"})
+            return
+
+    # ── FlexNet — short_cut ConvBlock + LinearPipeline/MetaPipeline body ─────
+    if ("in_to_feat.weight" in sd and any(k.startswith("short_cut.") for k in sd)
+            and any(k.startswith("pipeline.") for k in sd)):
+        try:
+            import re as _re
+            from traiNNer.archs.flexnet_arch import FlexNet
+            _c11w = sd.get("short_cut.conv11.weight")
+            _dim = int(_c11w.shape[0]) if _c11w is not None else 64
+            _inp_channels = int(_c11w.shape[1]) if _c11w is not None else 3
+            if any(k.startswith("pipeline.att.") for k in sd):
+                _pipeline_type = "linear"
+                _stg = {}
+                for _k in sd:
+                    _mm = _re.match(r"^pipeline\.att\.(\d+)\.t_blocks\.(\d+)\.", _k)
+                    if _mm:
+                        _stg.setdefault(int(_mm.group(1)), set()).add(int(_mm.group(2)))
+                _num_blocks = tuple(len(_stg[i]) for i in sorted(_stg)) if _stg else (6, 6, 6, 6, 6, 6)
+                _ffnw = sd.get("pipeline.att.0.t_blocks.0.ffn.key.weight")
+            else:
+                _pipeline_type = "meta"
+                _stg = {}
+                for _k in sd:
+                    _mm = _re.match(r"^pipeline\.enc(\d+)\.0\.t_blocks\.(\d+)\.", _k)
+                    if _mm:
+                        _stg.setdefault(int(_mm.group(1)), set()).add(int(_mm.group(2)))
+                _num_blocks = tuple(len(_stg[i]) for i in sorted(_stg)) if _stg else (4, 6, 6, 8)
+                _ffnw = sd.get("pipeline.enc0.0.t_blocks.0.ffn.key.weight")
+            _hidden_rate = round(_ffnw.shape[0] / max(1, _dim)) if _ffnw is not None else 4
+            _channel_norm = any(".ffn.key_norm.weight" in k for k in sd)
+            _ws_buf = sd.get("window_size")
+            try:
+                _window_size = int(_ws_buf.item()) if _ws_buf is not None else 8
+            except Exception:
+                _window_size = 8
+            if "to_img.offset.weight" in sd:
+                _up = "dysample"
+                _offw = sd["to_img.offset.weight"]
+                _det_scale = max(1, round(math.sqrt(_offw.shape[0] / 8.0)))
+            elif "to_img.1.0.weight" in sd:
+                _up = "nearest+conv"
+                _sf = sd.get("scale_factor")
+                try:
+                    _det_scale = max(1, int(_sf.item())) if _sf is not None else 4
+                except Exception:
+                    _det_scale = 4
+            else:
+                _up = "pixelshuffle"
+                _imw = sd.get("to_img.0.weight")
+                _det_scale = max(1, round(math.sqrt(_imw.shape[0] / 3.0))) if _imw is not None else 4
+            _flexnet_scale = _scale_hint if _scale_hint > 0 else _det_scale
+            _model = FlexNet(inp_channels=_inp_channels, out_channels=3, scale=max(1, _flexnet_scale),
+                             dim=_dim, num_blocks=_num_blocks, window_size=_window_size,
+                             hidden_rate=_hidden_rate, channel_norm=_channel_norm,
+                             pipeline_type=_pipeline_type, upsampler=_up)
+            _model.load_state_dict(sd, strict=True)
+            _model = _model.to(_device).eval()
+            _arch = "FlexNet"
+            _scale = max(1, _flexnet_scale)
+            _emit({"status": "ready", "arch": _arch, "scale": _scale,
+                   "backend": f"flexnet-manual dim={_dim} pipeline={_pipeline_type}"})
+            return
+        except Exception as _e:
+            _emit({"status": "error", "msg": f"FlexNet load failed: {_e}"})
+            return
+
+    # ── SRFormerv2 (traiNNer native) — mixe SwinTransformerBlock (qkv) et
+    #    PSA_Block (kv/q) — DOIT tourner avant SRFormer (signature plus stricte) ─
+    if ("layers.0.residual_group.blocks.0.attn.qkv.weight" in sd
+            and "layers.0.residual_group.blocks.1.attn.kv.weight" in sd):
+        try:
+            import re as _re
+            from traiNNer.archs.srformerv2_arch import SRFormerv2
+            _cf = sd.get("conv_first.weight")
+            _embed_dim = int(_cf.shape[0]) if _cf is not None else 240
+            _in_chans = int(_cf.shape[1]) if _cf is not None else 3
+            _grp = {}
+            for _k in sd:
+                _mm = _re.match(r"^layers\.(\d+)\.residual_group\.blocks\.(\d+)\.", _k)
+                if _mm:
+                    _grp.setdefault(int(_mm.group(1)), set()).add(int(_mm.group(2)))
+            # Nb de blocs bruts par layer = depth + 3 (3 SwinTransformerBlock toujours
+            # insérés aux positions [0,3,6] par srformerv2_arch.py, quel que soit depth).
+            _depths = tuple(max(1, len(_grp[i]) - 3) for i in sorted(_grp)) if _grp else (4, 4, 4, 4, 4, 4)
+            _psa_idx = None
+            for _j in sorted(_grp.get(0, [])):
+                if f"layers.0.residual_group.blocks.{_j}.attn.kv.weight" in sd:
+                    _psa_idx = _j
+                    break
+            if _psa_idx is not None:
+                _kvw = sd[f"layers.0.residual_group.blocks.{_psa_idx}.attn.kv.weight"]
+                _squeeze_dim = int(_kvw.shape[0] // 2)
+                _rpbt = sd.get(f"layers.0.residual_group.blocks.{_psa_idx}.attn.relative_position_bias_table")
+                _num_heads_v = int(_rpbt.shape[1]) if _rpbt is not None else 8
+                _window_size = int(round(math.sqrt(_rpbt.shape[0]))) + 1 if _rpbt is not None else 36
+                _mlpw = sd.get(f"layers.0.residual_group.blocks.{_psa_idx}.mlp.fc1.weight")
+                _mlp_ratio = round(_mlpw.shape[0] / max(1, _embed_dim)) if _mlpw is not None else 2
+            else:
+                _squeeze_dim, _num_heads_v, _window_size, _mlp_ratio = 60, 8, 36, 2
+            _num_heads = (_num_heads_v,) * len(_depths)
+            _resi = "1conv" if "conv_after_body.weight" in sd else "3conv"
+            if "conv_before_upsample.0.weight" in sd:
+                _up = "pixelshuffle"
+                _stages = sorted({int(m.group(1)) for k in sd
+                                  if (m := _re.match(r"^upsample\.(\d+)\.weight$", k))})
+                if len(_stages) == 1:
+                    _outc = sd[f"upsample.{_stages[0]}.weight"].shape[0]
+                    _det_scale = 3 if round(_outc / 64) == 9 else 2
+                else:
+                    _det_scale = 2 ** max(1, len(_stages))
+            elif "upsample.0.weight" in sd:
+                _up = "pixelshuffledirect"
+                _outc = sd["upsample.0.weight"].shape[0]
+                _s = round(math.sqrt(_outc / max(1, _in_chans)))
+                _det_scale = _s if _s >= 1 else 4
+            elif "conv_hr.weight" in sd:
+                _up = "nearest+conv"; _det_scale = 4
+            else:
+                _up = ""; _det_scale = 2
+            _srformerv2_scale = _scale_hint if _scale_hint > 0 else _det_scale
+            # img_size : patch_size==1 toujours → patches_resolution==img_size ; dérivé de la
+            # vraie shape d'attn_mask (buffer persistant d'un bloc PSA shift>0) — une shape
+            # fausse fait planter le load strict.
+            _img_size = _window_size
+            for _k in sd:
+                if _re.match(r"^layers\.0\.residual_group\.blocks\.\d+\.attn_mask$", _k):
+                    _nw = sd[_k].shape[0]
+                    _img_size = _window_size * max(1, round(math.sqrt(_nw)))
+                    break
+            _model = SRFormerv2(upscale=max(1, _srformerv2_scale), in_chans=_in_chans,
+                                embed_dim=_embed_dim, squeeze_dim=_squeeze_dim, depths=_depths,
+                                num_heads=_num_heads, window_size=_window_size, img_size=_img_size,
+                                mlp_ratio=_mlp_ratio, upsampler=_up, resi_connection=_resi)
+            _model.load_state_dict(sd, strict=True)
+            _model = _model.to(_device).eval()
+            _arch = "SRFormerv2"
+            _scale = max(1, _srformerv2_scale)
+            _emit({"status": "ready", "arch": _arch, "scale": _scale,
+                   "backend": f"srformerv2-manual embed_dim={_embed_dim} depths={_depths}"})
+            return
+        except Exception as _e:
+            _emit({"status": "error", "msg": f"SRFormerv2 load failed: {_e}"})
+            return
+
+    # ── SRFormer (spandrel_extra_arches-compatible) — tous les blocs sont PSA_Block ─
+    if ("layers.0.residual_group.blocks.0.attn.kv.weight" in sd
+            and "layers.0.residual_group.blocks.0.attn.q.weight" in sd):
+        try:
+            import re as _re
+            from spandrel_extra_arches.architectures.SRFormer import SRFormer
+            _cf = sd.get("conv_first.weight")
+            _embed_dim = int(_cf.shape[0]) if _cf is not None else 180
+            _in_chans = int(_cf.shape[1]) if _cf is not None else 3
+            _grp = {}
+            for _k in sd:
+                _mm = _re.match(r"^layers\.(\d+)\.residual_group\.blocks\.(\d+)\.", _k)
+                if _mm:
+                    _grp.setdefault(int(_mm.group(1)), set()).add(int(_mm.group(2)))
+            _depths = tuple(len(_grp[i]) for i in sorted(_grp)) if _grp else (6, 6, 6, 6, 6, 6)
+            _heads_list = []
+            for i in (sorted(_grp) if _grp else range(len(_depths))):
+                _rpbt = sd.get(f"layers.{i}.residual_group.blocks.0.attn.relative_position_bias_table")
+                _heads_list.append(int(_rpbt.shape[1]) if _rpbt is not None else 6)
+            _num_heads = tuple(_heads_list) if _heads_list else (6,) * len(_depths)
+            _rpbt0 = sd.get("layers.0.residual_group.blocks.0.attn.relative_position_bias_table")
+            _window_size = int(round(math.sqrt(_rpbt0.shape[0]))) + 1 if _rpbt0 is not None else 24
+            _mlpw = sd.get("layers.0.residual_group.blocks.0.mlp.fc1.weight")
+            _mlp_ratio = round(_mlpw.shape[0] / max(1, _embed_dim), 4) if _mlpw is not None else 2.0
+            _ape = "absolute_pos_embed" in sd
+            _patch_norm = "patch_embed.norm.weight" in sd
+            _qkv_bias = "layers.0.residual_group.blocks.0.attn.q.bias" in sd
+            _resi = "1conv" if "conv_after_body.weight" in sd else "3conv"
+            if "conv_hr.weight" in sd:
+                _up = "nearest+conv"; _det_scale = 4
+            elif "conv_before_upsample.0.weight" in sd:
+                _up = "pixelshuffle"
+                _stages = sorted({int(m.group(1)) for k in sd
+                                  if (m := _re.match(r"^upsample\.(\d+)\.weight$", k))})
+                if len(_stages) == 1:
+                    _outc = sd[f"upsample.{_stages[0]}.weight"].shape[0]
+                    _det_scale = 3 if round(_outc / 64) == 9 else 2
+                else:
+                    _det_scale = 2 ** max(1, len(_stages))
+            elif "upsample.0.weight" in sd:
+                _up = "pixelshuffledirect"
+                _outc = sd["upsample.0.weight"].shape[0]
+                _s = round(math.sqrt(_outc / max(1, _in_chans)))
+                _det_scale = _s if _s >= 1 else 4
+            else:
+                _up = ""; _det_scale = 1
+            _srformer_scale = _scale_hint if _scale_hint > 0 else _det_scale
+            # img_size : patch_size==1 toujours → patches_resolution==img_size ; dérivé de la
+            # vraie shape d'attn_mask (buffer persistant d'un bloc PSA shift>0) — une shape
+            # fausse fait planter le load strict.
+            _img_size = _window_size
+            _found_mask = False
+            for _k in sd:
+                if _re.match(r"^layers\.0\.residual_group\.blocks\.\d+\.attn_mask$", _k):
+                    _nw = sd[_k].shape[0]
+                    _img_size = _window_size * max(1, round(math.sqrt(_nw)))
+                    _found_mask = True
+                    break
+            if not _found_mask and _ape:
+                _ape_t = sd.get("absolute_pos_embed")
+                if _ape_t is not None:
+                    _img_size = int(round(math.sqrt(_ape_t.shape[1])))
+            _model = SRFormer(upscale=max(1, _srformer_scale), in_chans=_in_chans, img_size=_img_size,
+                              embed_dim=_embed_dim, depths=_depths, num_heads=_num_heads,
+                              window_size=_window_size, mlp_ratio=_mlp_ratio, qkv_bias=_qkv_bias,
+                              ape=_ape, patch_norm=_patch_norm, upsampler=_up,
+                              resi_connection=_resi)
+            _model.load_state_dict(sd, strict=True)
+            _model = _model.to(_device).eval()
+            _arch = "SRFormer"
+            _scale = max(1, _srformer_scale)
+            _emit({"status": "ready", "arch": _arch, "scale": _scale,
+                   "backend": f"srformer-manual embed_dim={_embed_dim} depths={_depths}"})
+            return
+        except Exception as _e:
+            _emit({"status": "error", "msg": f"SRFormer load failed: {_e}"})
+            return
+
+    # ── DocRes (Restormer-style, traiNNer native) — restauration de document
+    #    (deskew/nettoyage scan), scale fixe = 1 (jamais d'upscale) ─────────
+    if ("patch_embed.proj.weight" in sd
+            and "encoder_level1.0.attn.temperature" in sd
+            and "refinement.0.attn.temperature" in sd):
+        try:
+            import re as _re
+            from traiNNer.archs.docres_arch import DocRes
+            _pew = sd.get("patch_embed.proj.weight")
+            _dim = int(_pew.shape[0]) if _pew is not None else 48
+            _embed_ch = int(_pew.shape[1]) if _pew is not None else 5
+            _inp_channels = 3 if _embed_ch == 5 else _embed_ch
+            _outw = sd.get("output.weight")
+            _out_channels = int(_outw.shape[0]) if _outw is not None else 3
+            _bias = "encoder_level1.0.attn.qkv.bias" in sd
+            _ln_type = "WithBias" if "encoder_level1.0.norm1.body.bias" in sd else "BiasFree"
+
+            def _docres_count(_prefix):
+                _idx = {int(m.group(1)) for k in sd if (m := _re.match(rf"^{_prefix}\.(\d+)\.", k))}
+                return len(_idx)
+
+            _n1 = _docres_count("encoder_level1") or 2
+            _n2 = _docres_count("encoder_level2") or 3
+            _n3 = _docres_count("encoder_level3") or 3
+            _n4 = _docres_count("latent") or 4
+            _num_blocks = [_n1, _n2, _n3, _n4]
+            _num_refinement = _docres_count("refinement") or 4
+
+            def _docres_heads(_prefix):
+                _t = sd.get(f"{_prefix}.0.attn.temperature")
+                return int(_t.shape[0]) if _t is not None else 1
+
+            _heads = [_docres_heads("encoder_level1"), _docres_heads("encoder_level2"),
+                      _docres_heads("encoder_level3"), _docres_heads("latent")]
+
+            # See universal_runner.py's docres branch for why a single-stage back-solve
+            # is insufficient: narrow the valid-factor interval across all 4 stages
+            # (dim doubles each stage) and take the midpoint — reproduces every stage's
+            # hidden_features exactly.
+            _ffn_pairs = []
+            for _pfx, _mult in (("encoder_level1", 1), ("encoder_level2", 2),
+                                 ("encoder_level3", 4), ("latent", 8)):
+                _w = sd.get(f"{_pfx}.0.ffn.project_in.weight")
+                if _w is not None:
+                    _ffn_pairs.append((_dim * _mult, int(_w.shape[0]) // 2))
+            if _ffn_pairs:
+                _lo = max(h / d for d, h in _ffn_pairs)
+                _hi = min((h + 1) / d for d, h in _ffn_pairs)
+                _ffn_exp = (_lo + _hi) / 2.0 if _lo < _hi else _lo
+            else:
+                _ffn_exp = 2.66
+
+            _model = DocRes(inp_channels=_inp_channels, out_channels=_out_channels, dim=_dim,
+                             num_blocks=_num_blocks, num_refinement_blocks=_num_refinement,
+                             heads=_heads, ffn_expansion_factor=_ffn_exp, bias=_bias,
+                             LayerNorm_type=_ln_type, dual_pixel_task=True)
+            _model.load_state_dict(sd, strict=True)
+            _model = _model.to(_device).eval()
+            _arch = "DocRes"
+            _scale = 1  # restauration document uniquement, jamais d'upscale (comme cascadedgaze)
+            _emit({"status": "ready", "arch": _arch, "scale": _scale,
+                   "backend": f"docres-manual dim={_dim} num_blocks={_num_blocks} heads={_heads}"})
+            return
+        except Exception as _e:
+            _emit({"status": "error", "msg": f"DocRes load failed: {_e}"})
             return
 
     # ── Block NeoSR-only architectures BEFORE the SPAN fallback ──────────────
@@ -643,9 +1765,7 @@ def cmd_infer(payload: dict) -> None:
                         _tile_size, _tile_pad, _scale, dandere_threshold)
 
                 out_np  = out.squeeze(0).permute(1, 2, 0).clamp(0, 1).cpu().float().numpy()
-                out_img = Image.fromarray((out_np * 255).round().astype(np.uint8))
-                os.makedirs(os.path.dirname(output_path) if os.path.dirname(output_path) else ".", exist_ok=True)
-                out_img.save(output_path)
+                _write_output(out_np, output_path, payload.get("save"))
                 pct = round(n_changed / n_total * 100, 1) if n_total > 0 else 100.0
                 _emit({"status": "ok", "msg": os.path.basename(output_path),
                        "dandere_changed": n_changed, "dandere_total": n_total,
@@ -656,21 +1776,72 @@ def cmd_infer(payload: dict) -> None:
                 pass
 
         # ── Normal inference ──────────────────────────────────────────
-        with torch.inference_mode():
-            if amp_ok:
-                with torch.autocast(device_type="cuda", dtype=torch.float16):
-                    out = _tile_inference(_model, t, _tile_size, _tile_pad, _scale)
-            else:
-                out = _tile_inference(_model, t, _tile_size, _tile_pad, _scale)
+        # CUDA out of memory (attention archs such as MambaIRv2 with Tile 0 on a 1080p
+        # frame want ~8 GB in one block) -> free VRAM, retry with tiles of 256 then 128 and keep
+        # the size that fits for the rest of the batch (only the first image pays).
+        tile = _tile_size
+        note = ""
+        while True:
+            try:
+                with torch.inference_mode():
+                    if amp_ok:
+                        with torch.autocast(device_type="cuda", dtype=torch.float16):
+                            out = _tile_inference(_model, t, tile, _tile_pad, _scale)
+                    else:
+                        out = _tile_inference(_model, t, tile, _tile_pad, _scale)
+                break
+            except torch.cuda.OutOfMemoryError:
+                out = None
+                if _device.type == "cuda":
+                    torch.cuda.empty_cache()
+                # 256 first: on Windows a size that "fits" only thanks to the driver's
+                # shared-memory fallback runs ~2x slower (MambaIRv2 1080p: 512 = 73 s,
+                # 256 = 37 s, 128 = 54 s per frame on a 1080 Ti).
+                nxt = 256 if (tile == 0 or tile > 256) else tile // 2
+                if nxt < 128:
+                    raise
+                tile = nxt
+        if tile != _tile_size:
+            note = (f"[Auto-tile] Mémoire GPU insuffisante en Tile {_tile_size or 0} "
+                    f"→ tuiles de {tile} px pour la suite du lot.")
+            _tile_size = tile
 
         out_np  = out.squeeze(0).permute(1, 2, 0).clamp(0, 1).cpu().float().numpy()
-        out_img = Image.fromarray((out_np * 255).round().astype(np.uint8))
-        os.makedirs(os.path.dirname(output_path) if os.path.dirname(output_path) else ".", exist_ok=True)
-        out_img.save(output_path)
-        _emit({"status": "ok", "msg": os.path.basename(output_path)})
+        _write_output(out_np, output_path, payload.get("save"))
+        reply = {"status": "ok", "msg": os.path.basename(output_path)}
+        if note:
+            reply["note"] = note
+        _emit(reply)
 
     except Exception as e:
         _emit({"status": "error", "msg": f"Inference error: {traceback.format_exc()}"})
+
+
+
+def _write_output(out_np, output_path, save=None):
+    """Write a float32 [H,W,3] array in [0,1] with the format / bit depth / quality
+    chosen in the Quick Upscale tab (payload "save"). Without "save" the file is an
+    8-bit image in the format of its extension, as before."""
+    save = save or {}
+    fmt = str(save.get("format") or "").upper()
+    bit_depth = int(save.get("bit_depth") or 8)
+    quality = int(save.get("quality") or 95)
+    os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+    if bit_depth == 16 and (fmt in ("PNG", "TIFF") or output_path.lower().endswith((".png", ".tif", ".tiff"))):
+        import cv2
+        arr16 = (out_np * 65535.0).round().clip(0, 65535).astype(np.uint16)
+        if not _imwrite_u(output_path, np.ascontiguousarray(arr16[:, :, ::-1])):
+            raise RuntimeError(f"cv2.imwrite failed: {output_path}")
+        return
+    img = Image.fromarray((out_np * 255.0).round().clip(0, 255).astype(np.uint8))
+    kw = {}
+    if fmt in ("JPEG", "JPG") or output_path.lower().endswith((".jpg", ".jpeg")):
+        kw = {"quality": quality, "subsampling": 0}
+    elif fmt == "WEBP" or output_path.lower().endswith(".webp"):
+        kw = {"quality": quality}
+    elif fmt == "TIFF" or output_path.lower().endswith((".tif", ".tiff")):
+        kw = {"compression": "tiff_lzw"}
+    img.save(output_path, **kw)
 
 
 def cmd_quit() -> None:

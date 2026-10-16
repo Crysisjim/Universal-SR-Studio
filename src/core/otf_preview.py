@@ -6,6 +6,7 @@ so the user can see what the LQ images will look like before launching training.
 """
 import os
 import io
+import math
 import random
 from typing import Tuple
 
@@ -21,6 +22,12 @@ try:
 except ImportError:
     NUMPY_AVAILABLE = False
 
+try:
+    from scipy import special as _scipy_special
+    SCIPY_AVAILABLE = True
+except ImportError:
+    SCIPY_AVAILABLE = False
+
 
 def _parse_range(val, default=(0.0, 1.0)) -> Tuple[float, float]:
     """Parse '[a, b]' or [a, b] into a tuple."""
@@ -35,6 +42,194 @@ def _parse_range(val, default=(0.0, 1.0)) -> Tuple[float, float]:
         except Exception:
             pass
     return default
+
+
+def _parse_three(val, default=(0.2, 0.7, 0.1)) -> Tuple[float, float, float]:
+    """Parse '[up, down, keep]' or [a, b, c] into a 3-tuple (resize_prob/resize_prob2)."""
+    if isinstance(val, (list, tuple)) and len(val) >= 3:
+        return (float(val[0]), float(val[1]), float(val[2]))
+    if isinstance(val, str):
+        v = val.strip().lstrip("[").rstrip("]").replace(" ", "")
+        try:
+            parts = [float(x) for x in v.split(",") if x]
+            if len(parts) >= 3:
+                return (parts[0], parts[1], parts[2])
+        except Exception:
+            pass
+    return default
+
+
+# ─── Faithful blur-kernel synthesis ────────────────────────────────────────────
+# Exact (numpy) port of traiNNer-redux's traiNNer/data/degradations.py kernel
+# generators — used so the live preview matches what RealESRGANModel.feed_data
+# actually convolves onto the LQ during training (sinc/jinc ringing filters +
+# iso/aniso/generalized/plateau mixed-gaussian kernels), not just a flat sigma blur.
+
+_KERNEL_LIST = ["iso", "aniso", "generalized_iso", "generalized_aniso", "plateau_iso", "plateau_aniso"]
+_KERNEL_PROB = [0.45, 0.25, 0.12, 0.03, 0.12, 0.03]  # fixed mix (config_handler.py hardcoded default)
+_KERNEL_SIZES = list(range(5, 18, 2))  # kernel_range [5, 17] expanded, matches the real dataset
+
+
+def _mesh_grid(kernel_size):
+    ax = np.arange(-kernel_size // 2 + 1.0, kernel_size // 2 + 1.0)
+    xx, yy = np.meshgrid(ax, ax)
+    xy = np.hstack((xx.reshape(-1, 1), yy.reshape(-1, 1))).reshape(kernel_size, kernel_size, 2)
+    return xy
+
+
+def _sigma_matrix2(sig_x, sig_y, theta):
+    d = np.array([[sig_x ** 2, 0], [0, sig_y ** 2]])
+    u = np.array([[np.cos(theta), -np.sin(theta)], [np.sin(theta), np.cos(theta)]])
+    return u @ d @ u.T
+
+
+def _bivariate_gaussian(kernel_size, sig_x, sig_y, theta, isotropic=True):
+    grid = _mesh_grid(kernel_size)
+    sigma_matrix = np.array([[sig_x ** 2, 0], [0, sig_x ** 2]]) if isotropic else _sigma_matrix2(sig_x, sig_y, theta)
+    inv = np.linalg.inv(sigma_matrix)
+    k = np.exp(-0.5 * np.sum(np.dot(grid, inv) * grid, 2))
+    return k / np.sum(k)
+
+
+def _bivariate_generalized_gaussian(kernel_size, sig_x, sig_y, theta, beta, isotropic=True):
+    grid = _mesh_grid(kernel_size)
+    sigma_matrix = np.array([[sig_x ** 2, 0], [0, sig_x ** 2]]) if isotropic else _sigma_matrix2(sig_x, sig_y, theta)
+    inv = np.linalg.inv(sigma_matrix)
+    k = np.exp(-0.5 * np.power(np.sum(np.dot(grid, inv) * grid, 2), beta))
+    return k / np.sum(k)
+
+
+def _bivariate_plateau(kernel_size, sig_x, sig_y, theta, beta, isotropic=True):
+    grid = _mesh_grid(kernel_size)
+    sigma_matrix = np.array([[sig_x ** 2, 0], [0, sig_x ** 2]]) if isotropic else _sigma_matrix2(sig_x, sig_y, theta)
+    inv = np.linalg.inv(sigma_matrix)
+    k = np.reciprocal(np.power(np.sum(np.dot(grid, inv) * grid, 2), beta) + 1)
+    return k / np.sum(k)
+
+
+def _random_mixed_kernel(kernel_size, sigma_range, betag_range, betap_range):
+    """Exact port of random_mixed_kernels: picks iso/aniso/generalized/plateau shape
+    per the Studio's fixed kernel_list/kernel_prob mix, using UI sigma/beta ranges."""
+    rotation_range = (-math.pi, math.pi)
+    sig_x = random.uniform(*sigma_range)
+    kernel_type = random.choices(_KERNEL_LIST, _KERNEL_PROB)[0]
+    if kernel_type == "iso":
+        k = _bivariate_gaussian(kernel_size, sig_x, sig_x, 0, isotropic=True)
+    elif kernel_type == "aniso":
+        sig_y = random.uniform(*sigma_range); rot = random.uniform(*rotation_range)
+        k = _bivariate_gaussian(kernel_size, sig_x, sig_y, rot, isotropic=False)
+    elif kernel_type in ("generalized_iso", "generalized_aniso"):
+        iso = kernel_type == "generalized_iso"
+        sig_y = sig_x if iso else random.uniform(*sigma_range)
+        rot = 0 if iso else random.uniform(*rotation_range)
+        beta = random.uniform(betag_range[0], 1) if random.random() < 0.5 else random.uniform(1, betag_range[1])
+        k = _bivariate_generalized_gaussian(kernel_size, sig_x, sig_y, rot, beta, isotropic=iso)
+    else:  # plateau_iso / plateau_aniso
+        iso = kernel_type == "plateau_iso"
+        sig_y = sig_x if iso else random.uniform(*sigma_range)
+        rot = 0 if iso else random.uniform(*rotation_range)
+        beta = random.uniform(betap_range[0], 1) if random.random() < 0.5 else random.uniform(1, betap_range[1])
+        k = _bivariate_plateau(kernel_size, sig_x, sig_y, rot, beta, isotropic=iso)
+    return k, kernel_type
+
+
+def _circular_lowpass_kernel(cutoff, kernel_size, pad_to=0):
+    """Exact port of circular_lowpass_kernel (2D sinc/jinc ringing filter). Uses
+    scipy's Bessel J1 when available (bit-faithful to the training engine); falls
+    back to a windowed separable sinc (visually similar ringing, not bit-exact)
+    when scipy isn't installed."""
+    assert kernel_size % 2 == 1, "Kernel size must be odd."
+    center = (kernel_size - 1) / 2
+    if SCIPY_AVAILABLE:
+        ax = np.arange(kernel_size) - center
+        xx, yy = np.meshgrid(ax, ax)
+        r = np.sqrt(xx ** 2 + yy ** 2)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            kernel = cutoff * _scipy_special.j1(cutoff * r) / (2 * np.pi * r)
+        ci = int(round(center))
+        kernel[ci, ci] = cutoff ** 2 / (4 * np.pi)
+    else:
+        ax = np.arange(kernel_size) - center
+        win = np.hanning(kernel_size) if kernel_size > 1 else np.ones(1)
+        sinc1d = np.sinc(cutoff / np.pi * ax) * win
+        kernel = np.outer(sinc1d, sinc1d)
+    kernel = kernel / np.sum(kernel)
+    if pad_to > kernel_size:
+        pad = (pad_to - kernel_size) // 2
+        kernel = np.pad(kernel, ((pad, pad), (pad, pad)))
+    return kernel
+
+
+def apply_kernel_pil(img, kernel):
+    """Convolve an arbitrary 2D kernel (sinc or mixed-gaussian) onto an RGB image
+    via FFT (numpy only — no scipy/torch needed for the convolution itself)."""
+    if not NUMPY_AVAILABLE:
+        return img
+    arr = np.array(img).astype(np.float64)
+    kh, kw = kernel.shape
+    ph_pad, pw_pad = kh // 2, kw // 2
+    padded = np.pad(arr, ((ph_pad, ph_pad), (pw_pad, pw_pad), (0, 0)), mode="reflect")
+    ph, pw = padded.shape[:2]
+    kpad = np.zeros((ph, pw), dtype=np.float64)
+    ky0, kx0 = ph // 2 - kh // 2, pw // 2 - kw // 2
+    kpad[ky0:ky0 + kh, kx0:kx0 + kw] = kernel
+    kpad = np.fft.ifftshift(kpad)
+    fk = np.fft.rfft2(kpad)
+    out = np.empty_like(padded)
+    for c in range(padded.shape[2]):
+        fc = np.fft.rfft2(padded[..., c])
+        out[..., c] = np.fft.irfft2(fc * fk, s=(ph, pw))
+    out = out[ph_pad:ph - ph_pad, pw_pad:pw - pw_pad, :]
+    return Image.fromarray(np.clip(out, 0, 255).astype(np.uint8))
+
+
+def apply_poisson_noise(img, scale_range=(0.05, 2.0), gray_prob=0.4):
+    """Poisson (shot) noise — the training pipeline always applies EITHER gaussian
+    OR poisson noise each stage (never neither), chosen via gaussian_noise_prob."""
+    if not NUMPY_AVAILABLE:
+        return img
+    arr = np.array(img).astype(np.float64) / 255.0
+    scale = max(1e-3, random.uniform(*scale_range))
+    if random.random() < gray_prob:
+        luma = np.clip(0.299 * arr[..., 0] + 0.587 * arr[..., 1] + 0.114 * arr[..., 2], 0, 1)
+        noisy = np.random.poisson(luma * 255.0 * scale) / (255.0 * scale)
+        delta = (noisy - luma)[..., np.newaxis]
+        arr = arr + delta
+    else:
+        vals = np.clip(arr, 0, 1)
+        noisy = np.random.poisson(vals * 255.0 * scale) / (255.0 * scale)
+        arr = arr + (noisy - vals)
+    return Image.fromarray(np.clip(arr * 255.0, 0, 255).astype(np.uint8))
+
+
+_RESIZE_MODE_PIL = {}
+
+
+def _resize_mode_map():
+    global _RESIZE_MODE_PIL
+    if not _RESIZE_MODE_PIL and PIL_AVAILABLE:
+        _RESIZE_MODE_PIL = {
+            "bilinear": Image.BILINEAR, "bicubic": Image.BICUBIC,
+            "nearest-exact": Image.NEAREST, "nearest": Image.NEAREST,
+            "lanczos": Image.LANCZOS,
+        }
+    return _RESIZE_MODE_PIL
+
+
+def _pick_resize_mode(deg, list_key, prob_key, default_list=None):
+    modes = deg.get(list_key) or (default_list or ["bilinear", "bicubic", "nearest-exact", "lanczos"])
+    if isinstance(modes, str):
+        modes = [m.strip().strip("\"'") for m in modes.strip("[]").split(",") if m.strip()]
+    probs = deg.get(prob_key)
+    if isinstance(probs, str):
+        try:
+            probs = [float(x) for x in probs.strip("[]").split(",") if x.strip()]
+        except Exception:
+            probs = None
+    if not probs or len(probs) != len(modes):
+        probs = [1.0] * len(modes)
+    choice = str(random.choices(modes, probs)[0]).lower()
+    return _resize_mode_map().get(choice, Image.BICUBIC)
 
 
 def apply_blur(img, sigma_range=(0.2, 3.0), kernel_size=21):
@@ -84,15 +279,73 @@ def apply_resize(img, target_size, scale_range=(0.5, 1.5)):
 
 def apply_posterize(img, bits_range=(3, 6)):
     """Reduce per-channel bit depth."""
-    from PIL import ImageOps
     bits = random.randint(int(bits_range[0]), int(bits_range[1]))
-    return ImageOps.posterize(img, bits)
+    if not NUMPY_AVAILABLE or bits >= 8:
+        from PIL import ImageOps
+        return ImageOps.posterize(img, min(8, bits))
+    # round to 2**bits levels like the training hook (PIL posterize truncates = darker)
+    lv = 2 ** bits - 1
+    arr = np.asarray(img.convert("RGB"), dtype=np.float32) / 255.0
+    arr = np.round(arr * lv) / lv
+    return Image.fromarray(np.clip(arr * 255.0 + 0.5, 0, 255).astype(np.uint8))
+
+
+def apply_lq_usm(img, radius_range=(1, 25)):
+    """Unsharp Mask on the LQ (preview of Redux's lq_usm) — over-sharpening / edge halos."""
+    from PIL import ImageFilter
+    r = random.uniform(float(radius_range[0]), float(radius_range[1]))
+    return img.filter(ImageFilter.UnsharpMask(radius=max(0.5, r), percent=150, threshold=2))
+
+
+def apply_thicklines(img):
+    """Approximate Redux's ThickLines: thicken dark strokes/edges (min-filter erodes the
+    bright background → dark lines grow). Faithful-enough preview for anime / line-art."""
+    from PIL import ImageFilter
+    return img.filter(ImageFilter.MinFilter(3))
 
 
 def apply_banding(img, levels_range=(16, 64)):
-    """Quantize to a small palette."""
-    levels = random.randint(int(levels_range[0]), int(levels_range[1]))
-    return img.quantize(colors=levels, method=Image.Quantize.FASTOCTREE).convert("RGB")
+    """Per-channel quantization to N levels — same math as the training hook
+    (the old palette quantize looked nothing like what the model was trained on)."""
+    levels = max(2, random.randint(int(levels_range[0]), int(levels_range[1])))
+    if not NUMPY_AVAILABLE or levels >= 256:
+        return img
+    arr = np.asarray(img.convert("RGB"), dtype=np.float32) / 255.0
+    arr = np.round(arr * (levels - 1)) / (levels - 1)
+    return Image.fromarray(np.clip(arr * 255.0 + 0.5, 0, 255).astype(np.uint8))
+
+
+def apply_smooth_banding(img, levels_range=(48, 128), dark_prob=0.5):
+    """Codec-style luma banding restricted to flat areas — mirror of the training hook's
+    apply_smooth_banding (7x7 mean of |dx|+|dy|, linear-light variant for dark tones)."""
+    if not NUMPY_AVAILABLE:
+        return img, False
+    from PIL import ImageFilter
+    linear = random.random() < float(dark_prob)
+    lv = max(2, random.randint(int(levels_range[0]), int(levels_range[1])))
+    if linear:
+        lv *= 6
+    arr = np.asarray(img.convert("RGB"), dtype=np.float32) / 255.0
+    y = 0.299 * arr[..., 0] + 0.587 * arr[..., 1] + 0.114 * arr[..., 2]
+    gx = np.zeros_like(y); gx[:, :-1] = np.abs(y[:, 1:] - y[:, :-1])
+    gy = np.zeros_like(y); gy[:-1, :] = np.abs(y[1:, :] - y[:-1, :])
+    g = gx + gy
+    # 7x7 box mean (separable, edge-normalised like count_include_pad=False)
+    k = np.ones(7, dtype=np.float32)
+    ones = np.ones_like(g)
+
+    def _box(a):
+        a = np.apply_along_axis(lambda r: np.convolve(r, k, mode="same"), 1, a)
+        return np.apply_along_axis(lambda c: np.convolve(c, k, mode="same"), 0, a)
+
+    g = _box(g) / _box(ones)
+    mask = np.clip((0.012 - g) / 0.008, 0.0, 1.0)
+    if linear:
+        yq = np.clip(np.round(np.clip(y, 0, 1) ** 2.2 * lv) / lv, 0, 1) ** (1.0 / 2.2)
+    else:
+        yq = np.round(y * lv) / lv
+    out = arr + (np.clip(yq - y, -4.0 / 255.0, 4.0 / 255.0) * mask)[..., None]
+    return Image.fromarray(np.clip(out * 255.0 + 0.5, 0, 255).astype(np.uint8)), linear
 
 
 def apply_chroma_subsampling(img):
@@ -269,8 +522,18 @@ def apply_scanlines_pil(img, spacing_range=(2, 4), strength_range=(0.2, 0.5)):
 def apply_disc_blur_pil(img, radius_range=(2.0, 8.0)):
     """Bokeh/defocus blur approximating a disk kernel (lens out-of-focus)."""
     radius = random.uniform(*radius_range)
-    # Gaussian with large radius approximates disk blur for preview purposes
-    return img.filter(ImageFilter.GaussianBlur(radius=radius * 0.7))
+    try:
+        from scipy.ndimage import convolve
+        r = max(1, int(round(radius)))
+        yy, xx = np.mgrid[-r:r + 1, -r:r + 1]
+        k = ((xx * xx + yy * yy) <= r * r).astype(np.float32)
+        k /= k.sum()
+        a = np.asarray(img.convert("RGB"), np.float32)
+        out = np.stack([convolve(a[..., c], k, mode="reflect") for c in range(3)], -1)
+        return Image.fromarray(np.clip(out + 0.5, 0, 255).astype(np.uint8))
+    except ImportError:
+        # no OpenCV: Gaussian approximation of the disc
+        return img.filter(ImageFilter.GaussianBlur(radius=radius * 0.7))
 
 
 def apply_vignette_pil(img, strength_range=(0.2, 0.6), radius_range=(0.45, 0.75)):
@@ -295,10 +558,10 @@ def apply_quantize_depth_pil(img, bits_range=(4, 7)):
     if not NUMPY_AVAILABLE:
         return img
     bits = random.randint(int(bits_range[0]), int(bits_range[1]))
-    levels = 2 ** bits
-    arr = np.array(img).astype(np.float32)
-    arr = np.floor(arr / 256.0 * levels) * (256.0 / levels)
-    return Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8))
+    levels = 2 ** bits - 1
+    arr = np.array(img).astype(np.float32) / 255.0
+    arr = np.round(arr * levels) / levels  # round like the training hook (floor darkened)
+    return Image.fromarray(np.clip(arr * 255.0 + 0.5, 0, 255).astype(np.uint8))
 
 
 # ─── Custom 3 degradations ────────────────────────────────────────────────────
@@ -355,6 +618,12 @@ def apply_dithering(img, n_colors: int = 4, dither_type: str = "floyd_steinberg"
     dither_type : floyd_steinberg | ordered | quantize | atkinson | jarvis_judice | stucki
     """
     n_colors = max(2, int(n_colors))
+    img = img.convert("RGB")
+    if dither_type in ("floyd_steinberg", "atkinson", "jarvis_judice", "stucki"):
+        # Image.quantize(colors=..., dither=...) ignores `dither` without a palette:
+        # build the palette first, then map with Floyd-Steinberg error diffusion.
+        pal = img.quantize(colors=n_colors, method=Image.Quantize.MEDIANCUT)
+        return img.quantize(palette=pal, dither=Image.Dither.FLOYDSTEINBERG).convert("RGB")
     if dither_type == "ordered":
         # Tramage ordonné : quantize sans diffusion PIL
         return img.quantize(colors=n_colors,
@@ -409,6 +678,74 @@ def apply_sinusoidal(img, shape_range=(100.0, 600.0), alpha_range=(0.1, 0.4),
 
     result = arr + wave * alpha * 255.0 * 0.5
     return Image.fromarray(np.clip(result, 0, 255).astype(np.uint8))
+
+
+def _dct_matrix_np(n: int):
+    i = np.arange(n).reshape(1, -1).astype(np.float64)
+    k = np.arange(n).reshape(-1, 1).astype(np.float64)
+    C = np.cos(np.pi / n * (i + 0.5) * k)
+    alpha = np.full((n, 1), np.sqrt(2.0 / n))
+    alpha[0, 0] = np.sqrt(1.0 / n)
+    return (C * alpha)
+
+
+def _radial_quant_table_np(n: int, quality: float):
+    q = max(1.0, min(100.0, float(quality)))
+    scale = 5000.0 / q if q < 50 else 200.0 - 2.0 * q
+    scale = max(1.0, scale)
+    u = np.arange(n).reshape(1, -1).astype(np.float64)
+    v = np.arange(n).reshape(-1, 1).astype(np.float64)
+    r = np.sqrt(u * u + v * v)
+    return np.maximum(1.0, np.round((1.0 + r) * scale / 100.0))
+
+
+def apply_dct_block_degrade(img, block_size: int = 4, quality: float = 50.0,
+                            chroma_scale: float = 2.0, yuv_matrix: str = "601"):
+    """Preview twin of otf_custom_degradations.apply_dct_block_degrade_t (GPU
+    training hook) — same 4×4-block-DCT + radial-quantisation-table technique
+    (our own implementation inspired by ArtCNN v1.6.2's changelog, not a
+    verified port — see that function's docstring), numpy-only for the UI
+    preview. img: PIL.Image RGB."""
+    if not NUMPY_AVAILABLE:
+        return img
+    n = max(2, int(block_size))
+    matrices = {"601": [0.299, 0.587, 0.114], "709": [0.2126, 0.7152, 0.0722],
+               "2020": [0.2627, 0.6780, 0.0593]}
+    kr, kg, kb = matrices.get(str(yuv_matrix), matrices["601"])
+
+    arr = np.array(img.convert("RGB")).astype(np.float64)
+    h, w = arr.shape[:2]
+    r, g, b = arr[..., 0], arr[..., 1], arr[..., 2]
+    y = kr * r + kg * g + kb * b
+    cb = (b - y) / (2 * (1 - kb)) + 128.0
+    cr = (r - y) / (2 * (1 - kr)) + 128.0
+
+    Cmat = _dct_matrix_np(n)
+    Ct = Cmat.T
+    q_luma = _radial_quant_table_np(n, quality)
+    q_chroma = np.maximum(1.0, q_luma * max(1.0, float(chroma_scale)))
+
+    def _transform(plane, q_table):
+        ph = (n - plane.shape[0] % n) % n
+        pw = (n - plane.shape[1] % n) % n
+        p = np.pad(plane, ((0, ph), (0, pw)), mode="edge") if (ph or pw) else plane
+        Hp, Wp = p.shape
+        blocks = p.reshape(Hp // n, n, Wp // n, n).transpose(0, 2, 1, 3).reshape(-1, n, n)
+        coeff = Cmat[None] @ blocks @ Ct[None]
+        coeff = np.round(coeff / q_table[None]) * q_table[None]
+        rec = Ct[None] @ coeff @ Cmat[None]
+        rec = rec.reshape(Hp // n, Wp // n, n, n).transpose(0, 2, 1, 3).reshape(Hp, Wp)
+        return rec[:h, :w]
+
+    y2 = _transform(y, q_luma)
+    cb2 = _transform(cb, q_chroma) - 128.0
+    cr2 = _transform(cr, q_chroma) - 128.0
+
+    r2 = y2 + 2 * (1 - kr) * cr2
+    b2 = y2 + 2 * (1 - kb) * cb2
+    g2 = (y2 - kr * r2 - kb * b2) / max(kg, 1e-6)
+    out = np.stack([r2, g2, b2], axis=2).clip(0, 255).astype(np.uint8)
+    return Image.fromarray(out, mode="RGB")
 
 
 def apply_subsampling_wtp(img, subsampling_format: str = "4:2:0",
@@ -534,9 +871,74 @@ def apply_pixel_shift(img, shift_range=(1.0, 8.0), axis: str = "aléatoire"):
     return Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8))
 
 
+def _apply_stage_blur(img, deg, stage):
+    """Blur1/Blur2: exact selection logic from realesrgan_dataset.py — sinc_prob
+    chance of a ringing sinc/jinc kernel, else a mixed iso/aniso/generalized/plateau
+    gaussian-family kernel (using the UI's Blur Sigma + Betag/Betap Range)."""
+    suf = "" if stage == 1 else "2"
+    ks = random.choice(_KERNEL_SIZES)
+    if random.random() < float(deg.get(f"sinc_prob{suf}", 0.0)):
+        omega_c = random.uniform(math.pi / 3, math.pi) if ks < 13 else random.uniform(math.pi / 5, math.pi)
+        kernel = _circular_lowpass_kernel(omega_c, ks)
+        return apply_kernel_pil(img, kernel), f"Sinc{stage} ks={ks} ωc={omega_c:.2f}"
+    default_sigma = (0.2, 3.0) if stage == 1 else (0.2, 1.5)
+    sigma_range = _parse_range(deg.get(f"blur_sigma{suf}", str(list(default_sigma))), default_sigma)
+    betag_range = _parse_range(deg.get(f"betag_range{suf}", "[0.5, 4]"), (0.5, 4))
+    betap_range = _parse_range(deg.get(f"betap_range{suf}", "[1, 2]"), (1, 2))
+    kernel, ktype = _random_mixed_kernel(ks, sigma_range, betag_range, betap_range)
+    return apply_kernel_pil(img, kernel), f"Blur{stage} {ktype} ks={ks} sigma~U{sigma_range}"
+
+
+def _apply_stage_resize(img, deg, stage, ori_size, scale):
+    """Resize1 (relative to current size) / Resize2 (absolute, relative to
+    ori_size/scale) — exact up/down/keep logic from feed_data."""
+    suf = "" if stage == 1 else "2"
+    default_probs = (0.2, 0.7, 0.1) if stage == 1 else (0.3, 0.4, 0.3)
+    up, down, keep = _parse_three(deg.get(f"resize_prob{suf}"), default_probs)
+    updown = random.choices(["up", "down", "keep"], [up, down, keep])[0]
+    default_range = (0.5, 1.5) if stage == 1 else (0.3, 1.2)
+    rng = _parse_range(deg.get(f"resize_range{suf}", str(list(default_range))), default_range)
+    if updown == "up":
+        factor = random.uniform(1.0, max(1.0, rng[1]))
+    elif updown == "down":
+        factor = random.uniform(min(rng[0], 1.0), 1.0)
+    else:
+        factor = 1.0
+    if abs(factor - 1.0) < 1e-6:
+        return img, None
+    mode = _pick_resize_mode(deg, f"resize_mode_list{suf}", f"resize_mode_prob{suf}")
+    if stage == 1:
+        w, h = img.size
+        nw, nh = max(1, round(w * factor)), max(1, round(h * factor))
+    else:
+        ori_w, ori_h = ori_size
+        nw = max(1, round(ori_w / scale * factor))
+        nh = max(1, round(ori_h / scale * factor))
+    return img.resize((nw, nh), mode), f"Resize{stage} {updown} x{factor:.2f} → {nw}x{nh}"
+
+
+def _apply_stage_noise(img, deg, stage):
+    """Noise always fires each stage — gaussian OR poisson, never neither
+    (matches feed_data's if/else, not an independent skip-gate)."""
+    suf = "" if stage == 1 else "2"
+    gray_prob = float(deg.get(f"gray_noise_prob{suf}", 0.4))
+    if random.random() < float(deg.get(f"gaussian_noise_prob{suf}", 0.0)):
+        default_range = (1, 30) if stage == 1 else (1, 25)
+        noise_range = _parse_range(deg.get(f"noise_range{suf}", str(list(default_range))), default_range)
+        return apply_noise(img, noise_range, gray_prob), f"Noise{stage} gauss sigma~U{noise_range}"
+    default_range = (0.05, 2.0) if stage == 1 else (0.05, 2.5)
+    poisson_range = _parse_range(deg.get(f"poisson_scale_range{suf}", str(list(default_range))), default_range)
+    return apply_poisson_noise(img, poisson_range, gray_prob), f"Noise{stage} poisson scale~U{poisson_range}"
+
+
 def apply_otf_pipeline(img, config: dict, scale: int = 4) -> Tuple:
     """
-    Apply the full OTF degradation pipeline (2 stages + final).
+    Apply the full OTF degradation pipeline, ported step-for-step from
+    RealESRGANModel.feed_data (traiNNer/models/realesrgan_model.py): LQ-USM +
+    ThickLines -> Blur1(sinc/mixed) -> Resize1 -> Noise1 -> JPEG1 -> Blur2 ->
+    Resize2 -> Noise2 -> [50/50: resize-back+FinalSinc vs JPEG2] -> custom
+    degradations (posterize..coupled_vintage, in the exact order the training-time
+    USR_STUDIO_CUSTOM_HOOK applies them, i.e. strictly LAST).
 
     Reads degradations from either the top level OR a nested [degradations] table
     (NeoSR/Real-ESRGAN style). Custom keys (banding/posterize) are at top level.
@@ -558,45 +960,83 @@ def apply_otf_pipeline(img, config: dict, scale: int = 4) -> Tuple:
 
     log = []
     out = img
+    ori_w, ori_h = img.size
 
-    # ===== Stage 1 =====
+    # ===== Native Redux, always first: LQ-USM then ThickLines =====
+    if str(deg.get("lq_usm", "false")).lower() in ("true", "1", "yes", "on"):
+        usm_range = _parse_range(deg.get("lq_usm_radius_range", "[1, 25]"), (1, 25))
+        out = apply_lq_usm(out, usm_range)
+        log.append(f"LQ-USM radius~U{usm_range}")
+    if random.random() < float(deg.get("thicklines_prob", 0.0)):
+        out = apply_thicklines(out)
+        log.append("ThickLines")
+
+    # ===== Stage 1 : blur -> resize -> noise -> jpeg =====
     # NeoSR/Real-ESRGAN style: stage 1 blur is ALWAYS applied (no blur_prob toggle).
     # USR Studio templates may set blur_prob; if absent, default to 1.0 (always blur).
     blur1_prob = float(deg.get("blur_prob", 1.0 if "blur_sigma" in deg else 0.0))
-    if random.random() < blur1_prob:
-        sigma_range = _parse_range(deg.get("blur_sigma", "[0.2, 3.0]"), (0.2, 3.0))
-        out = apply_blur(out, sigma_range)
-        log.append(f"Blur1 sigma~U{sigma_range}")
+    if random.random() < blur1_prob and NUMPY_AVAILABLE:
+        out, blog = _apply_stage_blur(out, deg, 1)
+        log.append(blog)
 
-    if random.random() < float(deg.get("gaussian_noise_prob", 0.0)):
-        noise_range = _parse_range(deg.get("noise_range", "[1, 30]"), (1, 30))
-        gray_prob = float(deg.get("gray_noise_prob", 0.4))
-        out = apply_noise(out, noise_range, gray_prob)
-        log.append(f"Noise1 sigma~U{noise_range}")
+    out, rlog = _apply_stage_resize(out, deg, 1, (ori_w, ori_h), scale)
+    if rlog:
+        log.append(rlog)
+
+    if NUMPY_AVAILABLE:
+        out, nlog = _apply_stage_noise(out, deg, 1)
+        log.append(nlog)
 
     if random.random() < float(deg.get("jpeg_prob", 0.0)):
         q_range = _parse_range(deg.get("jpeg_range", "[30, 95]"), (30, 95))
         out = apply_jpeg(out, q_range)
         log.append(f"JPEG1 q~U{q_range}")
 
-    # ===== Stage 2 =====
-    if random.random() < float(deg.get("second_blur_prob", 0.0)):
-        sigma_range = _parse_range(deg.get("blur_sigma2", "[0.2, 1.5]"), (0.2, 1.5))
-        out = apply_blur(out, sigma_range)
-        log.append(f"Blur2 sigma~U{sigma_range}")
+    # ===== Stage 2 : blur -> resize (absolute, ori/scale) -> noise =====
+    if random.random() < float(deg.get("second_blur_prob", 0.0)) and NUMPY_AVAILABLE:
+        out, blog = _apply_stage_blur(out, deg, 2)
+        log.append(blog)
 
-    if random.random() < float(deg.get("gaussian_noise_prob2", 0.0)):
-        noise_range = _parse_range(deg.get("noise_range2", "[1, 25]"), (1, 25))
-        gray_prob = float(deg.get("gray_noise_prob2", 0.4))
-        out = apply_noise(out, noise_range, gray_prob)
-        log.append(f"Noise2 sigma~U{noise_range}")
+    out, rlog = _apply_stage_resize(out, deg, 2, (ori_w, ori_h), scale)
+    if rlog:
+        log.append(rlog)
 
-    if random.random() < float(deg.get("jpeg_prob", 0.0)):
-        q_range = _parse_range(deg.get("jpeg_range2", "[30, 95]"), (30, 95))
-        out = apply_jpeg(out, q_range)
-        log.append(f"JPEG2 q~U{q_range}")
+    if NUMPY_AVAILABLE:
+        out, nlog = _apply_stage_noise(out, deg, 2)
+        log.append(nlog)
 
-    # ===== Custom degradations =====
+    # ===== Final : 50/50 order {resize-back + FinalSinc} vs {JPEG2} =====
+    target_w, target_h = max(1, ori_w // scale), max(1, ori_h // scale)
+    resize_mode3 = _pick_resize_mode(deg, "resize_mode_list3", "resize_mode_prob3")
+
+    def _final_resize_sinc(im):
+        im2 = im.resize((target_w, target_h), resize_mode3)
+        if random.random() < float(deg.get("final_sinc_prob", 0.0)) and NUMPY_AVAILABLE:
+            ks = random.choice(_KERNEL_SIZES)
+            omega_c = random.uniform(math.pi / 3, math.pi)
+            kernel = _circular_lowpass_kernel(omega_c, ks, pad_to=21)
+            im2 = apply_kernel_pil(im2, kernel)
+            return im2, f"FinalSinc ks={ks} ωc={omega_c:.2f}"
+        return im2, f"FinalResize → {target_w}x{target_h}"
+
+    def _final_jpeg(im):
+        if random.random() < float(deg.get("jpeg_prob2", deg.get("jpeg_prob", 0.0))):
+            q_range = _parse_range(deg.get("jpeg_range2", "[30, 95]"), (30, 95))
+            return apply_jpeg(im, q_range), f"JPEG2 q~U{q_range}"
+        return im, None
+
+    if random.random() < 0.5:
+        out, l1 = _final_resize_sinc(out); log.append(l1)
+        out, l2 = _final_jpeg(out)
+        if l2:
+            log.append(l2)
+    else:
+        out, l2 = _final_jpeg(out)
+        if l2:
+            log.append(l2)
+        out, l1 = _final_resize_sinc(out); log.append(l1)
+
+    # ===== Custom degradations — run LAST, exactly like USR_STUDIO_CUSTOM_HOOK =====
     if random.random() < float(deg.get("posterize_prob", 0.0)):
         bits_range = _parse_range(deg.get("posterize_bits_range", "[3, 6]"), (3, 6))
         out = apply_posterize(out, bits_range)
@@ -606,6 +1046,11 @@ def apply_otf_pipeline(img, config: dict, scale: int = 4) -> Tuple:
         lev_range = _parse_range(deg.get("banding_levels_range", "[16, 64]"), (16, 64))
         out = apply_banding(out, lev_range)
         log.append(f"Banding levels~U{lev_range}")
+
+    if random.random() < float(deg.get("smooth_banding_prob", 0.0)):
+        sb_range = _parse_range(deg.get("smooth_banding_levels_range", "[48, 128]"), (48, 128))
+        out, _lin = apply_smooth_banding(out, sb_range, float(deg.get("smooth_banding_dark_prob", 0.5)))
+        log.append(f"Smooth banding levels~U{sb_range}{' (dark/linear)' if _lin else ''}")
 
     if random.random() < float(deg.get("chroma_prob", 0.0)):
         out = apply_chroma_subsampling(out)
@@ -708,6 +1153,17 @@ def apply_otf_pipeline(img, config: dict, scale: int = 4) -> Tuple:
         out = apply_subsampling_wtp(out, subsampling_format=fmt, yuv_matrix=yuv)
         log.append(f"Subsampling {fmt} YUV-{yuv}")
 
+    if random.random() < float(deg.get("dct_block_prob", 0.0)):
+        q_lo, q_hi = _parse_range(deg.get("dct_block_quality_range", "[20, 80]"), (20, 80))
+        bs_lo, bs_hi = _parse_range(deg.get("dct_block_size_range", "[4, 4]"), (4, 4))
+        cs_lo, cs_hi = _parse_range(deg.get("dct_block_chroma_scale_range", "[1.5, 2.5]"), (1.5, 2.5))
+        yuv_d = str(deg.get("dct_block_yuv", "601"))
+        bs = random.randint(int(bs_lo), max(int(bs_lo), int(bs_hi)))
+        q = random.uniform(q_lo, q_hi)
+        cs = random.uniform(cs_lo, cs_hi)
+        out = apply_dct_block_degrade(out, block_size=bs, quality=q, chroma_scale=cs, yuv_matrix=yuv_d)
+        log.append(f"DCT-Block {bs}x{bs} quality={q:.0f} chroma×{cs:.2f} YUV-{yuv_d}")
+
     # ===== Custom 4 degradations =====
     if random.random() < float(deg.get("color_level_prob", 0.0)):
         hi_range  = _parse_range(deg.get("color_level_high",  "[220, 255]"), (220, 255))
@@ -773,13 +1229,6 @@ def apply_otf_pipeline(img, config: dict, scale: int = 4) -> Tuple:
         sz_range = _parse_range(deg.get("film_grain_size_range", "[1, 2]"), (1, 2))
         out = apply_film_grain_pil(out, fg_range, sz_range)
         log.append("Coupled-Vintage (VHS+banding+grain)")
-
-    # ===== Final downscale to LR size =====
-    if scale > 1:
-        w, h = img.size
-        lr_w, lr_h = max(1, w // scale), max(1, h // scale)
-        out = out.resize((lr_w, lr_h), Image.BICUBIC)
-    # scale=1 means same-size LR/HQ (e.g. for deband/denoise tasks)
 
     return out, log
 

@@ -88,7 +88,7 @@ MODELS: dict[str, dict] = {
     # ── Undistort — PyTorch PTH (xg416 / pifroggi, MIT) ────────────────────
     "undistort_tmt": {
         "filename": "undistort_dynamic_1st_stage.pth",
-        "url":      "https://github.com/pifroggi/vs_undistort/raw/main/vs_undistort/dynamic_1st_stage.pth",
+        "url":      "https://github.com/pifroggi/vs_undistort/raw/main/vs_undistort/models/UNet3d_TMT.pth",
         "size_mb":  8.13,
         "label":    "Undistort TMT PTH (~8 MB)",
         "credits":  "xg416 / pifroggi — https://github.com/pifroggi/vs_undistort",
@@ -98,7 +98,7 @@ MODELS: dict[str, dict] = {
     # ── Undistort — ONNX fp16 (op19, dynamic shapes) ──────────────────────
     "undistort_tmt_onnx": {
         "filename": "undistort_dynamic_1st_stage_op19_fp16.onnx",
-        "url":      "https://github.com/pifroggi/vs_undistort/raw/main/vs_undistort/dynamic_1st_stage_op19_fp16_dynamic.onnx",
+        "url":      "https://github.com/pifroggi/vs_undistort/raw/main/vs_undistort/models/UNet3d_TMT_lin_op19_fp16.onnx",
         "size_mb":  4.67,
         "label":    "Undistort TMT ONNX fp16 (~4.7 MB, recommandé GPU)",
         "credits":  "xg416 / pifroggi — https://github.com/pifroggi/vs_undistort",

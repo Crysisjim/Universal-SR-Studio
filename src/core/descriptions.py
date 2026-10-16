@@ -11,7 +11,7 @@ ARCH_FAMILIES = {
     "🚀 Lightweight / Fast": ["span", "span_s", "spanplus", "compact", "ultracompact", "realcugan", "safmn", "lmlt", "plksr", "realplksr"],
     "🤖 Transformers (Heavy)": ["hat", "hat_l", "hat_m", "hat_s", "dat", "dat_2", "dat_light", "dat_s", "swinir", "swinir_l", "swinir_m", "swinir_s", "srformer", "srformerv2", "drct", "drct_l", "drct_xl"],
     "🎨 GAN / Restoration": ["esrgan", "esrgan_lite", "rcan", "rcan_l", "rcan_unshuffle", "artcnn_r16f96", "artcnn_r8f48", "artcnn_r3f24", "cugan"],
-    "🎞️ Video / Temporal": ["tscunet", "temporalspan", "temporalspanv2"],
+    "🎞️ Video / Temporal": ["tscunet", "temporalspan", "temporalspanv2", "tfdat", "tfdatv2"],
     "📦 Others": ["atd", "atd_light", "cfsr", "craft", "dct", "dctlsa", "ditn", "ditn_real", "eimn", "eimn_a", "eimn_l", "elan", "elan_light", "emt", "esc", "escrealm", "escrealm_xl", "fdat", "fdat_light", "fdat_xl", "flexnet", "metaflexnet", "gaterv3", "grl_b", "grl_s", "grl_t", "hasn", "hit_sir", "hit_sng", "hit_srf", "hma", "krgn", "lkfmixer_b", "lkfmixer_l", "lkfmixer_t", "man", "man_light", "man_tiny", "metagan3", "moesr", "moesr2", "mosr", "mosr_t", "mosrv2", "msdan", "plainusr", "rgt", "rgt_s", "rtmosr", "rtmosr_l", "rtmosr_ul", "scunet_aaf6aa", "sebica", "sebica_mini", "seemore_t", "swin2sr_l", "swin2sr_m", "swin2sr_s"]
 }
 
@@ -100,7 +100,59 @@ TOOLTIPS = {
     "warmup_steps": "Pas de chauffe interne à l'optimiseur.\nDifférent du 'Warmup Iter' global. Laisser à -1 sauf expert.",
     
     # ================= DISCRIMINATEUR & GAN =================
-    "net_d_type": "Architecture du Juge (Discriminateur).\n* UNet : Standard, équilibré.\n* PatchGAN : Focalisé sur la texture fine.\n* MetaGAN : Très puissant, lourd.\n* EA2FPN : Avancé, bonne détection des bords.\n* DUNet : UNet dense.",
+    "net_d_type": (
+        "Architecture du Juge (Discriminateur).\n\n"
+        "--- NeoSR ---\n"
+        "* UNet : Standard, équilibré.\n"
+        "* PatchGAN : Focalisé sur la texture fine locale.\n"
+        "* MetaGAN : Très puissant, lourd (beaucoup de VRAM).\n"
+        "* EA2-FPN : Avancé, bonne détection des bords/structures. Patch HR (patch LQ × scale) multiple de 32 obligatoire.\n"
+        "* DUNet : UNet dense (skip connections denses).\n\n"
+        "--- TraiNNer-Redux ---\n"
+        "* DUNet : UNet dense (identique à NeoSR).\n"
+        "* UNet-SN : UNet + Spectral Normalization (plus stable).\n"
+        "* MetaGAN2 : Version 2 de MetaGAN, très puissant.\n"
+        "* PatchGAN-SN : PatchGAN + Spectral Normalization.\n"
+        "* MultiPatchGAN-SN : PatchGAN multi-échelle + SN, juge à plusieurs résolutions.\n"
+        "* VGG-Style : Discriminateur classique basé sur l'architecture VGG (ESRGAN d'origine).\n"
+        "* DocRes-Disc : Simple pile Conv+LeakyReLU (dim/num_blocks/bias réglables), issu de l'arch "
+        "DocRes (restauration de document) — utilisable comme discriminateur générique même hors "
+        "contexte DocRes.\n\n"
+        "* Spectral (DualFormer) : Tourne sur le SPECTRE DE FOURIER de l'image (via FFT par patch), "
+        "pas sur l'image brute — même architecture VGG-style que 'VGG-Style' mais appliquée après "
+        "transformation spectrale. Porté du papier \"On the Effectiveness of Spectral Discriminators "
+        "for Perceptual Quality Improvement\" (ICCV 2023, arxiv.org/abs/2307.12027), repo DualFormer.\n"
+        "  [i] Dans le papier, le meilleur résultat vient de faire tourner CE discriminateur EN PLUS "
+        "d'un discriminateur spatial classique (ex: VGG-Style) en même temps, avec les deux losses "
+        "combinées — PAS à la place d'un discriminateur spatial.\n"
+        "  ⚠ LIMITE : Universal SR Studio / traiNNer-redux ne supportent qu'UN SEUL network_d à la "
+        "fois pour l'instant. Ce choix l'utilise donc SEUL, ce qui est un setup plus faible que le "
+        "duo décrit par le papier — à considérer comme une alternative expérimentale au VGG-Style "
+        "classique, pas comme une reproduction complète du papier.\n\n"
+        "* NeXtSRGAN : Discriminateur \"ConvNeXt-based\" du papier NeXtSRGAN (The Visual Computer, "
+        "2024, doi.org/10.1007/s00371-024-03797-2, repo TensorFlow officiel PomKlementieff/NeXtSRGAN). "
+        "  ⚠ HONNÊTETÉ ARCHI : le code TF réel (function DiscriminatorVGG128, vérifié directement "
+        "dans le repo) est en fait une pile VGG128-style classique (5 étages conv3x3→conv4x4 stride2"
+        "→BatchNorm, doublant les canaux) quasi identique à 'VGG-Style' — PAS un vrai ConvNeXt (pas de "
+        "stem patchify, pas de conv depthwise, pas de LayerNorm, pas de profondeur variable par étage). "
+        "Les deux seules différences : activation GELU (étages 1-4 uniquement) au lieu de LeakyReLU, "
+        "et tête GlobalAveragePooling+Linear(1) au lieu de Flatten+2 FC (donc pas de contrainte "
+        "128x128 fixe). Port fidèle au code réel, pas au nom du papier.\n\n"
+        "* Projected GAN : Discriminateur à backbone PRÉ-ENTRAÎNÉ GELÉ (\"Projected GANs Converge "
+        "Faster\", NeurIPS 2021, arxiv.org/pdf/2111.01007, repo officiel autonomousvision/projected-gan). "
+        "Au lieu d'apprendre à extraire des features depuis zéro, il extrait des features multi-échelles "
+        "via un backbone ImageNet gelé (timm tf_efficientnet_lite0) puis n'entraîne qu'une petite tête "
+        "de classification légère par-dessus (+ éventuellement des convs de projection cross-channel/"
+        "cross-scale) — convergence nettement plus rapide dans le papier.\n"
+        "  [i] Génère AUTOMATIQUEMENT le téléchargement du backbone pré-entraîné (~15-20 Mo) au premier "
+        "forward, nécessite une connexion internet la première fois (mis en cache ensuite).\n"
+        "  ⚠ HONNÊTETÉ : contrairement à Spectral/NeXtSRGAN, ce n'est PAS une technique spécifique à la "
+        "super-résolution — c'est une technique générale de training GAN (papier testé sur synthèse "
+        "d'image FFHQ/LSUN/ImageNet, pas sur SR), et son backbone est entraîné pour la classification "
+        "ImageNet, pas pour juger des artefacts SR spécifiques. À considérer comme une alternative "
+        "généraliste qui converge vite, pas comme un discriminateur ciblé SR.\n\n"
+        "⚠ Les types ne sont PAS interchangeables entre moteurs."
+    ),
     "gan_loss_weight": "Force du GAN.\n[+] Plus haut : Plus de détails, risque d'artefacts.\n[-] Plus bas : Plus stable, risque d'être trop flou.\nStandard : 0.05",
     "real_label_val": "Valeur cible pour les images réelles (1.0).\nParfois réduit à 0.9 (Label Smoothing) pour stabiliser.",
     "fake_label_val": "Valeur cible pour les images générées (0.0).",
@@ -124,6 +176,13 @@ TOOLTIPS = {
     "wavelet_init": "Délai d'activation de la Wavelet Loss (itérations).\nEx: 80000 = s'active seulement après 80K iters.\nRecommandé : entraîner au moins 40K avant d'activer.",
     "loss_fdl": "Frequency Distribution Loss (FDL).\nLoss perceptuelle basée sur la distribution fréquentielle.\nBacks : DINOv2, VGG19, ResNet101, EfficientNet.\n\n[+] Excellent pour restaurer le grain et les textures complexes.\n[+] Complémentaire à la Perceptual Loss.\n[-] Lourd en calcul (num_proj=24 vs 256 original).\n[!] NeoSR uniquement.",
     "loss_spark": "SparK Perceptual Loss.\nLoss perceptuelle basée sur les features InceptionNext (MetaNeXt, pré-entraîné).\n\nDeux critères :\n- fd : Fourier Domain sliced Wasserstein (magnitude + phase) — recommandé.\n- charbonnier : Charbonnier sur les feature maps brutes.\n\nLes poids sont téléchargés automatiquement (~200 MB) depuis GitHub si path est vide.\n\n[+] Texture très riche, efficace sur le grain et les détails.\n[+] Complémentaire à L1 ou Charbonnier.\n[!] TraiNNer-Redux uniquement.",
+    "thicklines_prob": "ThickLines — épaissit les traits/contours de la LQ (filtre custom Redux).\nSimule un trait plus gras / une perte de finesse des lignes.\n\n[+] Augmenter : le modèle apprend à RAFFINER des lignes épaisses → utile anime / line-art.\n[-] 0 = désactivé.\n[!] TraiNNer-Redux uniquement.",
+    "lq_usm": "LQ Unsharp Mask — applique un masque de netteté (USM) sur la LQ avant l'entraînement.\nSimule une source déjà sur-accentuée (halos de bord).\n\n[+] Activer : force le modèle à gérer la sur-netteté des sources réelles.\n[!] Niche — surtout si tes LQ d'origine sont déjà sharpenées. TraiNNer-Redux uniquement.",
+    "lq_usm_radius_range": "Plage du rayon (px) du flou interne de l'USM appliqué à la LQ.\nUn rayon est tiré au hasard dans cette plage à chaque image.\n\n[+] Rayon ↑ : halos plus larges.\n[-] Rayon ↓ : effet plus fin.",
+    "loss_linedistiller": "LineDistiller Loss ★.\nPerte spécialisée pour préserver et affiner les LIGNES / contours (idéal anime & line-art).\nCompare les contours générés à ceux de la cible via un modèle de détection de lignes.\n\n[+] Augmenter le poids : lignes plus nettes, propres et continues.\n[-] Diminuer / 0 : moins d'attention aux contours.\n[!] TraiNNer-Redux uniquement.",
+    "loss_percep_fp16": "Perceptual FP16 Loss ★.\nLoss perceptuelle (VGG) calculée en demi-précision (FP16) pour économiser la VRAM et accélérer.\nMême rôle que la Perceptual classique mais plus légère.\n\n[+] Augmenter : textures plus réalistes, détails fins préservés.\n[-] Diminuer / 0 : moins d'effet perceptuel.\n[+] FP16 = ~2× moins de VRAM que la perceptuelle standard.\n[!] TraiNNer-Redux uniquement.",
+    "loss_aesop": "AESOP Loss ★ (perceptuelle orientée structure).\nCompare l'organisation globale (formes, structure) plutôt que les pixels isolés.\n\n[+] Augmenter : meilleure cohérence structurelle, moins de déformations.\n[-] Diminuer / 0 : moins de contrainte de structure.\n[!] TraiNNer-Redux uniquement.",
+    "loss_bcedice": "BCE + Dice Loss ★.\nCombinaison Binary Cross-Entropy + Dice, idéale pour zones nettes / masques / line-art binaire.\nDeux poids réglables : bce (pixel à pixel) et dice (chevauchement des régions).\n\n[+] Augmenter : contours et aplats plus francs.\n[-] Diminuer / 0 : effet réduit.\n[!] TraiNNer-Redux uniquement.",
     "spark_max_score": "SparK Clamp (Max Score).\nPlafond appliqué au score brut avant multiplication par le poids.\n\nEn mode fd, certains patches extrêmes (banding sévère, sursharp) génèrent des magnitudes FFT explosives → spike > 500 dans les logs.\nLe clamp borne ces spikes sans désactiver la loss.\n\n→ 50.0 : recommandé (max loggé ≈ 10.0 avec weight=0.2).\n→ 0 ou vide : clamp désactivé.\n→ Plus bas = plus restrictif.",
     "loss_ldl": "LDL Loss (Local Discriminative Learning).\nPénalise les artefacts dans les zones à haute fréquence (détails).\ncriterion : l1, l2, huber. ksize : taille du kernel (7 par défaut).\n\n[+] Préserve les détails fins sans flouter.\n[+] Bon complément à L1.\n[!] Disponible NeoSR et Redux.",
     "loss_consistency": "Consistency Loss.\nForce la cohérence des couleurs et de la luminosité entre sortie et cible.\nUtilise les espaces Oklab et CIE L* + Cosine Similarity.\n\nOptions : blur (lissage), cosim (similarité cosinus), saturation/brightness.\nmatch_lq_colors : matcher les couleurs du LQ au lieu du GT.\n\n[!] NeoSR uniquement.",
@@ -194,11 +253,21 @@ TOOLTIPS = {
     # --- FINAL ---
     "jpeg_prob": "Probabilité d'appliquer une compression JPEG finale.",
     "jpeg_range": "Plage de qualité JPEG [Min, Max].\nEx: [30, 95]. 30 est très compressé (blocs), 95 est propre.",
+    "jpeg_prob2": "Probabilité d'appliquer un second passage JPEG (Stage 2, après le dernier resize) — simule un ré-encodage successif. À 1.0, s'applique à CHAQUE image d'entraînement : peut détruire les détails fins répétitifs (grain, fils fins) si trop haut.",
     "jpeg_range2": "Plage pour le double JPEG (Simulation d'enregistrements successifs).",
+    "sinc_prob": "Probabilité qu'un noyau flou de type sinc (ringing) remplace un noyau iso/aniso/plateau classique (Stage 1). Différent du Sinc final (ringing global de fin de chaîne).",
+    "sinc_prob2": "Idem sinc_prob mais pour le Stage 2.",
+    "betag_range": "Plage de forme (bêta) des noyaux flou 'generalized' (Stage 1). Contrôle à quel point le noyau s'écarte d'une gaussienne classique.",
+    "betap_range": "Plage de forme (bêta) des noyaux flou 'plateau' (Stage 1).",
+    "betag_range2": "Idem betag_range mais pour le Stage 2.",
+    "betap_range2": "Idem betap_range mais pour le Stage 2.",
 
     # --- QUANTIFICATION / BANDING (OTF Custom) ---
     "banding_prob": "Probabilité d'appliquer un effet de banding (gradients quantifiés).\n\nLe banding simule les sources anciennes (DVD, vieux encodages, screencaps).\nEn mode OTF, est injecté après les dégradations principales.\n\n[+] Améliore la robustesse aux sources avec bandes de couleur.\n[+] Indispensable pour les datasets anime / vidéo ancienne.\n[-] Ralentit légèrement le chargement des données.",
     "banding_levels_range": "Plage du nombre de niveaux de quantification pour le banding [Min, Max].\nEx: [16, 64].\n- Faible (8-16) : Banding très visible, comme les vieux GIF.\n- Moyen (32-64) : Banding subtil, typique d'un encodage H.264 ancien.\n- Haut (128+) : Effet très léger, presque imperceptible.",
+    "smooth_banding_prob": "Probabilité d'appliquer un banding de type encodeur, limité aux zones lisses (dégradés, ciels, ombrages).\nSeule la luminance est quantifiée et uniquement là où l'image est plate : les lignes et textures ne sont pas touchées.\n[+] Apprend au modèle à lisser les marches de dégradé (deband) sans adoucir les lignes. Recommandé : 0.2-0.35.",
+    "smooth_banding_levels_range": "Nombre de niveaux de luminance [Min, Max] pour le banding des zones lisses.\n- 48 : marches de ~5 niveaux 8 bits (banding visible).\n- 128 : marches de ~2 niveaux (banding subtil, typique Blu-ray/web).",
+    "smooth_banding_dark_prob": "Part des tirages quantifiés en lumière linéaire : les marches deviennent plus grandes dans les tons sombres,\ncomme le banding des dégradés sombres des encodes Blu-ray/web. 0.5 = moitié des cas.",
     "posterize_prob": "Probabilité d'appliquer un effet de posterisation (réduction des niveaux par canal).\n\nLa posterisation est plus agressive que le banding — réduit les niveaux dans chaque canal R/G/B indépendamment.\n\n[+] Simule des sources avec une profondeur de couleur réduite.\n[+] Complémentaire au banding pour couvrir plus de défauts réels.\n[-] Peut créer des artefacts visuels forts si les bits sont trop bas.",
     "posterize_bits_range": "Plage du nombre de bits pour la posterisation [Min, Max].\nEx: [3, 6].\n- 2-3 bits : Poster 'cartoon' très visible (4-8 couleurs par canal).\n- 4-5 bits : Dégradation modérée, simule les encodages lossy.\n- 6-7 bits : Effet très subtil.",
 
@@ -238,6 +307,11 @@ TOOLTIPS = {
     "dithering_prob": "Probabilité d'appliquer un tramage de couleurs.\nSimule la réduction de palette (vieux jeux, GIF, palettes 8-bit).\n[+] Utile pour datasets de captures de jeux retro ou exports GIF/PNG 8-bit.",
     "dithering_color_ch": "Nombre de couleurs pour le tramage [Min, Max].\nEx: [2, 8]. 2 = Noir et blanc, 8 = Palette réduite.",
     "dithering_type": "Algorithme de tramage.\nfloyd_steinberg : Diffusion d'erreur classique — recommandé.\nordered : Tramage Bayer (motif régulier).\nquantize : Réduction simple sans diffusion.\natkinson : Tramage léger (Apple Mac originel).",
+    "dct_block_prob": "Probabilité d'appliquer une dégradation par blocs DCT façon codec vidéo (inspiré ArtCNN v1.6.2, notre implémentation — pas un port officiel, technique non publiée).\nDCT 4×4 (comme AVC/HEVC/AV1, pas le 8×8 de JPEG) + table de quantization radiale (dépend uniquement de la distance à la fréquence DC, pas du JPEG standard).\n[+] Artefacts de blocs plus fins et plus \"génériques codec\" que le JPEG classique déjà présent ailleurs — complémentaire, pas un remplacement.",
+    "dct_block_quality_range": "Qualité façon JPEG [Min, Max], 1-100.\nBas = quantization forte (blocs visibles, perte de détail). Haut = quasi-transparent.\nEx: [20, 80] pour un bon éventail d'intensités.",
+    "dct_block_size_range": "Taille du bloc de transformée [Min, Max].\n4 = façon AVC/HEVC (recommandé, fidèle à la description ArtCNN). 8 = façon JPEG classique.",
+    "dct_block_chroma_scale_range": "Facteur de quantization supplémentaire pour Cb/Cr (chroma) vs Y (luma) [Min, Max].\n1.0 = même quantization que la luma. 2.0 = chroma 2× plus grossière (convention codec standard, l'œil est moins sensible à la chroma).",
+    "dct_block_yuv": "Matrice de conversion RGB→YCbCr utilisée avant la transformée DCT.\n601 = SD/DVD. 709 = HD standard. 2020 = 4K/HDR.",
     "pixelate_prob": "Probabilité d'appliquer une pixelisation.\nSous-échantillonnage nearest-neighbor → ↓ puis ↑ → blocs visibles.\n[+] Simule les assets basse résolution, jeux retro, images web compressées.",
     "pixelate_size": "Taille des blocs de pixelisation [Min, Max] en pixels.\nEx: [2, 16]. 2 = léger flou par blocs. 16 = gros pixels '8-bit'.",
     "sin_prob": "Probabilité d'appliquer une ondulation sinusoïdale de luminosité.\nSimule les artefacts de compression vidéo ou les interférences analogiques.\n[+] Utile pour les datasets vidéo compressée ou les captures TV.",
@@ -320,15 +394,21 @@ TOOLTIPS = {
     "resi_connection": "Type de connexion résiduelle (1conv, 3conv...).",
     "upsampler": (
         "Méthode d'upscaling pour le générateur :\n\n"
-        "• dys (DySample) — Points d'échantillonnage appris dynamiquement. "
-        "Meilleure qualité générale pour SPANPlus/SPAN. ✅ Recommandé.\n\n"
+        "• dys / dysample (DySample) — Points d'échantillonnage appris dynamiquement. "
+        "Meilleure qualité générale pour SPANPlus/SPAN/GFISRv2/FIGSR. ✅ Recommandé.\n\n"
         "• pixelshuffle — Pixel Shuffle standard avec init ICNR. "
         "Bon équilibre qualité/vitesse.\n\n"
-        "• pixelshuffledirect — Pixel Shuffle simplifié sans ICNR. "
+        "• pixelshuffledirect / ps — Pixel Shuffle simplifié sans ICNR. "
         "Plus rapide, qualité légèrement inférieure. Défaut sur la plupart des archi.\n\n"
         "• nearest+conv — Nearest-neighbor + conv. Le plus rapide, pour edge/mobile.\n\n"
-        "• conv — Conv simple. SPANPlus uniquement, scale=1 seulement (restauration/débruitage sans upscale).\n\n"
-        "• ps — Alias pour pixelshuffle."
+        "• conv / lp — Conv simple (pas de vrai upsampling). SPANPlus/ESCRealM uniquement, "
+        "scale=1 seulement (restauration/débruitage sans upscale).\n\n"
+        "• transpose+conv — Convolution transposée (déconvolution). Apprend directement l'upscaling, "
+        "plus lourd que pixelshuffle, peut créer des artefacts en damier (checkerboard).\n\n"
+        "• pa_up — Pixel Attention Upsampling : pixelshuffle + attention pixel-wise sur les features "
+        "avant l'agrandissement. Un peu plus lent, meilleure netteté sur les détails fins.\n\n"
+        "• lda — Location-aware Dynamic Aggregation : agrégation dynamique des features tenant compte "
+        "de la position, spécifique à FIGSR. Plus coûteux que dysample mais plus précis sur les lignes/bords."
     ),
     "num_in_ch": "Nombre de canaux d'entrée. 3 = RGB (standard). 1 = niveaux de gris.",
     "num_out_ch": "Nombre de canaux de sortie. Doit correspondre à num_in_ch. Standard : 3.",
@@ -344,11 +424,26 @@ TOOLTIPS = {
     "use_sigmoid": "Utilise une activation Sigmoid à la sortie (0-1).",
     "skip_connection": "Connexions de saut (Skip Connections) pour UNet.",
     "num_layers": "Nombre de couches (PatchGAN).",
-    "act": "Fonction d'activation (ex: lrelu).",
+    "act": (
+        "Fonction d'activation non-linéaire du réseau :\n\n"
+        "• lrelu (Leaky ReLU) — Standard, laisse passer un peu de signal négatif (évite les neurones morts). "
+        "Rapide, bon défaut.\n\n"
+        "• relu — Coupe tout signal négatif à 0. Plus simple, peut créer des neurones morts.\n\n"
+        "• gelu — Activation lisse (utilisée dans les transformers). Légèrement plus lourde, "
+        "souvent meilleure convergence sur les archs à attention.\n\n"
+        "• silu (Swish) — Lisse comme GELU, un peu moins coûteuse. Bon compromis."
+    ),
     "category_size": "Taille de catégorie (ATD).",
     "dw_size": "Taille du noyau Depth-Wise.",
     "num_conv": "Nombre de convolutions (Compact).",
-    "act_type": "Type d'activation.",
+    "act_type": (
+        "Type d'activation utilisé dans le bloc de convolutions (ex: Compact/SRVGGNetCompact) :\n\n"
+        "• prelu — ReLU paramétrique : la pente négative est apprise pendant l'entraînement. Défaut, "
+        "légèrement meilleure qualité que lrelu à coût quasi nul.\n\n"
+        "• relu — Coupe tout signal négatif à 0. Le plus simple/rapide.\n\n"
+        "• leaky_relu — Pente négative fixe (non apprise), évite les neurones morts sans coût d'apprentissage.\n\n"
+        "• gelu — Activation lisse, un peu plus lourde, rarement nécessaire sur ces archs légères."
+    ),
     "split_size_0": "Taille de split dimension 0.",
     "split_size_1": "Taille de split dimension 1.",
     "pro": "Mode Pro (CuGAN).",
@@ -356,7 +451,13 @@ TOOLTIPS = {
     "num_head": "Nombre de têtes.",
     "ITL_blocks": "Blocs ITL (DITN).",
     "SAL_blocks": "Blocs SAL (DITN).",
-    "attn_type": "Type d'attention (SDPA...).",
+    "attn_type": (
+        "Implémentation du mécanisme d'attention :\n\n"
+        "• sdpa (Scaled Dot-Product Attention) — Attention standard des transformers, "
+        "utilise le kernel optimisé PyTorch (rapide, économe en VRAM). Recommandé.\n\n"
+        "• linear — Attention linéaire (complexité réduite en séquence longue), "
+        "plus légère en VRAM sur de grandes images mais légèrement moins précise."
+    ),
     "hidden_rate": "Taux caché.",
     "base_win_size": "Taille de fenêtre de base.",
     "hier_win_ratios": "Ratios de fenêtre hiérarchique.",
@@ -370,7 +471,15 @@ TOOLTIPS = {
     "attn_feat": "Features attention.",
     "kernel_size": "Taille du noyau.",
     "split_ratio": "Ratio de division.",
-    "lk_type": "Type de grand noyau.",
+    "lk_type": (
+        "Type de décomposition du grand noyau de convolution (PLKSR) :\n\n"
+        "• PLK — Partial Large Kernel : applique le grand noyau sur une partie seulement des canaux. "
+        "Bon compromis vitesse/qualité, valeur par défaut.\n\n"
+        "• SparsePLK — Variante creuse (sparse) de PLK : encore plus légère en calcul, "
+        "légère perte de qualité possible.\n\n"
+        "• RectSparsePLK — Version creuse avec noyaux rectangulaires (non carrés) : "
+        "capture mieux les structures directionnelles (lignes fines, bords)."
+    ),
     "c_ratio": "Ratio C.",
     "embed_dims": "Dimensions d'embedding.",
     "num_stages": "Nombre d'étapes.",
@@ -381,6 +490,30 @@ TOOLTIPS = {
 
     # ================= SMoSR =================
     "smosr_dim": "Nombre de canaux features (largeur du réseau).\n[+] Plus élevé → meilleure qualité, +VRAM.\n[-] Plus bas → modèle plus léger et rapide.\nDéfaut : 48 (équilibre légèreté/qualité, comparable à SPAN-S).",
+    "heart_depths": "HEART — nombre de blocs dans chaque groupe résiduel (un nombre par groupe).\n[+] Plus de blocs → meilleure qualité, beaucoup plus lent et +VRAM.\nDéfaut : [6, 6, 6, 6, 6, 6] (template officiel). Même nombre d'éléments que Num Heads.",
+    "heart_num_heads": "HEART — têtes d'attention par groupe (un nombre par groupe, même longueur que Depths).\nEmbed Dim doit être divisible par chaque valeur.\nDéfaut : [6, 6, 6, 6, 6, 6].",
+    "heart_window_size": "HEART — taille des fenêtres d'attention (pixels).\n[+] Plus grande → plus de contexte, +VRAM.\nPatch LQ conseillé : multiple de cette valeur (template : 96 avec 32).\nN'est PAS stocké dans le modèle : gardez 32 pour pouvoir réutiliser le modèle partout.\nDéfaut : 32.",
+    "heart_attention_freq": "HEART — une couche d'attention tous les N blocs (les autres blocs sont convolutifs).\n[-] 1 = attention partout → plus lent, +VRAM.\n[+] Plus grand → plus rapide.\nDéfaut : 2.",
+    "nerve_dim": "NERVE — nombre de canaux features (largeur du réseau).\n[+] Plus élevé → meilleure qualité, +VRAM.\nDéfaut : 64.",
+    "nerve_n_blocks": "NERVE — nombre de blocs résiduels (profondeur).\n[+] Plus de blocs → meilleure qualité, plus lent.\nDéfaut : 24.",
+    "wiresr_dim": "WireSR — largeur du réseau (canaux).\n[+] Plus élevé → meilleure qualité, +VRAM. Le modèle 1x_Wired utilise 96.\nDéfaut : 64.",
+    "wiresr_n_blocks": "WireSR — nombre de blocs WireBlock (profondeur). 1x_Wired : 32.\nDéfaut : 24.",
+    "wiresr_stripe": "WireSR — longueur des convolutions en bandes horizontales/verticales (lignes longues et fines).\n[+] Plus long → suit mieux les longues lignes, plus lent.\nDéfaut : 61.",
+    "wiresr_diag": "WireSR — taille des convolutions diagonales (lignes obliques, crénelage). 1x_Wired : 21.\nDéfaut : 17.",
+    "wiresr_attn_every": "WireSR — une attention canal tous les N blocs (0 = jamais). 1x_Wired : 4.\nDéfaut : 5.",
+    "fdat_rd_unshuffle": "FDAT-RD — entrée « pixel-unshuffle » pour les scales 1-2 : le réseau travaille sur une image 2× plus petite (beaucoup plus rapide).\nRecette de l'auteur : true en 2x, avec un patch LQ de 120.\nPatch LQ : multiple de 60 avec unshuffle en 2x (sinon de 30), par ex. 60 ou 120, pas 64/96/128. Sinon le modèle laisse une ligne sombre en bas/à droite hors de l'app (chaiNNer, ONNX) sur les tailles multiples de 60 (720×480, 1920×1080).\nDéfaut : true.",
+    "fdat_rd_groups": "FDAT-RD — nombre de groupes résiduels.\nPlus = plus de capacité, plus lent.\nSmall/Medium : 4, Large : 6.",
+    "fdat_rd_depth": "FDAT-RD — répétitions du motif spatial → canal → dictionnaire par groupe (2 → 6 blocs).\nDéfaut : 2.",
+    "fdat_rd_dict": "FDAT-RD — taille du dictionnaire appris de structures (traits, yeux, cheveux) que chaque pixel peut consulter.\nMultiple de 32 conseillé.\nSmall 64, Medium 128, Large 256.",
+    "fdat_rd_checkpoint": "FDAT-RD — gradient checkpointing : recalcule au lieu de stocker, pour baisser fortement la VRAM d'entraînement (plus lent).\nUtile pour les grands patchs ou le preset Large. Sans effet à l'inférence.\nDéfaut : false.",
+    "tfdatv2_depth": "TFDAT v2 — blocs par groupe et par type (spatial + canal) : 3 → 6 blocs par groupe.\nPlus = meilleure qualité, plus lent.\nDéfaut : 3 (2x_bndl_animefilm_v3).",
+    "tfdatv2_flow": "TFDAT v2 — largeur du réseau de flux optique pyramidal (canaux du 1er niveau ; ×2 et ×3 aux niveaux suivants).\nGère l'alignement des frames voisines sur la frame centrale.\nDéfaut : 32.",
+    "motsr_stage": "MoTSR — partie du réseau entraînée.\n• joint : tout le réseau (choix sûr, y compris sans pretrain).\n• bootstrap : seulement la fusion temporelle et les retours récurrents ; le corps image est gelé. À utiliser avec un pretrain MoSRv2 2x (champ Pretrain Model), sinon le corps reste aléatoire.\n• partial : + les N derniers blocs et la tête (voir Blocs dégelés).\nRecette de l'auteur : bootstrap → partial → joint, en reprenant à chaque fois le modèle précédent en pretrain.\nDéfaut : joint.",
+    "motsr_unfreeze": "MoTSR — nombre de derniers blocs entraînés en étape « partial ». Ignoré en joint/bootstrap.\nDéfaut : 6.",
+    "motsr_dim": "MoTSR — largeur du corps MoSRv2. Doit être identique au pretrain MoSRv2 utilisé.\nDéfaut : 64.",
+    "motsr_n_block": "MoTSR — nombre de blocs du corps MoSRv2. Doit être identique au pretrain MoSRv2 utilisé.\nDéfaut : 24.",
+    "motsr_temporal_dim": "MoTSR — canaux de la fusion temporelle des 5 frames.\n[+] Plus élevé → plus de capacité temporelle, +VRAM.\nDéfaut : 32.",
+    "motsr_feedback_dim": "MoTSR — canaux des 2 branches de retour récurrent (sorties des frames précédentes).\nDéfaut : 32.",
     "smosr_n_mb": "Nombre de Self-Modulation Blocks (SMB) intermédiaires.\nChaque bloc applique une auto-modulation de type SiLU sur les features.\n[+] Plus élevé → meilleure capacité de représentation, légère hausse VRAM.\n[-] Plus bas → modèle plus rapide.\nDéfaut : 3 (recommandé par l'auteur).",
     "smosr_rep": "Reparamétisation des convolutions (Rep).\nEn mode Rep=True : pendant l'entraînement, plusieurs branches sont utilisées et fusionnées en une seule conv standard à l'export.\n[+] Améliore légèrement la qualité sans coût à l'inférence.\n[!] Utiliser le même mode (True/False) tout au long de l'entraînement — ne pas mélanger les checkpoints.",
     "smosr_upsampler_mid_dim": "Dimension intermédiaire du module d'upsample.\nUtilisé uniquement pour certains upsamplers (pixelshuffle, pa_up, dysample).\nPlus élevé = meilleure reconstruction, légèrement plus lourd.\nDéfaut : 32.",
@@ -413,6 +546,24 @@ TOOLTIPS = {
     "figsr_band_kernel_size": "Taille du kernel bande (directionnel) dans les blocs GatedCNN.\nCapture les structures linéaires et fréquences directionnelles.\n→ Critique pour micro-lignes et deband.\n[+] Kernel plus grand → meilleure capture des bandes fréquentielles.\nDéfaut : 17.",
     # ================= AetherNet =================
     "aether_mlp_ratio": "Ratio d'expansion FFN (GatedConvFFN).\nContrôle la largeur intermédiaire des blocs : hidden = dim × mlp_ratio.\n[+] Plus élevé (ex: 2.0) : Meilleure capacité de représentation.\n[-] Plus lent, légèrement +VRAM.\n[i] Les canaux (embed_dim) et profondeurs (depths) sont fixes selon le variant sélectionné.\nDéfaut : 1.5",
+    # ================= Spectral Discriminator (DualFormer) =================
+    "spectral_disc_patch_size": "Taille des patchs sur lesquels la FFT est calculée (spectrum_transform).\nL'image est découpée en patchs carrés patch_size×patch_size ; H et W du batch doivent être divisibles par cette valeur.\n[+] Patch plus grand : spectre plus riche en basses fréquences, moins de patchs → un peu plus rapide.\n[-] Patch plus petit : plus sensible au bruit haute fréquence local, plus de patchs → un peu plus lent.\nDéfaut (papier) : 32.",
+    "spectral_disc_spec_type": "Type de spectre extrait par FFT.\n* power : |F|² (spectre de puissance, défaut du papier).\n* magnitude : |F| (amplitude).\n* full : magnitude + phase concaténées (double les canaux d'entrée du discriminateur).",
+    "spectral_disc_reduction": "Réduction de canaux avant/après la FFT.\n* none : garde les 3 canaux RGB séparés.\n* gray : convertit en luma (0.299R+0.587G+0.114B) avant la FFT.\n* mean : moyenne les spectres par canal après la FFT (1 canal en sortie).",
+    "spectral_disc_window": "Fenêtre appliquée à chaque patch avant la FFT (réduit les artefacts de bord/fuite spectrale).\n* none : pas de fenêtrage (défaut).\n* hann : fenêtre de Hann 2D.",
+    "spectral_disc_scale": "Mise à l'échelle du spectre de puissance (uniquement utilisé si Spec Type = power).\n* linear : valeurs brutes |F|².\n* log : compresse la dynamique (utile si quelques fréquences dominent visuellement les autres).",
+    "spectral_disc_fix_normalize": "Normalisation min-max du spectre.\n* false (par échantillon dans le batch) : chaque image du batch est normalisée séparément — défaut.\n* true (par batch) : une seule normalisation min-max sur tout le batch.",
+    "spectral_disc_pool": "Pooling adaptatif avant la tête de classification (réduit à une grille 4×4 fixe, accepte n'importe quelle taille d'entrée).\n* avg : moyenne (défaut, plus stable).\n* max : maximum (plus sensible aux pics locaux).",
+    # ================= Projected GAN Discriminator =================
+    "projected_disc_cout": "Largeur de canaux (nombre de filtres) des convs de projection cross-channel/cross-scale (CCM/CSM).\nIgnoré si Proj Type = none (pas de projection).\n[+] Plus haut : tête de projection plus capable, +VRAM/+lent.\n[-] Plus bas : plus léger.\nDéfaut (papier) : 64.",
+    "projected_disc_expand": "Fait croître la largeur de canaux de projection à travers les 4 échelles du backbone (cout, 2×cout, 4×cout, 8×cout) au lieu d'une largeur fixe partout.\nIgnoré si Proj Type = none.\n* true : croissance par échelle (défaut du papier — la 4e échelle/la plus profonde a le plus de canaux).\n* false : largeur cout fixe à toutes les échelles (plus léger).",
+    "projected_disc_proj_type": "Mode de projection des features extraites par le backbone gelé.\n* none : features brutes du backbone directement envoyées à la tête de classification (le plus rapide, le plus faible).\n* ccm : Cross-Channel Mixing — une conv 1×1 par échelle mélange/réduit les canaux avant la tête.\n* csm : Cross-Scale Mixing (défaut du papier, empiriquement le plus fort) — ajoute une fusion en pyramide de features (haut vers bas) par-dessus le CCM, mélangeant l'information entre échelles voisines.",
+    "projected_disc_num_discs": "Nombre d'échelles du backbone (sur les 4 disponibles) qui reçoivent chacune leur propre mini-discriminateur.\n1 = seulement l'échelle la plus profonde/sémantique.\n4 = les 4 échelles supervisées (défaut de ce port — le papier utilise souvent 3 dans ses configs d'exemple, mais 4 est le maximum supporté par l'architecture).\n[+] Plus d'échelles : juge à plusieurs niveaux de détail, +VRAM/+lent.\n[-] Moins d'échelles : plus léger, moins de signal.",
+    "projected_disc_separable": "Remplace les convs de downsampling standard de la tête de classification par des convs séparables en profondeur (depthwise) + pooling moyen — variante allégée du papier.\n* false : convs standard (défaut, plus de capacité).\n* true : convs séparables (moins de paramètres/VRAM, un peu moins expressif).",
+    "projected_disc_patch": "Style PatchGAN pour la tête de classification : arrête le downsampling plus tôt par échelle, gardant un champ réceptif plus local par position au lieu de réduire à une seule décision globale par échelle.\n* false : décision globale par échelle (défaut du papier).\n* true : décisions locales façon PatchGAN (plus proche des discriminateurs PatchGAN classiques SR).",
+    "projected_disc_use_diffaug": "Applique la Differentiable Augmentation du papier (luminosité/saturation/contraste aléatoires + translation + cutout) à l'image AVANT le backbone.\nTechnique de data-efficient GAN training (Zhao et al.) qui limite l'overfitting du discriminateur sur de petits datasets.\n* true : activé (défaut du papier).\n* false : désactivé.",
+    "projected_disc_interp224": "Redimensionne l'entrée en 224×224 avant de l'envoyer au backbone gelé (résolution native du backbone/du papier).\n* true : activé (défaut du papier — recommandé, le backbone ImageNet gelé a été entraîné à cette échelle).\n* false : désactivé — risque de donner au backbone gelé des tailles d'entrée hors distribution (jamais vues à l'entraînement ImageNet).",
+    "projected_disc_pretrained_backbone": "Charge les poids ImageNet pré-entraînés du backbone (téléchargés via timm au premier lancement, ~15-20 Mo, connexion internet requise la première fois, puis mis en cache).\n⚠ Désactiver ceci annule tout l'intérêt de Projected GAN (le prior pré-entraîné EST le mécanisme du papier) — exposé uniquement pour du test hors-ligne/CI, jamais recommandé pour un vrai entraînement.\nDéfaut : true.",
 }
 
 # --- TOOLTIPS (ENGLISH) ---
@@ -498,7 +649,58 @@ TOOLTIPS_EN = {
     "warmup_steps": "Internal warmup steps for the optimizer.\nDifferent from the global 'Warmup Iter'. Leave at -1 unless expert.",
 
     # ================= DISCRIMINATOR & GAN =================
-    "net_d_type": "Discriminator (Judge) architecture.\n* UNet: Standard, balanced.\n* PatchGAN: Focused on fine texture.\n* MetaGAN: Very powerful, heavy.\n* EA2FPN: Advanced, good edge detection.\n* DUNet: Dense UNet.",
+    "net_d_type": (
+        "Discriminator (Judge) architecture.\n\n"
+        "--- NeoSR ---\n"
+        "* UNet: Standard, balanced.\n"
+        "* PatchGAN: Focused on fine local texture.\n"
+        "* MetaGAN: Very powerful, heavy (lots of VRAM).\n"
+        "* EA2-FPN: Advanced, good edge/structure detection. The HR patch (LQ patch × scale) must be a multiple of 32.\n"
+        "* DUNet: Dense UNet (dense skip connections).\n\n"
+        "--- TraiNNer-Redux ---\n"
+        "* DUNet: Dense UNet (same as NeoSR).\n"
+        "* UNet-SN: UNet + Spectral Normalization (more stable).\n"
+        "* MetaGAN2: Version 2 of MetaGAN, very powerful.\n"
+        "* PatchGAN-SN: PatchGAN + Spectral Normalization.\n"
+        "* MultiPatchGAN-SN: Multi-scale PatchGAN + SN, judges at several resolutions.\n"
+        "* VGG-Style: Classic VGG-based discriminator (original ESRGAN).\n"
+        "* DocRes-Disc: Simple Conv+LeakyReLU stack (tunable dim/num_blocks/bias), taken from the "
+        "DocRes (document restoration) arch — usable as a generic discriminator outside a DocRes "
+        "context too.\n\n"
+        "* Spectral (DualFormer): Runs on the FOURIER SPECTRUM of the image (per-patch FFT), not the "
+        "raw image — same VGG-style architecture as 'VGG-Style' but applied after a spectral "
+        "transform. Ported from \"On the Effectiveness of Spectral Discriminators for Perceptual "
+        "Quality Improvement\" (ICCV 2023, arxiv.org/abs/2307.12027), DualFormer repo.\n"
+        "  [i] In the paper, the best results come from running THIS discriminator IN ADDITION TO a "
+        "normal spatial discriminator (e.g. VGG-Style) at the same time, with both losses combined — "
+        "NOT as a replacement for a spatial discriminator.\n"
+        "  ⚠ LIMITATION: Universal SR Studio / traiNNer-redux currently only support a SINGLE "
+        "network_d at a time. Selecting this uses it ALONE, which is a weaker setup than the paper's "
+        "dual-discriminator recipe — treat it as an experimental alternative to classic VGG-Style, "
+        "not a full reproduction of the paper.\n\n"
+        "* NeXtSRGAN: \"ConvNeXt-based\" discriminator from the NeXtSRGAN paper (The Visual Computer, "
+        "2024, doi.org/10.1007/s00371-024-03797-2, official TensorFlow repo PomKlementieff/NeXtSRGAN). "
+        "  ⚠ ARCHITECTURE HONESTY: the actual TF code (function DiscriminatorVGG128, verified directly "
+        "from the repo) is really a classic VGG128-style stack (5 stages of conv3x3 -> conv4x4 stride-2 "
+        "-> BatchNorm, doubling channels) nearly identical to 'VGG-Style' — NOT a real ConvNeXt (no "
+        "patchify stem, no depthwise convs, no LayerNorm, no per-stage variable depth). The only two "
+        "differences: GELU activation (stages 1-4 only) instead of LeakyReLU, and a "
+        "GlobalAveragePooling+Linear(1) head instead of Flatten+2 FC layers (so no fixed 128x128 "
+        "input constraint). Ported faithfully to the actual code, not to the paper's name.\n\n"
+        "* Projected GAN: Discriminator with a FROZEN PRETRAINED backbone (\"Projected GANs Converge "
+        "Faster\", NeurIPS 2021, arxiv.org/pdf/2111.01007, official repo autonomousvision/projected-gan). "
+        "Instead of learning to extract features from scratch, it extracts multi-scale features via a "
+        "frozen ImageNet backbone (timm tf_efficientnet_lite0) and only trains a small lightweight "
+        "classification head on top of it (+ optional cross-channel/cross-scale projection convs) — "
+        "notably faster convergence in the paper.\n"
+        "  [i] AUTOMATICALLY triggers a download of the pretrained backbone (~15-20 MB) on the first "
+        "forward pass, requires internet the first time (cached afterwards).\n"
+        "  ⚠ HONESTY: unlike Spectral/NeXtSRGAN, this is NOT an SR-specific technique — it's a general "
+        "GAN-training technique (paper tested on FFHQ/LSUN/ImageNet image synthesis, not SR), and its "
+        "backbone is trained for ImageNet classification, not for judging SR-specific artifacts. Treat "
+        "it as a fast-converging generalist alternative, not an SR-targeted discriminator.\n\n"
+        "⚠ Types are NOT interchangeable between engines."
+    ),
     "gan_loss_weight": "GAN strength.\n[+] Higher: More details, risk of artifacts.\n[-] Lower: More stable, risk of being too blurry.\nStandard: 0.05",
     "real_label_val": "Target value for real images (1.0).\nSometimes reduced to 0.9 (Label Smoothing) to stabilize.",
     "fake_label_val": "Target value for generated images (0.0).",
@@ -522,6 +724,13 @@ TOOLTIPS_EN = {
     "wavelet_init": "Wavelet Loss activation delay (iterations).\nEx: 80000 = activates only after 80K iters.\nRecommended: train at least 40K before enabling.",
     "loss_fdl": "Frequency Distribution Loss (FDL).\nPerceptual loss based on frequency distribution.\nBackbones: DINOv2, VGG19, ResNet101, EfficientNet.\n\n[+] Excellent for restoring grain and complex textures.\n[+] Complementary to Perceptual Loss.\n[-] Heavy computation (num_proj=24 vs 256 original).\n[!] NeoSR only.",
     "loss_spark": "SparK Perceptual Loss.\nPerceptual loss based on InceptionNext (MetaNeXt, pretrained) features.\n\nTwo criteria:\n- fd: Fourier Domain sliced Wasserstein (magnitude + phase) — recommended.\n- charbonnier: Charbonnier on raw feature maps.\n\nWeights are automatically downloaded (~200 MB) from GitHub if path is empty.\n\n[+] Rich texture, effective on grain and fine details.\n[+] Complementary to L1 or Charbonnier.\n[!] TraiNNer-Redux only.",
+    "thicklines_prob": "ThickLines — thickens the LQ's lines/edges (custom Redux filter).\nSimulates bolder strokes / loss of line finesse.\n\n[+] Higher: the model learns to REFINE thick lines → useful for anime / line-art.\n[-] 0 = disabled.\n[!] TraiNNer-Redux only.",
+    "lq_usm": "LQ Unsharp Mask — applies a sharpening mask (USM) to the LQ before training.\nSimulates an already over-sharpened source (edge halos).\n\n[+] Enable: forces the model to handle over-sharpening of real sources.\n[!] Niche — mainly if your source LQs are already sharpened. TraiNNer-Redux only.",
+    "lq_usm_radius_range": "Range of the radius (px) of the USM's internal blur applied to the LQ.\nA radius is randomly drawn from this range per image.\n\n[+] Larger radius: wider halos.\n[-] Smaller radius: finer effect.",
+    "loss_linedistiller": "LineDistiller Loss ★.\nSpecialized loss to preserve and sharpen LINES / edges (ideal for anime & line-art).\nCompares generated edges to the target's via a line-detection model.\n\n[+] Higher weight: sharper, cleaner, more continuous lines.\n[-] Lower / 0: less attention to edges.\n[!] TraiNNer-Redux only.",
+    "loss_percep_fp16": "Perceptual FP16 Loss ★.\nPerceptual (VGG) loss computed in half precision (FP16) to save VRAM and run faster.\nSame role as the standard Perceptual loss but lighter.\n\n[+] Higher: more realistic textures, fine details preserved.\n[-] Lower / 0: less perceptual effect.\n[+] FP16 = ~2× less VRAM than standard perceptual.\n[!] TraiNNer-Redux only.",
+    "loss_aesop": "AESOP Loss ★ (structure-oriented perceptual).\nCompares the global organization (shapes, structure) rather than isolated pixels.\n\n[+] Higher: better structural coherence, fewer distortions.\n[-] Lower / 0: less structure constraint.\n[!] TraiNNer-Redux only.",
+    "loss_bcedice": "BCE + Dice Loss ★.\nBinary Cross-Entropy + Dice combination, ideal for sharp areas / masks / binary line-art.\nTwo tunable weights: bce (per-pixel) and dice (region overlap).\n\n[+] Higher: crisper edges and flats.\n[-] Lower / 0: reduced effect.\n[!] TraiNNer-Redux only.",
     "spark_max_score": "SparK Clamp (Max Score).\nCap applied to the raw score before weight multiplication.\n\nIn fd mode, extreme patches (severe banding, oversharp) produce explosive FFT magnitudes → spikes > 500 in logs.\nThe clamp bounds these spikes without disabling the loss.\n\n→ 50.0: recommended (max logged ≈ 10.0 with weight=0.2).\n→ 0 or empty: clamp disabled.\n→ Lower = more restrictive.",
     "loss_ldl": "LDL Loss (Local Discriminative Learning).\nPenalizes artifacts in high-frequency regions (details).\ncriterion: l1, l2, huber. ksize: kernel size (7 by default).\n\n[+] Preserves fine details without blurring.\n[+] Good complement to L1.\n[!] Available NeoSR and Redux.",
     "loss_consistency": "Consistency Loss.\nForces color and brightness coherence between output and target.\nUses Oklab and CIE L* color spaces + Cosine Similarity.\n\nOptions: blur (smoothing), cosim (cosine similarity), saturation/brightness.\nmatch_lq_colors: match LQ colors instead of GT.\n\n[!] NeoSR only.",
@@ -592,11 +801,21 @@ TOOLTIPS_EN = {
     # --- FINAL ---
     "jpeg_prob": "Probability of applying final JPEG compression.",
     "jpeg_range": "JPEG quality range [Min, Max].\nEx: [30, 95]. 30 is heavily compressed (blocks), 95 is clean.",
+    "jpeg_prob2": "Probability of a second JPEG pass (Stage 2, after the final resize) — simulates successive re-encoding. At 1.0, applies to EVERY training image: can destroy fine repetitive detail (grain, thin lines) if set too high.",
     "jpeg_range2": "Range for double JPEG (Simulation of successive recordings).",
+    "sinc_prob": "Probability that a sinc (ringing) blur kernel replaces a classic iso/aniso/plateau kernel (Stage 1). Different from the final Sinc (end-of-chain global ringing).",
+    "sinc_prob2": "Same as sinc_prob but for Stage 2.",
+    "betag_range": "Shape range (beta) of 'generalized' blur kernels (Stage 1). Controls how far the kernel departs from a classic Gaussian.",
+    "betap_range": "Shape range (beta) of 'plateau' blur kernels (Stage 1).",
+    "betag_range2": "Same as betag_range but for Stage 2.",
+    "betap_range2": "Same as betap_range but for Stage 2.",
 
     # --- QUANTIZATION / BANDING (OTF Custom) ---
     "banding_prob": "Probability of applying a banding effect (quantized gradients).\n\nBanding simulates old sources (DVD, old encodings, screencaps).\nIn OTF mode, injected after the main degradations.\n\n[+] Improves robustness to sources with color bands.\n[+] Essential for anime / old video datasets.\n[-] Slightly slows data loading.",
     "banding_levels_range": "Range of quantization levels for banding [Min, Max].\nEx: [16, 64].\n- Low (8-16): Very visible banding, like old GIFs.\n- Medium (32-64): Subtle banding, typical of old H.264 encoding.\n- High (128+): Very light effect, almost imperceptible.",
+    "smooth_banding_prob": "Probability of encoder-style banding restricted to flat areas (gradients, skies, shading).\nOnly luma is quantized and only where the image is flat: lines and textures are untouched.\n[+] Teaches the model to smooth gradient steps (deband) without softening lines. Recommended: 0.2-0.35.",
+    "smooth_banding_levels_range": "Luma level count [Min, Max] for flat-area banding.\n- 48: steps of ~5 8-bit levels (visible banding).\n- 128: steps of ~2 levels (subtle banding, typical of Blu-ray/web).",
+    "smooth_banding_dark_prob": "Share of draws quantized in linear light: steps get larger in dark tones,\nlike the dark-gradient banding of Blu-ray/web encodes. 0.5 = half of the cases.",
     "posterize_prob": "Probability of applying a posterization effect (level reduction per channel).\n\nPosterization is more aggressive than banding — reduces levels in each R/G/B channel independently.\n\n[+] Simulates sources with reduced color depth.\n[+] Complementary to banding to cover more real defects.\n[-] Can create strong visual artifacts if bits are too low.",
     "posterize_bits_range": "Range of bits for posterization [Min, Max].\nEx: [3, 6].\n- 2-3 bits: Very visible 'cartoon' poster (4-8 colors per channel).\n- 4-5 bits: Moderate degradation, simulates lossy encodings.\n- 6-7 bits: Very subtle effect.",
 
@@ -636,6 +855,11 @@ TOOLTIPS_EN = {
     "dithering_prob": "Probability of applying color dithering.\nSimulates palette reduction (retro games, GIF, 8-bit palettes).\n[+] Useful for retro game screenshots or 8-bit exports.",
     "dithering_color_ch": "Number of colors for dithering [Min, Max].\nEx: [2, 8]. 2 = black & white, 8 = reduced palette.",
     "dithering_type": "Dithering algorithm.\nfloyd_steinberg: Classic error diffusion — recommended.\nordered: Bayer dithering (regular pattern).\nquantize: Simple reduction without diffusion.\natkinson: Light dithering (original Apple Mac).",
+    "dct_block_prob": "Probability of applying a codec-style DCT block degradation (inspired by ArtCNN v1.6.2's changelog — our own implementation, not an official port, technique never published).\n4×4 DCT (like AVC/HEVC/AV1, not JPEG's 8×8) + radial quantisation table (depends only on distance from the DC frequency, not the standard JPEG table).\n[+] Finer, more \"generic codec\" block artifacts than the classic JPEG degradation already present elsewhere — complementary, not a replacement.",
+    "dct_block_quality_range": "JPEG-style quality [Min, Max], 1-100.\nLow = strong quantisation (visible blocks, detail loss). High = near-transparent.\nEx: [20, 80] for a good spread of intensities.",
+    "dct_block_size_range": "Transform block size [Min, Max].\n4 = AVC/HEVC-style (recommended, matches the ArtCNN description). 8 = classic JPEG-style.",
+    "dct_block_chroma_scale_range": "Extra quantisation factor for Cb/Cr (chroma) vs Y (luma) [Min, Max].\n1.0 = same quantisation as luma. 2.0 = chroma 2× coarser (standard codec convention, the eye is less sensitive to chroma).",
+    "dct_block_yuv": "RGB→YCbCr conversion matrix used before the DCT transform.\n601 = SD/DVD. 709 = HD standard. 2020 = 4K/HDR.",
     "pixelate_prob": "Probability of applying pixelation.\nNearest-neighbor downsample then upsample → visible block artifacts.\n[+] Simulates low-res assets, retro games, compressed web images.",
     "pixelate_size": "Pixelation block size [Min, Max] in pixels.\nEx: [2, 16]. 2 = light block blur. 16 = large '8-bit' pixels.",
     "sin_prob": "Probability of applying a sinusoidal brightness ripple.\nSimulates video compression artifacts or analog interference.\n[+] Useful for compressed video or TV capture datasets.",
@@ -715,15 +939,21 @@ TOOLTIPS_EN = {
     "resi_connection": "Residual connection type (1conv, 3conv...).",
     "upsampler": (
         "Upscaling method for the generator:\n\n"
-        "• dys (DySample) — Dynamically learned sampling points. "
-        "Best overall quality for SPANPlus/SPAN. ✅ Recommended.\n\n"
+        "• dys / dysample (DySample) — Dynamically learned sampling points. "
+        "Best overall quality for SPANPlus/SPAN/GFISRv2/FIGSR. ✅ Recommended.\n\n"
         "• pixelshuffle — Standard Pixel Shuffle with ICNR init. "
         "Good quality/speed balance.\n\n"
-        "• pixelshuffledirect — Simplified Pixel Shuffle without ICNR. "
+        "• pixelshuffledirect / ps — Simplified Pixel Shuffle without ICNR. "
         "Faster, slightly lower quality. Default on most architectures.\n\n"
         "• nearest+conv — Nearest-neighbor + conv. Fastest, for edge/mobile.\n\n"
-        "• conv — Simple conv. SPANPlus only, scale=1 only (restoration/denoising without upscale).\n\n"
-        "• ps — Alias for pixelshuffle."
+        "• conv / lp — Simple conv (no real upsampling). SPANPlus/ESCRealM only, "
+        "scale=1 only (restoration/denoising without upscale).\n\n"
+        "• transpose+conv — Transposed convolution (deconvolution). Learns the upscaling directly, "
+        "heavier than pixelshuffle, can produce checkerboard artifacts.\n\n"
+        "• pa_up — Pixel Attention Upsampling: pixelshuffle + pixel-wise attention on the features "
+        "before upscaling. Slightly slower, sharper fine details.\n\n"
+        "• lda — Location-aware Dynamic Aggregation: position-aware dynamic feature aggregation, "
+        "FIGSR-specific. More costly than dysample but more precise on lines/edges."
     ),
     "num_in_ch": "Number of input channels. 3 = RGB (standard). 1 = grayscale.",
     "num_out_ch": "Number of output channels. Must match num_in_ch. Standard: 3.",
@@ -739,11 +969,26 @@ TOOLTIPS_EN = {
     "use_sigmoid": "Uses Sigmoid activation at output (0-1).",
     "skip_connection": "Skip Connections for UNet.",
     "num_layers": "Number of layers (PatchGAN).",
-    "act": "Activation function (e.g. lrelu).",
+    "act": (
+        "Network's non-linear activation function:\n\n"
+        "• lrelu (Leaky ReLU) — Standard, lets a bit of negative signal through (avoids dead neurons). "
+        "Fast, good default.\n\n"
+        "• relu — Clips all negative signal to 0. Simpler, can create dead neurons.\n\n"
+        "• gelu — Smooth activation (used in transformers). Slightly heavier, "
+        "often better convergence on attention-based archs.\n\n"
+        "• silu (Swish) — Smooth like GELU, a bit cheaper. Good tradeoff."
+    ),
     "category_size": "Category size (ATD).",
     "dw_size": "Depth-Wise kernel size.",
     "num_conv": "Number of convolutions (Compact).",
-    "act_type": "Activation type.",
+    "act_type": (
+        "Activation type used in the convolution block (e.g. Compact/SRVGGNetCompact):\n\n"
+        "• prelu — Parametric ReLU: the negative slope is learned during training. Default, "
+        "slightly better quality than lrelu at near-zero cost.\n\n"
+        "• relu — Clips all negative signal to 0. Simplest/fastest.\n\n"
+        "• leaky_relu — Fixed (non-learned) negative slope, avoids dead neurons with no learning cost.\n\n"
+        "• gelu — Smooth activation, a bit heavier, rarely needed on these lightweight archs."
+    ),
     "split_size_0": "Split size dimension 0.",
     "split_size_1": "Split size dimension 1.",
     "pro": "Pro mode (CuGAN).",
@@ -751,7 +996,13 @@ TOOLTIPS_EN = {
     "num_head": "Number of heads.",
     "ITL_blocks": "ITL blocks (DITN).",
     "SAL_blocks": "SAL blocks (DITN).",
-    "attn_type": "Attention type (SDPA...).",
+    "attn_type": (
+        "Attention mechanism implementation:\n\n"
+        "• sdpa (Scaled Dot-Product Attention) — Standard transformer attention, "
+        "uses PyTorch's optimized kernel (fast, VRAM-efficient). Recommended.\n\n"
+        "• linear — Linear attention (reduced complexity for long sequences), "
+        "lighter on VRAM for large images but slightly less accurate."
+    ),
     "hidden_rate": "Hidden rate.",
     "base_win_size": "Base window size.",
     "hier_win_ratios": "Hierarchical window ratios.",
@@ -765,7 +1016,15 @@ TOOLTIPS_EN = {
     "attn_feat": "Attention features.",
     "kernel_size": "Kernel size.",
     "split_ratio": "Split ratio.",
-    "lk_type": "Large kernel type.",
+    "lk_type": (
+        "Large kernel decomposition type (PLKSR):\n\n"
+        "• PLK — Partial Large Kernel: applies the large kernel to only part of the channels. "
+        "Good speed/quality tradeoff, default.\n\n"
+        "• SparsePLK — Sparse variant of PLK: even lighter compute, "
+        "possible slight quality loss.\n\n"
+        "• RectSparsePLK — Sparse version with rectangular (non-square) kernels: "
+        "better captures directional structures (thin lines, edges)."
+    ),
     "c_ratio": "C ratio.",
     "embed_dims": "Embedding dimensions.",
     "num_stages": "Number of stages.",
@@ -776,6 +1035,30 @@ TOOLTIPS_EN = {
 
     # ================= SMoSR =================
     "smosr_dim": "Number of feature channels (network width).\n[+] Higher → better quality, +VRAM.\n[-] Lower → lighter and faster model.\nDefault: 48 (balance between lightness/quality, comparable to SPAN-S).",
+    "heart_depths": "HEART — number of blocks in each residual group (one number per group).\n[+] More blocks → better quality, much slower and +VRAM.\nDefault: [6, 6, 6, 6, 6, 6] (official template). Same number of items as Num Heads.",
+    "heart_num_heads": "HEART — attention heads per group (one number per group, same length as Depths).\nEmbed Dim must be divisible by each value.\nDefault: [6, 6, 6, 6, 6, 6].",
+    "heart_window_size": "HEART — attention window size (pixels).\n[+] Larger → more context, +VRAM.\nRecommended LQ patch: a multiple of this value (template: 96 with 32).\nNOT stored in the model file: keep 32 so the model can be reused everywhere.\nDefault: 32.",
+    "heart_attention_freq": "HEART — one attention layer every N blocks (the other blocks are convolutional).\n[-] 1 = attention everywhere → slower, +VRAM.\n[+] Higher → faster.\nDefault: 2.",
+    "nerve_dim": "NERVE — number of feature channels (network width).\n[+] Higher → better quality, +VRAM.\nDefault: 64.",
+    "nerve_n_blocks": "NERVE — number of residual blocks (depth).\n[+] More blocks → better quality, slower.\nDefault: 24.",
+    "wiresr_dim": "WireSR — network width (channels).\n[+] Higher → better quality, +VRAM. The 1x_Wired model uses 96.\nDefault: 64.",
+    "wiresr_n_blocks": "WireSR — number of WireBlocks (depth). 1x_Wired: 32.\nDefault: 24.",
+    "wiresr_stripe": "WireSR — length of the horizontal/vertical stripe convolutions (long thin lines).\n[+] Longer → follows long lines better, slower.\nDefault: 61.",
+    "wiresr_diag": "WireSR — size of the diagonal convolutions (slanted lines, aliasing). 1x_Wired: 21.\nDefault: 17.",
+    "wiresr_attn_every": "WireSR — one channel attention every N blocks (0 = never). 1x_Wired: 4.\nDefault: 5.",
+    "fdat_rd_unshuffle": "FDAT-RD — pixel-unshuffle input for scales 1-2: the network works on a 2× smaller image (much faster).\nAuthor's recipe: true at 2x, with an LQ patch of 120.\nLQ patch: a multiple of 60 with unshuffle at 2x (else of 30), e.g. 60 or 120, not 64/96/128. Otherwise the model leaves a dark line on the bottom/right edge outside the app (chaiNNer, ONNX) on sizes that are multiples of 60 (720×480, 1920×1080).\nDefault: true.",
+    "fdat_rd_groups": "FDAT-RD — number of residual groups.\nMore = more capacity, slower.\nSmall/Medium: 4, Large: 6.",
+    "fdat_rd_depth": "FDAT-RD — repetitions of the spatial → channel → dictionary pattern per group (2 → 6 blocks).\nDefault: 2.",
+    "fdat_rd_dict": "FDAT-RD — size of the learned dictionary of structures (lines, eyes, hair) every pixel can query.\nA multiple of 32 is recommended.\nSmall 64, Medium 128, Large 256.",
+    "fdat_rd_checkpoint": "FDAT-RD — gradient checkpointing: recompute instead of storing, to cut training VRAM a lot (slower).\nUseful for big patches or the Large preset. No effect at inference.\nDefault: false.",
+    "tfdatv2_depth": "TFDAT v2 — blocks per group and per type (spatial + channel): 3 → 6 blocks per group.\nMore = better quality, slower.\nDefault: 3 (2x_bndl_animefilm_v3).",
+    "tfdatv2_flow": "TFDAT v2 — width of the pyramid optical-flow net (first level channels; ×2 and ×3 at the next levels).\nAligns the neighbour frames onto the centre frame.\nDefault: 32.",
+    "motsr_stage": "MoTSR — which part of the network is trained.\n• joint: the whole network (safe choice, also without a pretrain).\n• bootstrap: only the temporal fusion and recurrent feedback; the image body is frozen. Use with a MoSRv2 2x pretrain (Pretrain Model field), otherwise the body stays random.\n• partial: + the last N blocks and the head (see Unfrozen blocks).\nAuthor's recipe: bootstrap → partial → joint, each time resuming from the previous model as pretrain.\nDefault: joint.",
+    "motsr_unfreeze": "MoTSR — number of last blocks trained in the \"partial\" stage. Ignored in joint/bootstrap.\nDefault: 6.",
+    "motsr_dim": "MoTSR — width of the MoSRv2 body. Must match the MoSRv2 pretrain you use.\nDefault: 64.",
+    "motsr_n_block": "MoTSR — number of MoSRv2 body blocks. Must match the MoSRv2 pretrain you use.\nDefault: 24.",
+    "motsr_temporal_dim": "MoTSR — channels of the 5-frame temporal fusion.\n[+] Higher → more temporal capacity, +VRAM.\nDefault: 32.",
+    "motsr_feedback_dim": "MoTSR — channels of the 2 recurrent feedback branches (previous frames' outputs).\nDefault: 32.",
     "smosr_n_mb": "Number of intermediate Self-Modulation Blocks (SMB).\nEach block applies SiLU-based self-modulation on features.\n[+] Higher → better representation capacity, slight VRAM increase.\n[-] Lower → faster model.\nDefault: 3 (recommended by the author).",
     "smosr_rep": "Convolution reparameterization (Rep).\nWith Rep=True: multiple branches are used during training and fused into a single standard conv at export.\n[+] Slightly improves quality with no inference cost.\n[!] Use the same mode (True/False) throughout training — do not mix checkpoints.",
     "smosr_upsampler_mid_dim": "Intermediate dimension of the upsampling module.\nOnly used for certain upsamplers (pixelshuffle, pa_up, dysample).\nHigher = better reconstruction, slightly heavier.\nDefault: 32.",
@@ -808,11 +1091,41 @@ TOOLTIPS_EN = {
     "figsr_band_kernel_size": "Band (directional) kernel size in GatedCNN blocks.\nCaptures linear structures and directional frequencies.\n→ Critical for micro-lines and debanding.\n[+] Larger kernel → better frequency band capture.\nDefault: 17.",
     # ================= AetherNet =================
     "aether_mlp_ratio": "FFN expansion ratio (GatedConvFFN).\nControls intermediate width: hidden = dim × mlp_ratio.\n[+] Higher (e.g. 2.0): Better representation capacity.\n[-] Slower, slightly +VRAM.\n[i] Channels (embed_dim) and depths are fixed per selected variant.\nDefault: 1.5",
+    # ================= Spectral Discriminator (DualFormer) =================
+    "spectral_disc_patch_size": "Size of the patches the FFT is computed on (spectrum_transform).\nThe image is split into square patch_size×patch_size patches; batch H and W must be divisible by this value.\n[+] Larger patch: richer low-frequency spectrum, fewer patches → slightly faster.\n[-] Smaller patch: more sensitive to local high-frequency noise, more patches → slightly slower.\nDefault (paper): 32.",
+    "spectral_disc_spec_type": "Type of spectrum extracted via FFT.\n* power: |F|² (power spectrum, paper default).\n* magnitude: |F| (amplitude).\n* full: magnitude + phase concatenated (doubles the discriminator's input channels).",
+    "spectral_disc_reduction": "Channel reduction before/after the FFT.\n* none: keeps the 3 RGB channels separate.\n* gray: converts to luma (0.299R+0.587G+0.114B) before the FFT.\n* mean: averages the per-channel spectra after the FFT (1 output channel).",
+    "spectral_disc_window": "Window applied to each patch before the FFT (reduces edge/spectral-leakage artifacts).\n* none: no windowing (default).\n* hann: 2D Hann window.",
+    "spectral_disc_scale": "Power-spectrum scaling (only used when Spec Type = power).\n* linear: raw |F|² values.\n* log: compresses the dynamic range (useful when a few frequencies visually dominate the rest).",
+    "spectral_disc_fix_normalize": "Min-max normalization of the spectrum.\n* false (per-sample within the batch): each batch image is normalized separately — default.\n* true (per-batch): a single min-max normalization across the whole batch.",
+    "spectral_disc_pool": "Adaptive pooling before the classification head (reduces to a fixed 4×4 grid, accepts any input size).\n* avg: average (default, more stable).\n* max: maximum (more sensitive to local peaks).",
+    # ================= Projected GAN Discriminator =================
+    "projected_disc_cout": "Channel width (filter count) of the cross-channel/cross-scale (CCM/CSM) projection convs.\nIgnored if Proj Type = none (no projection).\n[+] Higher: more capable projection head, +VRAM/+slower.\n[-] Lower: lighter.\nDefault (paper): 64.",
+    "projected_disc_expand": "Grows the projection channel width across the backbone's 4 scales (cout, 2x cout, 4x cout, 8x cout) instead of a flat width everywhere.\nIgnored if Proj Type = none.\n* true: per-scale growth (paper default -- the deepest/4th scale gets the most channels).\n* false: fixed cout width at every scale (lighter).",
+    "projected_disc_proj_type": "Projection mode applied to the frozen backbone's extracted features.\n* none: raw backbone features fed straight to the classification head (fastest, weakest).\n* ccm: Cross-Channel Mixing -- a 1x1 conv per scale mixes/reduces channels before the head.\n* csm: Cross-Scale Mixing (paper default, empirically strongest) -- adds a top-down feature-pyramid fusion on top of CCM, blending information between neighboring scales.",
+    "projected_disc_num_discs": "How many of the backbone's 4 scales (out of the available 4) each get their own mini-discriminator.\n1 = deepest/most semantic scale only.\n4 = all 4 scales supervised (this port's default -- the paper's own example configs often use 3, but 4 is the architecture's supported maximum).\n[+] More scales: judges at multiple detail levels, +VRAM/+slower.\n[-] Fewer scales: lighter, less signal.",
+    "projected_disc_separable": "Replaces the classification head's standard downsampling convs with depthwise-separable convs + average pooling -- the paper's lightweight variant.\n* false: standard convs (default, more capacity).\n* true: separable convs (fewer params/VRAM, slightly less expressive).",
+    "projected_disc_patch": "PatchGAN-style classification head: stops downsampling earlier per scale, keeping a more local receptive field per spatial position instead of collapsing to a single global decision per scale.\n* false: global per-scale decision (paper default).\n* true: local PatchGAN-style decisions (closer to classic SR PatchGAN discriminators).",
+    "projected_disc_use_diffaug": "Applies the paper's Differentiable Augmentation (random brightness/saturation/contrast + translation + cutout) to the image BEFORE the backbone.\nData-efficient GAN training trick (Zhao et al.) that limits discriminator overfitting on small datasets.\n* true: enabled (paper default).\n* false: disabled.",
+    "projected_disc_interp224": "Resizes the input to 224x224 before feeding the frozen backbone (the backbone's/paper's native resolution).\n* true: enabled (paper default -- recommended, the frozen ImageNet backbone was trained at this scale).\n* false: disabled -- risks feeding the frozen backbone out-of-distribution input sizes (never seen during ImageNet training).",
+    "projected_disc_pretrained_backbone": "Loads the backbone's ImageNet-pretrained weights (downloaded via timm on first launch, ~15-20 MB, requires internet the first time, then cached).\n⚠ Disabling this defeats the entire point of Projected GAN (the pretrained prior IS the paper's mechanism) -- exposed only for offline/CI testing, never recommended for real training.\nDefault: true.",
 }
 
 
 def get_tooltip(key: str, default: str = "") -> str:
-    """Return tooltip in active language (FR or EN)."""
+    """Return tooltip in active language (FR or EN). Currently unreachable — not called
+    anywhere in the repo — but fixed anyway so a future caller doesn't inherit a stale
+    bug: this only ever read the legacy src.core.translations system, never synced with
+    qt_ui.i18n (the same drift already found and fixed in get_arch_families(), and in
+    compute_estimator.py/wizard_advanced.py which both already prefer qt_ui.i18n with
+    this exact fallback order) (2026-09-17)."""
+    try:
+        from qt_ui.i18n import get_lang
+        if get_lang() == "en":
+            return TOOLTIPS_EN.get(key, TOOLTIPS.get(key, default))
+        return TOOLTIPS.get(key, default)
+    except Exception:
+        pass
     try:
         from src.core.translations import get_translator
         tr = get_translator()
@@ -821,6 +1134,65 @@ def get_tooltip(key: str, default: str = "") -> str:
     except Exception:
         pass
     return TOOLTIPS.get(key, default)
+
+
+# ── Tooltips added in the v2.6 translation audit: tip_keys referenced by the field
+# tables below that had no text in either language (MambaIR/v2, a few NeoSR fields,
+# discriminator params). ─────────────────────────────────────────────────────────
+TOOLTIPS.update({
+    "bias": "Ajoute un terme de biais aux convolutions de l'arch.\nGénéralement sans effet visible ; garder la valeur par défaut de l'arch (ses poids pré-entraînés en dépendent).",
+    "res_num": "ASID — nombre de blocs résiduels par étage.\nPlus = plus de capacité, plus lent et plus de VRAM.\nDéfaut : 3.",
+    "ffn_scale": "Facteur d'expansion du bloc feed-forward (largeur interne = dim × facteur).\nPlus = plus de capacité, plus lent.\nDéfaut : 2.0.",
+    "num_frames": "Nombre de frames lues par prédiction (frame centrale + voisines). Impair.\nDoit être égal au clip_size du dataset séquence.\nDéfaut : 5.",
+    "mambair_embed_dim": "MambaIR — largeur du réseau (canaux).\nPlus = meilleure qualité, beaucoup plus de VRAM (le scan SSM est gourmand).\nDéfaut : 96.",
+    "mambair_depths": "MambaIR — nombre de blocs par groupe, une valeur par groupe (ex. [6, 6, 6, 6]).\nPlus de groupes/blocs = plus de qualité, plus lent.",
+    "mambair_d_state": "MambaIR — taille de l'état interne du scan SSM (mémoire à long terme du balayage).\nPlus = contexte plus riche, plus de VRAM.\nDéfaut : 16.",
+    "mambair_mlp_ratio": "MambaIR — expansion du MLP de chaque bloc.\nDéfaut : 2.0.",
+    "mambair_upsampler": "MambaIR — méthode d'agrandissement finale.\n• pixelshuffle : qualité (défaut).\n• pixelshuffledirect : léger/rapide.\n• nearest+conv : évite les motifs en damier.",
+    "mambair_resi": "MambaIR — convolution en fin de groupe résiduel.\n• 1conv : une conv 3x3 (défaut).\n• 3conv : trois convs, plus léger en paramètres.",
+    "mambairv2_embed_dim": "MambaIRv2 — largeur du réseau. Doit être un multiple de num_heads.\nDéfaut : 48 (light).",
+    "mambairv2_depths": "MambaIRv2 — nombre de blocs par groupe, une valeur par groupe (ex. [5, 5, 5, 5]).",
+    "mambairv2_num_heads": "MambaIRv2 — têtes d'attention par groupe (ex. [4, 4, 4, 4]). embed_dim doit en être un multiple.",
+    "mambairv2_d_state": "MambaIRv2 — taille de l'état du scan SSM.\nDéfaut : 8.",
+    "mambairv2_window": "MambaIRv2 — taille des fenêtres d'attention.\nLe patch d'entraînement doit en être un multiple.\nDéfaut : 16.",
+    "mambairv2_inner_rank": "MambaIRv2 — rang interne de la projection des prompts (attention à l'état).\nDéfaut : 32.",
+    "mambairv2_num_tokens": "MambaIRv2 — nombre de tokens de prompt appris (contexte non causal du scan).\nDéfaut : 64.",
+    "mambairv2_convffn_kernel": "MambaIRv2 — taille du noyau de la convolution du ConvFFN.\nDéfaut : 5.",
+    "mambairv2_mlp_ratio": "MambaIRv2 — expansion du feed-forward.\nDéfaut : 1.5.",
+    "mambairv2_upsampler": "MambaIRv2 — méthode d'agrandissement finale.\n• pixelshuffledirect : léger (défaut des variantes light).\n• pixelshuffle : qualité.\n• nearest+conv : évite le damier.",
+    "mambairv2_resi": "MambaIRv2 — convolution en fin de groupe résiduel (1conv / 3conv).\nDéfaut : 1conv.",
+    "class_num": "EA2FPN — nombre de cartes de sortie du discriminateur (classes de la tête de segmentation).\nDéfaut : 6. Garder la valeur du template.",
+    "downs": "MetaGAN2 — facteurs de réduction de chaque étage du discriminateur (ex. [4, 2, 2, 2]).\nLeur produit fixe la taille du champ de vision.",
+    "num_d": "Multi-scale PatchGAN — nombre de discriminateurs, chacun sur l'image réduite d'un facteur 2 de plus.\nPlus = juge aussi la structure globale, plus de VRAM.\nDéfaut : 3.",
+    "input_size": "VGG-style — taille d'image attendue par le discriminateur (128 ou 256).\nDoit être égale à la taille du patch HR (patch LQ × scale).",
+})
+TOOLTIPS_EN.update({
+    "bias": "Adds a bias term to the arch's convolutions.\nUsually no visible effect; keep the arch default (its pretrained weights depend on it).",
+    "res_num": "ASID — residual blocks per stage.\nMore = more capacity, slower, more VRAM.\nDefault: 3.",
+    "ffn_scale": "Expansion factor of the feed-forward block (inner width = dim × factor).\nMore = more capacity, slower.\nDefault: 2.0.",
+    "num_frames": "Frames read per prediction (centre frame + neighbours). Odd.\nMust equal the sequence dataset's clip_size.\nDefault: 5.",
+    "mambair_embed_dim": "MambaIR — network width (channels).\nMore = better quality, much more VRAM (the SSM scan is memory-hungry).\nDefault: 96.",
+    "mambair_depths": "MambaIR — blocks per group, one value per group (e.g. [6, 6, 6, 6]).\nMore groups/blocks = more quality, slower.",
+    "mambair_d_state": "MambaIR — size of the SSM scan's internal state (long-range memory of the scan).\nMore = richer context, more VRAM.\nDefault: 16.",
+    "mambair_mlp_ratio": "MambaIR — expansion of each block's MLP.\nDefault: 2.0.",
+    "mambair_upsampler": "MambaIR — final upscaling method.\n• pixelshuffle: quality (default).\n• pixelshuffledirect: light/fast.\n• nearest+conv: avoids checkerboard patterns.",
+    "mambair_resi": "MambaIR — convolution at the end of each residual group.\n• 1conv: one 3x3 conv (default).\n• 3conv: three convs, fewer parameters.",
+    "mambairv2_embed_dim": "MambaIRv2 — network width. Must be a multiple of num_heads.\nDefault: 48 (light).",
+    "mambairv2_depths": "MambaIRv2 — blocks per group, one value per group (e.g. [5, 5, 5, 5]).",
+    "mambairv2_num_heads": "MambaIRv2 — attention heads per group (e.g. [4, 4, 4, 4]). embed_dim must be a multiple.",
+    "mambairv2_d_state": "MambaIRv2 — SSM scan state size.\nDefault: 8.",
+    "mambairv2_window": "MambaIRv2 — attention window size.\nThe training patch must be a multiple of it.\nDefault: 16.",
+    "mambairv2_inner_rank": "MambaIRv2 — inner rank of the prompt projection (attentive state space).\nDefault: 32.",
+    "mambairv2_num_tokens": "MambaIRv2 — number of learned prompt tokens (non-causal context for the scan).\nDefault: 64.",
+    "mambairv2_convffn_kernel": "MambaIRv2 — kernel size of the ConvFFN convolution.\nDefault: 5.",
+    "mambairv2_mlp_ratio": "MambaIRv2 — feed-forward expansion.\nDefault: 1.5.",
+    "mambairv2_upsampler": "MambaIRv2 — final upscaling method.\n• pixelshuffledirect: light (default of the light variants).\n• pixelshuffle: quality.\n• nearest+conv: avoids checkerboard.",
+    "mambairv2_resi": "MambaIRv2 — convolution at the end of each residual group (1conv / 3conv).\nDefault: 1conv.",
+    "class_num": "EA2FPN — number of discriminator output maps (classes of its segmentation head).\nDefault: 6. Keep the template value.",
+    "downs": "MetaGAN2 — downsampling factor of each discriminator stage (e.g. [4, 2, 2, 2]).\nTheir product sets the receptive field.",
+    "num_d": "Multi-scale PatchGAN — number of discriminators, each on the image downscaled by one more factor 2.\nMore = also judges global structure, more VRAM.\nDefault: 3.",
+    "input_size": "VGG-style — image size the discriminator expects (128 or 256).\nMust equal the HR patch size (LQ patch × scale).",
+})
 
 
 # --- PARAMÈTRES DYNAMIQUES GÉNÉRATEURS (NEOSR) ---
@@ -992,6 +1364,11 @@ ARCH_FIELDS = {
         {"label": "N Feats", "key": "n_feats", "default": 180, "tip_key": "num_feat"},
         {"label": "Res Scale", "key": "res_scale", "default": 1.0, "tip_key": "res_scale"},
     ],
+    "ninasr": [
+        {"label": "N ResBlocks", "key": "n_resblocks", "default": 26, "tip_key": "n_resblocks"},
+        {"label": "N Feats", "key": "n_feats", "default": 32, "tip_key": "num_feat"},
+        {"label": "Expansion", "key": "expansion", "default": 2.0, "tip_key": "expansion_ratio"},
+    ],
     "mosrv2": [
         {"label": "Dim", "key": "dim", "default": 64, "tip_key": "embed_dim"},
         {"label": "N Block", "key": "n_block", "default": 24, "tip_key": "n_blocks"},
@@ -1022,7 +1399,7 @@ ARCH_FIELDS = {
         {"label": "Kernel Size", "key": "kernel_size", "default": 17, "tip_key": "kernel_size"},
         {"label": "Split Ratio", "key": "split_ratio", "default": 0.25, "tip_key": "split_ratio"},
         {"label": "LK Type", "key": "lk_type", "default": "PLK", "tip_key": "lk_type",
-         "type": "combobox", "choices": ["PLK", "RFK", "DFK"]},
+         "type": "combobox", "choices": ["PLK", "SparsePLK", "RectSparsePLK"]},
         {"label": "Use EA", "key": "use_ea", "default": "true", "tip_key": "use_ea"},
     ],
     "realplksr": [
@@ -1081,7 +1458,7 @@ ARCH_FIELDS = {
         {"label": "Num Out Ch", "key": "num_out_ch", "default": 3, "tip_key": "num_out_ch"},
         {"label": "Feat Channels", "key": "feature_channels", "default": 48, "tip_key": "feature_channels"},
         {"label": "Upsampler", "key": "upsampler", "default": "dys", "tip_key": "upsampler",
-         "type": "combobox", "choices": ["dys", "conv", "pixelshuffle", "pixelshuffledirect", "nearest+conv"]},
+         "type": "combobox", "choices": ["dys", "ps", "lp", "conv"]},
     ],
     "srformer": [
         {"label": "Window Size", "key": "window_size", "default": 16, "tip_key": "window_size"},
@@ -1283,6 +1660,10 @@ ARCH_FIELDS = {
         {"label": "Dim", "key": "dim", "default": 64, "tip_key": "embed_dim"},
         {"label": "Clip Size", "key": "clip_size", "default": 5, "tip_key": "num_frames"},
     ],
+    "tfdat": [
+        {"label": "Embed Dim", "key": "embed_dim", "default": 120, "tip_key": "embed_dim"},
+        {"label": "Num Groups", "key": "num_groups", "default": 4, "tip_key": "n_blocks"},
+    ],
     "ultracompact": [
         {"label": "Num Feat", "key": "num_feat", "default": 64, "tip_key": "num_feat"},
         {"label": "Num Conv", "key": "num_conv", "default": 8, "tip_key": "num_conv"},
@@ -1318,9 +1699,10 @@ DISC_FIELDS = {
         {"label": "Num Feat", "key": "num_feat", "default": 64, "tip_key": "num_feat"},
         {"label": "Skip Connection", "key": "skip_connection", "default": "true", "tip_key": "skip_connection"},
     ],
+    # DUnet takes its width only (traiNNer-redux: num_feat, NeoSR: dim — renamed by the
+    # generator); the "N Blocks" field crashed both engines (unexpected keyword 'n_blocks')
     "dunet": [
         {"label": "Dim", "key": "dim", "default": 64, "tip_key": "embed_dim"},
-        {"label": "N Blocks", "key": "n_blocks", "default": 2, "tip_key": "n_blocks"},
     ],
     "metagan": [
         {"label": "Dims", "key": "dims", "default": "[48, 96, 192, 288]", "tip_key": "dims"},
@@ -1363,11 +1745,71 @@ DISC_FIELDS = {
         {"label": "Num Feat", "key": "num_feat", "default": 64, "tip_key": "num_feat"},
         {"label": "Input Size", "key": "input_size", "default": 128, "tip_key": "input_size"},
     ],
+    # docres_discriminator (docres_arch.py, @TESTARCH_REGISTRY) — simple Conv+LeakyReLU
+    # stack. heads/ffn_expansion_factor/LayerNorm_type existent dans la signature mais
+    # ne sont JAMAIS utilisés dans le forward (dead params) → non exposés ici, seuls
+    # dim/num_blocks/bias affectent réellement l'architecture. build_network() résout
+    # TESTARCH_REGISTRY en fallback (traiNNer/archs/__init__.py) → utilisable tel quel
+    # comme network_d.
+    "docres_discriminator": [
+        {"label": "Dim", "key": "dim", "default": 64, "tip_key": "embed_dim"},
+        {"label": "Num Blocks", "key": "num_blocks", "default": "[1, 2, 2, 3]", "tip_key": "n_blocks"},
+        {"label": "Bias", "key": "bias", "default": "false", "tip_key": "bias"},
+    ],
+    # spectral_disc (spectral_disc_arch.py, @ARCH_REGISTRY, Redux only) — VGG-style
+    # discriminator run on the Fourier spectrum of the input (spectrum_transform())
+    # instead of the raw image. Ported from DualFormer (ICCV 2023 paper). See
+    # "net_d_type" / DISC_DISPLAY_NAMES tooltip for the paper reference and the
+    # "meant to run alongside a spatial discriminator" caveat.
+    "spectraldiscriminator": [
+        {"label": "Num Feat", "key": "num_feat", "default": 64, "tip_key": "num_feat"},
+        {"label": "Patch Size", "key": "patch_size", "default": 32, "tip_key": "spectral_disc_patch_size"},
+        {"label": "Spec Type", "key": "spec_type", "default": "power", "type": "combobox",
+         "choices": ["power", "magnitude", "full"], "tip_key": "spectral_disc_spec_type"},
+        {"label": "Reduction", "key": "reduction", "default": "none", "type": "combobox",
+         "choices": ["none", "gray", "mean"], "tip_key": "spectral_disc_reduction"},
+        {"label": "Window", "key": "window", "default": "none", "type": "combobox",
+         "choices": ["none", "hann"], "tip_key": "spectral_disc_window"},
+        {"label": "Scale", "key": "scale", "default": "linear", "type": "combobox",
+         "choices": ["linear", "log"], "tip_key": "spectral_disc_scale"},
+        {"label": "Fix Normalize", "key": "fix_normalize", "default": "false", "tip_key": "spectral_disc_fix_normalize"},
+        {"label": "Pool", "key": "pool", "default": "avg", "type": "combobox",
+         "choices": ["avg", "max"], "tip_key": "spectral_disc_pool"},
+        {"label": "Use Spectral Norm", "key": "use_spectral_norm", "default": "false", "tip_key": "use_sn"},
+    ],
+    # nextsrgan_disc (nextsrgan_disc_arch.py, @ARCH_REGISTRY, Redux only) — "ConvNeXt-based"
+    # discriminator ported from the official NeXtSRGAN TF repo (DiscriminatorVGG128 in
+    # modules/nextsrgan.py). See "net_d_type" / DISC_DISPLAY_NAMES tooltip for the paper
+    # reference and the "actually a VGG128-style stack, not real ConvNeXt" honesty note.
+    "nextsrgandiscriminator": [
+        {"label": "Num Feat", "key": "num_feat", "default": 64, "tip_key": "num_feat"},
+        {"label": "Use Spectral Norm", "key": "use_spectral_norm", "default": "false", "tip_key": "use_sn"},
+    ],
+    # projected_disc (projected_disc_arch.py, @ARCH_REGISTRY, Redux only) — Projected GAN's
+    # discriminator: FROZEN pretrained timm tf_efficientnet_lite0 backbone (multi-scale
+    # feature extractor) + small trainable classification head (+ optional CCM/CSM
+    # projection convs). Ported from autonomousvision/projected-gan (NeurIPS 2021 paper).
+    # See "net_d_type" / DISC_DISPLAY_NAMES tooltip for the paper reference and the
+    # "general GAN technique, not SR-specific" honesty note. First forward pass downloads
+    # the backbone weights (~15-20 MB) via timm — requires internet once.
+    "projecteddiscriminator": [
+        {"label": "Proj Channels (cout)", "key": "cout", "default": 64, "tip_key": "projected_disc_cout"},
+        {"label": "Expand Channels", "key": "expand", "default": "true", "tip_key": "projected_disc_expand"},
+        {"label": "Proj Type", "key": "proj_type", "default": "csm", "type": "combobox",
+         "choices": ["none", "ccm", "csm"], "tip_key": "projected_disc_proj_type"},
+        {"label": "Num Discs", "key": "num_discs", "default": 4, "type": "combobox",
+         "choices": [1, 2, 3, 4], "tip_key": "projected_disc_num_discs"},
+        {"label": "Separable Convs", "key": "separable", "default": "false", "tip_key": "projected_disc_separable"},
+        {"label": "PatchGAN Head", "key": "patch", "default": "false", "tip_key": "projected_disc_patch"},
+        {"label": "Diff Augment", "key": "use_diffaug", "default": "true", "tip_key": "projected_disc_use_diffaug"},
+        {"label": "Interp to 224", "key": "interp224", "default": "true", "tip_key": "projected_disc_interp224"},
+        {"label": "Pretrained Backbone", "key": "pretrained_backbone", "default": "true", "tip_key": "projected_disc_pretrained_backbone"},
+    ],
 }
 
 # Per-engine discriminator names
 NEOSR_DISC_LIST = ["unet", "dunet", "patchgan", "metagan", "ea2fpn"]
-REDUX_DISC_LIST = ["dunet", "unetdiscriminatorsn", "metagan2", "patchgandiscriminatorsn", "multiscalepatchgandiscriminatorsn", "vggstylediscriminator"]
+REDUX_DISC_LIST = ["dunet", "unetdiscriminatorsn", "metagan2", "patchgandiscriminatorsn", "multiscalepatchgandiscriminatorsn", "vggstylediscriminator", "docres_discriminator", "spectraldiscriminator", "nextsrgandiscriminator", "projecteddiscriminator"]
 
 # Friendly display names for long discriminator type names
 DISC_DISPLAY_NAMES = {
@@ -1381,6 +1823,10 @@ DISC_DISPLAY_NAMES = {
     "metagan": "MetaGAN",
     "metagan2": "MetaGAN2",
     "ea2fpn": "EA2-FPN",
+    "docres_discriminator": "DocRes-Disc",
+    "spectraldiscriminator": "Spectral (DualFormer)",
+    "nextsrgandiscriminator": "NeXtSRGAN",
+    "projecteddiscriminator": "Projected GAN",
 }
 
 # Reverse mapping: display name → internal name
@@ -1401,8 +1847,11 @@ NEOSR_OPTIMIZERS = [
     "AdamW_Win", "AdamW_SF", "Adan_SF", "SOAP_SF",
 ]
 
+# traiNNer-redux (dev) n'enregistre que ces optimiseurs dans son OPTIMIZER_REGISTRY.
+# SGD/RAdam/Adadelta/Adagrad → "No object named '<x>' found in 'optimizer' registry"
+# (confirmé harnais #6) → retirés pour ne pas proposer un choix qui plante au train.
 REDUX_OPTIMIZERS = [
-    "Adam", "AdamW", "NAdam", "SGD", "RAdam", "Adadelta", "Adagrad",
+    "Adam", "AdamW", "NAdam",
 ]
 
 SCHEDULERS = [
@@ -1411,9 +1860,11 @@ SCHEDULERS = [
 ]
 
 # Per-engine scheduler lists
+# NeoSR's setup_schedulers only builds these two (anything else: "Scheduler X is not
+# implemented yet", exit at launch — CosineAnnealingRestart / CyclicLR / OneCycleLR were
+# offered and could never start).
 NEOSR_SCHEDULERS = [
-    "MultiStepLR", "CosineAnnealing", "CosineAnnealingRestart",
-    "CyclicLR", "OneCycleLR",
+    "MultiStepLR", "CosineAnnealing",
 ]
 
 REDUX_SCHEDULERS = [
@@ -1428,9 +1879,11 @@ REDUX_SCALES = ["1", "2", "3", "4", "8"]
 # Per-engine architecture families
 NEOSR_ARCH_FAMILIES = {
     "✨ Recommandé": ["omnisr", "span", "realplksr", "esrgan", "compact"],
-    "🚀 Léger / Rapide": ["span", "spanplus", "compact", "ultracompact", "safmn", "lmlt", "plksr", "realplksr", "cugan"],
-    "🤖 Transformers (Lourd)": ["hat", "swinir_small", "swinir_medium", "dat_s", "srformer_medium", "drct", "atd"],
-    "🎨 GAN / Restauration": ["esrgan", "rcan", "artcnn_r16f96"],
+    # neosr n'a PAS ultracompact (seulement compact) → retiré (sinon KeyError arch registry)
+    "🚀 Léger / Rapide": ["span", "spanplus", "compact", "safmn", "lmlt", "plksr", "realplksr", "cugan", "ninasr"],
+    # neosr expose hat_s/hat_m/hat_l (pas de "hat" nu) ; artcnn = redux-only (absent neosr)
+    "🤖 Transformers (Lourd)": ["hat_s", "hat_m", "hat_l", "swinir_small", "swinir_medium", "dat_s", "srformer_medium", "drct", "atd"],
+    "🎨 GAN / Restauration": ["esrgan", "rcan"],
     "📦 Autres": ["cfsr", "craft", "dct", "dctlsa", "ditn", "esc", "eimn", "flexnet", "grformer", "hasn", "hit_srf", "hma", "krgn", "man", "moesr", "mosrv2", "msdan", "plainusr", "rgt", "asid"],
     "🆕 Nouveaux / Communauté": [
         # v2.5.5: CATANet (NeoSR) — Token Aggregation Block + LRSA
@@ -1440,6 +1893,26 @@ NEOSR_ARCH_FAMILIES = {
         "aether_medium", "aether_large", "aether_pro", "aether_extreme",
     ],
 }
+
+def _pending_arch_available(filename: str) -> bool:
+    """Archs held back from public builds until their author agrees (WireSR, FDAT-RD):
+    list them only when their file exists (developer's custom_archs_pending/, the
+    shipped custom_archs/, or already in the engine)."""
+    import os
+    _here = os.path.dirname(os.path.abspath(__file__))
+    if os.path.isfile(os.path.join(_here, "custom_archs_pending", filename)) or \
+            os.path.isfile(os.path.join(_here, "custom_archs", filename)):
+        return True
+    try:
+        from src.core.engine_paths import redux_path
+        return os.path.isfile(os.path.join(redux_path(), "traiNNer", "archs", filename))
+    except Exception:
+        return False
+
+
+def _wiresr_available() -> bool:
+    return _pending_arch_available("wiresr_arch.py")
+
 
 REDUX_ARCH_FAMILIES = {
     # Catégorisation basée sur bench Redux 2026-05-19 (GTX 1080 Ti, scale=1)
@@ -1456,15 +1929,18 @@ REDUX_ARCH_FAMILIES = {
     "🤖 Transformers / Attention": [
         "swinir_s", "swinir_m", "swinir_l", "swin2sr_s", "swin2sr_m", "swin2sr_l",
         "hat_s", "hat_m", "hat_l",
+        "hat_iln_l", "hat_iln_l_aligned", "hat_iln_m", "hat_iln_m_aligned", "hat_iln_s",
         "dat", "dat_2", "dat_light", "dat_s",
+        "dat_iln", "dat_iln_s", "dat_iln_2", "dat_iln_light",
         "srformer", "srformerv2",
-        "drct", "drct_l", "drct_xl", "drct_s",
+        "drct", "drct_l", "drct_xl",  # drct_s n'est PAS enregistré côté moteur (KeyError) → retiré
         "atd", "atd_light",
         "elan", "elan_light",
         "omnisr",
     ],
     "🎨 GAN / Restauration": ["esrgan", "esrgan_lite", "rcan", "rcan_l", "rcan_unshuffle", "artcnn_r16f96", "artcnn_r8f64", "artcnn_r8f48", "artcnn_r3f24", "scunet_aaf6aa"],
-    "🎞️ Vidéo / Temporal": ["temporalspan", "temporalspanv2", "tscunet"],
+    "🎞️ Vidéo / Temporal": ["temporalspan", "temporalspanv2", "tscunet", "tfdat", "tfdatv2", "motsr"],
+    "🗎 Restauration Document": ["docres_base", "docres_large"],
     "🧪 Expérimental / Lourd": [
         "man", "man_light", "safmn_l",
         "eimn_a", "eimn_l", "lmlt_base", "lmlt_large",
@@ -1487,16 +1963,35 @@ REDUX_ARCH_FAMILIES = {
         "paragonsr_s", "paragonsr_m", "paragonsr_l", "paragonsr_xl", "paragonsr_anime",
         "paragonsr2_realtime", "paragonsr2_stream", "paragonsr2_photo",
         "paragonsr2_pro", "paragonsr2_ultimate", "paragonsr2_ultimate_v2",
+        # branche expérimentale : ports Mamba (csguoh/MambaIR), scan pur-PyTorch (pas de compil CUDA, plus lent que le kernel officiel)
+        "mambair", "mambairv2",
+        # v2.6 : traiNNer-redux master (Phhofm) — HEART = transformer type HAT-iLN (lourd),
+        # NERVE = ResNet conv sans normalisation (très léger)
+        "heart", "nerve",
+        # WireSR (CF2lter) — anti-aliasing / lignes fines (modèle 1x_Wired)
+        *(["wiresr"] if _wiresr_available() else []),
+        # FDAT-RD (stinkybread) — FDAT + fenêtres rectangulaires 10×30 + dictionnaire de
+        # tokens, anime DVD/LD → BluRay, export TensorRT statique
+        *(["fdat_rd_small", "fdat_rd_medium", "fdat_rd_large"]
+          if _pending_arch_available("fdat_rd_arch.py") else []),
+        # WSR (Rift73) — tronc résiduel large + flux de contexte LR/4 (+ attention Halo
+        # pour wsr / wsr_compact) ; convolutif, export TensorRT simple
+        "wsr_mobile", "wsr_superultracompact", "wsr_ultracompact", "wsr_compact", "wsr",
+        # DUAL (Rift73) — transformer double contexte (fenêtres 16 + voisinage 32/64),
+        # lourd : chemins rapides BF16/Triton absents sur Pascal (1080 Ti)
+        "dual_light", "dual_xs", "dual_s", "dual_m", "dual_l", "dual_xl",
     ],
 }
 
 # English-label versions of the family dicts (same arch lists, translated keys)
 NEOSR_ARCH_FAMILIES_EN = {
     "✨ Recommended": ["omnisr", "span", "realplksr", "esrgan", "compact"],
-    "🚀 Light / Fast": ["span", "spanplus", "compact", "ultracompact", "safmn", "lmlt", "plksr", "realplksr", "cugan"],
-    "🤖 Transformers (Heavy)": ["hat", "swinir_small", "swinir_medium", "dat_s", "srformer_medium", "drct", "atd"],
-    "🎨 GAN / Restoration": ["esrgan", "rcan", "artcnn_r16f96"],
-    "📦 Other": ["cfsr", "craft", "dct", "dctlsa", "ditn", "esc", "eimn", "flexnet", "grformer", "hasn", "hit_srf", "hma", "krgn", "man", "moesr", "mosrv2", "msdan", "plainusr", "rgt", "asid", "catanet"],
+    "🚀 Light / Fast": ["span", "spanplus", "compact", "safmn", "lmlt", "plksr", "realplksr", "cugan", "ninasr"],
+    "🤖 Transformers (Heavy)": ["hat_s", "hat_m", "hat_l", "swinir_small", "swinir_medium", "dat_s", "srformer_medium", "drct", "atd"],
+    "🎨 GAN / Restoration": ["esrgan", "rcan"],
+    "📦 Other": ["cfsr", "craft", "dct", "dctlsa", "ditn", "esc", "eimn", "flexnet", "grformer", "hasn", "hit_srf", "hma", "krgn", "man", "moesr", "mosrv2", "msdan", "plainusr", "rgt", "asid"],
+    "🆕 New / Community": ["catanet", "aether_mobile", "aether_tiny", "aether_small",
+                          "aether_medium", "aether_large", "aether_pro", "aether_extreme"],
 }
 
 REDUX_ARCH_FAMILIES_EN = {
@@ -1504,7 +1999,8 @@ REDUX_ARCH_FAMILIES_EN = {
     "🚀 Light / Fast": REDUX_ARCH_FAMILIES["🚀 Léger / Rapide"],
     "🤖 Transformers / Attention": REDUX_ARCH_FAMILIES["🤖 Transformers / Attention"],
     "🎨 GAN / Restoration": ["esrgan", "esrgan_lite", "rcan", "rcan_l", "rcan_unshuffle", "artcnn_r16f96", "artcnn_r8f64", "artcnn_r8f48", "artcnn_r3f24", "scunet_aaf6aa"],
-    "🎞️ Video / Temporal": ["temporalspan", "temporalspanv2", "tscunet"],
+    "🎞️ Video / Temporal": ["temporalspan", "temporalspanv2", "tscunet", "tfdat", "tfdatv2", "motsr"],
+    "🗎 Document Restoration": REDUX_ARCH_FAMILIES["🗎 Restauration Document"],
     "🧪 Experimental / Heavy": REDUX_ARCH_FAMILIES["🧪 Expérimental / Lourd"],
     "🆕 New / Community": REDUX_ARCH_FAMILIES["🆕 Nouveaux / Communauté"],  # includes spanf + spanpp(=SpanC)
     "🏆 ParagonSR (Phhofm)": [
@@ -1518,6 +2014,15 @@ REDUX_ARCH_FAMILIES_EN = {
 
 def get_arch_families(engine: str = "neosr") -> dict:
     """Return architecture families dict in the active language."""
+    # Qt UI language (qt_ui.i18n) takes priority — it's the one actually driven by the
+    # language switch in the Qt app. Falls back to the old CTk translator for the
+    # legacy src/ui app, which never touches qt_ui.i18n.
+    try:
+        from qt_ui.i18n import get_lang
+        if get_lang() == "en":
+            return REDUX_ARCH_FAMILIES_EN if "redux" in engine.lower() else NEOSR_ARCH_FAMILIES_EN
+    except Exception:
+        pass
     try:
         from src.core.translations import get_translator
         tr = get_translator()
@@ -1542,11 +2047,35 @@ VRAM_FACTORS = {
     # neosr-specific aliases (correct registry names)
     "dat_s": 1.6, "dat_2": 1.8, "srformer_medium": 1.3, "swinir_small": 1.2,
     "catanet": 1.4,
+    # NinaSR (ninasr_arch.py) — simple residual conv net (ResBlock + SE-attention),
+    # léger comme compact/span
+    "ninasr": 0.6,
 }
 
 DISC_VRAM_FACTORS = {
-    "unet": 0.4, "dunet": 0.6, "patchgan": 0.2, 
+    "unet": 0.4, "dunet": 0.6, "patchgan": 0.2,
     "metagan": 0.8, "ea2fpn": 0.7,
+    # spectral_disc (Redux only) : VGG-style conv stack, comparable à vggstylediscriminator,
+    # + buffer FFT complexe temporaire non fusionné dans spectrum_transform() → majoration
+    # prudente. Non calibré (pas de mesure torch.cuda.memory_reserved() réelle).
+    "spectraldiscriminator": 0.5,
+    # nextsrgan_disc (Redux only) : quasi identique en taille/coût à vggstylediscriminator
+    # (même topologie conv 5 étages, seule différence GELU vs LeakyReLU + tête GAP+Linear(1)
+    # au lieu de Flatten+2FC, donc légèrement MOINS de paramètres FC). Valeur alignée sur
+    # vggstylediscriminator par prudence. Non calibré (pas de mesure torch.cuda.memory_reserved()
+    # réelle) — à ajuster si un profiling réel est fait.
+    "nextsrgandiscriminator": 0.5,
+    # projected_disc (Redux only) : PAS calibré (pas de mesure torch.cuda.memory_reserved()
+    # réelle) — estimation prudente PAR EXCÈS. Même si le backbone timm tf_efficientnet_lite0
+    # est gelé (requires_grad=False), ses activations intermédiaires doivent quand même être
+    # conservées pour le backward (le gradient doit remonter jusqu'à l'image d'entrée pour la
+    # loss du générateur), donc son coût mémoire forward+backward n'est PAS gratuit malgré le
+    # gel des poids. S'ajoute la tête multi-échelle (jusqu'à 4 mini-discriminateurs en //) +
+    # les convs CCM/CSM (cross-scale mixing = upsampling en pyramide, plusieurs cartes de
+    # features simultanées). Valeur nettement plus haute que spectral_disc/nextsrgan_disc
+    # (qui n'ont aucun backbone séparé) car ce discriminateur combine un backbone ImageNet
+    # + une tête multi-échelle. À ajuster fortement si un profiling réel est fait.
+    "projecteddiscriminator": 0.9,
 }
 
 ARCH_PROFILES = {
@@ -1592,6 +2121,7 @@ ARCH_PROFILES = {
     "rgt":         [9, 8, 9, 2, 2, 6, 9],
     "eimn":        [7, 6, 7, 8, 8, 7, 7],
     "grformer":    [8, 7, 8, 4, 4, 7, 8],
+    "ninasr":      [6, 5, 7, 9, 9, 7, 6],   # léger, résiduel conv + SE-attention locale
     "default":     [5, 5, 5, 5, 5, 5, 5],
     "artcnn_r16f96": [7, 6, 7, 7, 7, 7, 6],
     "artcnn_r3f24":  [5, 4, 5, 9, 9, 6, 4],
@@ -1621,6 +2151,8 @@ ARCH_PROFILES = {
     "catanet":       [7, 7, 8, 4, 4, 7, 8],    # CATANet transformer TAB+LRSA, NeoSR
     "gfisrv2":       [6, 7, 8, 7, 7, 7, 6],    # GFISRv2 GatedCNN + FFT-inspired, multi-upsampler, PSNR fiable
     "figsr":         [7, 8, 7, 6, 7, 8, 6],    # FIGSR Fourier-Inception-Gated, meilleure texture/détail, légèrement plus lent
+    "mambair":       [9, 8, 9, 2, 2, 6, 9],    # MambaIR (ECCV2024) — SSM linéaire, lourd, scan pur-PyTorch (pas de kernel CUDA compilé)
+    "mambairv2":     [9, 9, 9, 1, 1, 6, 9],    # MambaIRv2 (CVPR2025) — SSM attentif, plus lourd que v1, scan pur-PyTorch (pas de kernel CUDA compilé)
     "swin2sr_l":     [8, 7, 8, 4, 4, 7, 8],
     "swinir_l":      [8, 7, 8, 4, 4, 7, 8],
     # --- Profils ajoutés d'après bench Redux 2026-05-19 + type d'architecture ---
@@ -1660,6 +2192,21 @@ ARCH_PROFILES = {
     # Transformers non-testés — dérivés des types connus
     "hat_s":           [8, 8, 9, 4, 4, 7, 9],
     "hat_m":           [8, 8, 9, 2, 3, 7, 9],
+    # HAT/DAT avec i-LN (instance LayerNorm, arXiv 2504.06629) — même coût que les non-iLN
+    "hat_iln_l":       [9, 8, 9, 2, 2, 7, 9],
+    "hat_iln_l_aligned": [9, 8, 9, 2, 2, 7, 9],
+    "hat_iln_m":       [8, 8, 9, 2, 3, 7, 9],
+    "hat_iln_m_aligned": [8, 8, 9, 2, 3, 7, 9],
+    "hat_iln_s":       [8, 8, 9, 4, 4, 7, 9],
+    "dat_iln":         [8, 7, 9, 4, 3, 7, 9],
+    "dat_iln_s":       [8, 7, 9, 4, 4, 7, 9],
+    "dat_iln_2":       [8, 7, 9, 3, 3, 7, 9],
+    "dat_iln_light":   [7, 6, 8, 6, 5, 7, 8],
+    # DocRes (Restormer-style, restauration de document — deskew/nettoyage scan,
+    # scale fixe 1x). Efficacité_Anime non pertinente (pas conçu pour l'anime) ;
+    # Fidélité/PSNR et Efficacité_Réaliste priorisés (documents scannés réels).
+    "docres_base":     [8, 6, 9, 4, 5, 2, 9],
+    "docres_large":    [9, 7, 9, 2, 3, 2, 9],
     "drct_s":          [8, 7, 8, 4, 4, 6, 8],
     "drct_xl":         [9, 8, 9, 1, 1, 6, 9],
     "srformerv2":      [8, 7, 8, 4, 4, 7, 8],
@@ -1677,10 +2224,11 @@ ARCH_PROFILES = {
     "temporalspan":    [7, 6, 7, 7, 6, 7, 6],  # Vidéo — span temporel
     "temporalspanv2":  [7, 6, 8, 6, 6, 7, 6],
     "tscunet":         [7, 7, 8, 5, 5, 7, 7],
+    "tfdat":           [8, 7, 8, 5, 5, 7, 8],  # Vidéo — successeur TSPANv2 (Kim2091), attention par fenêtre + flow léger
+    "tfdatv2":         [9, 8, 9, 4, 4, 8, 9],  # Vidéo — TFDAT v2 : flow pyramidal + fusion à confiance (2x_bndl_animefilm_v3)
     # Archs expérimentaux (non benchmarkés)
     "cascadedgaze":    [7, 6, 8, 5, 5, 7, 7],
     "dwt":             [7, 6, 7, 7, 7, 7, 7],   # wavelet-guided
-    "dwt_s":           [7, 6, 7, 8, 8, 7, 7],
     "eimn_l":          [7, 6, 7, 7, 7, 7, 7],
     "elan":            [7, 7, 8, 5, 5, 6, 8],
     "emt":             [7, 7, 8, 5, 5, 7, 8],
@@ -1718,6 +2266,35 @@ ARCH_PROFILES = {
     "paragonsr2_pro":        [8, 7, 8,  5,  6, 7, 8],
     "paragonsr2_ultimate":   [8, 8, 9,  3,  4, 7, 9],  # flagship ~23M params
     "paragonsr2_ultimate_v2":[8, 8, 9,  3,  4, 7, 9],
+    # ── HEART / NERVE (Phhofm, traiNNer-redux master) ────────────────────────────
+    # Vitesse/VRAM mesurées (1080 Ti, scale 2, patch 64, batch 4, FP32, fwd+bwd) :
+    # HEART 11x plus lent qu'OmniSR / 5,3x sa VRAM ; NERVE 5x plus rapide / 0,14x.
+    # Colonnes qualité = estimation par analogie (HEART ≈ classe HAT-iLN, NERVE ≈ ResNet léger).
+    "heart":                 [8, 8, 9,  1,  2, 7, 9],
+    "nerve":                 [6, 5, 7,  8,  9, 7, 6],
+    # WireSR : 0,52x la vitesse d'OmniSR, 1,45x sa VRAM (mesuré). MoTSR (vidéo, clip
+    # 5 frames, stage joint) : 1,6x plus rapide, 0,25x la VRAM. Qualité = estimation.
+    "wiresr":                [7, 7, 8,  4,  5, 7, 8],
+    # FDAT-RD, scale 2 + unshuffle, bench fwd+bwd (GPU partiellement occupé) : small 0,87x la vitesse
+    # d'OmniSR / 0,40x sa VRAM, medium 0,71x / 0,54x, large 0,32x / 1,23x. Training réel medium
+    # (1080 Ti, patch 96, batch 4) : 1,64 it/s, 8,1 Go. Qualité = estimation (auteur : > FDAT sur l'anime).
+    "fdat_rd_small":         [8, 7, 8,  7,  8, 8, 8],
+    "fdat_rd_medium":        [8, 8, 9,  6,  7, 8, 9],
+    "fdat_rd_large":         [9, 8, 9,  3,  5, 8, 9],
+    "motsr":                 [7, 6, 8,  8,  9, 8, 7],
+    # WSR / DUAL (Rift73) : estimation provisoire, à recalibrer sur un vrai training.
+    # DUAL light mesuré (générateur seul, b6 LQ128) : ~13x plus lent que NERVE.
+    "wsr_mobile":            [5, 4, 5,  9, 10, 6, 4],
+    "wsr_superultracompact": [5, 5, 6,  9,  9, 7, 5],
+    "wsr_ultracompact":      [6, 5, 7,  8,  9, 7, 6],
+    "wsr_compact":           [7, 6, 7,  7,  8, 7, 7],
+    "wsr":                   [7, 7, 8,  6,  7, 8, 7],
+    "dual_light":            [8, 7, 8,  3,  5, 8, 8],
+    "dual_xs":               [8, 8, 8,  2,  4, 8, 8],
+    "dual_s":                [8, 8, 9,  2,  3, 8, 9],
+    "dual_m":                [9, 8, 9,  1,  3, 8, 9],
+    "dual_l":                [9, 8, 9,  1,  2, 8, 9],
+    "dual_xl":               [9, 9, 9,  1,  1, 8, 9],
 }
 
 REDUX_LOSS_INFO = {
@@ -1726,6 +2303,10 @@ REDUX_LOSS_INFO = {
     "charbonnierloss": {"loss_weight": 1.0, "reduction": "mean", "eps": 1e-12},
     "perceptualloss": {"loss_weight": 1.0, "layer_weights": "dict(conv5_4=1)", "criterion": "l1"},
     "perceptualanimeloss": {"loss_weight": 1.0, "criterion": "l1"},
+    "perceptualfp16loss": {"loss_weight": 1.0, "criterion": "charbonnier", "w_lambda": 0.01},
+    "linedistillerloss": {"loss_weight": 1.0, "criterion": "l1", "debug": "false"},
+    "aesoploss": {"loss_weight": 1.0, "criterion": "charbonnier"},
+    "bcewithlogitsdiceloss": {"loss_weight": 1.0, "weight_bce": 1.0, "weight_dice": 1.0, "eps": 1e-06},
     "ganloss": {"loss_weight": 1.0, "gan_type": "vanilla", "real_label_val": 1.0, "fake_label_val": 0.0},
     "multiscaleganloss": {"loss_weight": 1.0, "gan_type": "vanilla", "real_label_val": 1.0, "fake_label_val": 0.0},
     "adistsloss": {"loss_weight": 1.0, "window_size": 21},
@@ -1756,6 +2337,7 @@ REDUX_ARCH_FIELDS = {
     
     # ArtCNN
     "artcnn_r16f96": [{"label": "Filters", "key": "filters", "default": 96}, {"label": "Blocks", "key": "n_block", "default": 16}],
+    "artcnn_r8f64": [{"label": "Filters", "key": "filters", "default": 64}, {"label": "Blocks", "key": "n_block", "default": 8}],
     "artcnn_r8f48": [{"label": "Filters", "key": "filters", "default": 48}, {"label": "Blocks", "key": "n_block", "default": 8}],
     "artcnn_r3f24": [{"label": "Filters", "key": "filters", "default": 24}, {"label": "Blocks", "key": "n_block", "default": 3}],
     
@@ -1771,12 +2353,84 @@ REDUX_ARCH_FIELDS = {
     "dat_2": [{"label": "Split Size", "key": "split_size", "default": "[8, 32]"}, {"label": "Depth", "key": "depth", "default": "[6, 6, 6, 6, 6, 6]"}, {"label": "Expansion", "key": "expansion_factor", "default": 2}],
     "dat_light": [{"label": "Embed Dim", "key": "embed_dim", "default": 60}, {"label": "Depth", "key": "depth", "default": "[18]"}],
     "dat_s": [{"label": "Embed Dim", "key": "embed_dim", "default": 180}, {"label": "Split Size", "key": "split_size", "default": "[8, 16]"}],
-    
+    # DAT avec i-LN (instance LayerNorm, arXiv 2504.06629) — mêmes params que DAT non-iLN
+    "dat_iln": [{"label": "Img Size", "key": "img_size", "default": 64}, {"label": "Split Size", "key": "split_size", "default": "[8, 32]"}, {"label": "Depth", "key": "depth", "default": "[6, 6, 6, 6, 6, 6]"}, {"label": "Embed Dim", "key": "embed_dim", "default": 180}],
+    "dat_iln_s": [{"label": "Embed Dim", "key": "embed_dim", "default": 180}, {"label": "Split Size", "key": "split_size", "default": "[8, 16]"}],
+    "dat_iln_2": [{"label": "Split Size", "key": "split_size", "default": "[8, 32]"}, {"label": "Depth", "key": "depth", "default": "[6, 6, 6, 6, 6, 6]"}, {"label": "Expansion", "key": "expansion_factor", "default": 2}],
+    "dat_iln_light": [{"label": "Embed Dim", "key": "embed_dim", "default": 60}, {"label": "Depth", "key": "depth", "default": "[18]"}],
+
+    # DocRes (Restormer-style document restoration) — params réels docres_arch.py
+    "docres_base": [{"label": "Dim", "key": "dim", "default": 48}, {"label": "Num Blocks", "key": "num_blocks", "default": "[2, 3, 3, 4]"}, {"label": "Refinement Blocks", "key": "num_refinement_blocks", "default": 4}, {"label": "Heads", "key": "heads", "default": "[1, 2, 4, 8]"}, {"label": "FFN Expansion", "key": "ffn_expansion_factor", "default": 2.66}],
+    "docres_large": [{"label": "Dim", "key": "dim", "default": 64}, {"label": "Num Blocks", "key": "num_blocks", "default": "[3, 4, 4, 6]"}, {"label": "Refinement Blocks", "key": "num_refinement_blocks", "default": 6}, {"label": "Heads", "key": "heads", "default": "[2, 4, 8, 16]"}, {"label": "FFN Expansion", "key": "ffn_expansion_factor", "default": 2.66}],
+
     # DCTLSA & DIS
     "dctlsa": [{"label": "NF", "key": "nf", "default": 55}, {"label": "Num Modules", "key": "num_modules", "default": 6}],
     "dis_balanced": [{"label": "Num Feat", "key": "num_features", "default": 32}, {"label": "Num Blocks", "key": "num_blocks", "default": 12}],
     "dis_fast": [{"label": "Num Feat", "key": "num_features", "default": 32}, {"label": "Num Blocks", "key": "num_blocks", "default": 8}],
-    
+
+    # Mamba — ports csguoh/MambaIR (scan pur-PyTorch vendored, pas de dépendance mamba_ssm/CUDA à compiler)
+    "mambair": [
+        {"label": "Embed Dim", "key": "embed_dim", "default": 96, "tip_key": "mambair_embed_dim"},
+        {"label": "Depths", "key": "depths", "default": "[6, 6, 6, 6]", "tip_key": "mambair_depths"},
+        {"label": "D State", "key": "d_state", "default": 16, "tip_key": "mambair_d_state"},
+        {"label": "MLP Ratio", "key": "mlp_ratio", "default": 2.0, "tip_key": "mambair_mlp_ratio"},
+        {"label": "Upsampler", "key": "upsampler", "default": "pixelshuffle",
+         "type": "combobox", "choices": ["pixelshuffle", "pixelshuffledirect", "nearest+conv"],
+         "tip_key": "mambair_upsampler"},
+        {"label": "Resi Connection", "key": "resi_connection", "default": "1conv",
+         "type": "combobox", "choices": ["1conv", "3conv"], "tip_key": "mambair_resi"},
+    ],
+    "mambairv2": [
+        {"label": "Embed Dim", "key": "embed_dim", "default": 48, "tip_key": "mambairv2_embed_dim"},
+        {"label": "Depths", "key": "depths", "default": "[5, 5, 5, 5]", "tip_key": "mambairv2_depths"},
+        {"label": "Num Heads", "key": "num_heads", "default": "[4, 4, 4, 4]", "tip_key": "mambairv2_num_heads"},
+        {"label": "D State", "key": "d_state", "default": 8, "tip_key": "mambairv2_d_state"},
+        {"label": "Window Size", "key": "window_size", "default": 16, "tip_key": "mambairv2_window"},
+        {"label": "Inner Rank", "key": "inner_rank", "default": 32, "tip_key": "mambairv2_inner_rank"},
+        {"label": "Num Tokens", "key": "num_tokens", "default": 64, "tip_key": "mambairv2_num_tokens"},
+        {"label": "ConvFFN Kernel", "key": "convffn_kernel_size", "default": 5, "tip_key": "mambairv2_convffn_kernel"},
+        {"label": "MLP Ratio", "key": "mlp_ratio", "default": 1.5, "tip_key": "mambairv2_mlp_ratio"},
+        {"label": "Upsampler", "key": "upsampler", "default": "pixelshuffledirect",
+         "type": "combobox", "choices": ["pixelshuffledirect", "pixelshuffle", "nearest+conv"],
+         "tip_key": "mambairv2_upsampler"},
+        {"label": "Resi Connection", "key": "resi_connection", "default": "1conv",
+         "type": "combobox", "choices": ["1conv", "3conv"], "tip_key": "mambairv2_resi"},
+    ],
+
+    # ── HEART / NERVE (Phhofm, traiNNer-redux master) — defaults = official templates ──
+    "heart": [
+        {"label": "Embed Dim", "key": "embed_dim", "default": 180, "tip_key": "embed_dim"},
+        {"label": "Depths", "key": "depths", "default": "[6, 6, 6, 6, 6, 6]", "tip_key": "heart_depths"},
+        {"label": "Num Heads", "key": "num_heads", "default": "[6, 6, 6, 6, 6, 6]", "tip_key": "heart_num_heads"},
+        {"label": "Window Size", "key": "window_size", "default": 32, "tip_key": "heart_window_size"},
+        {"label": "Attention Freq", "key": "attention_freq", "default": 2, "tip_key": "heart_attention_freq"},
+    ],
+    "nerve": [
+        {"label": "Dim", "key": "dim", "default": 64, "tip_key": "nerve_dim"},
+        {"label": "N Blocks", "key": "n_blocks", "default": 24, "tip_key": "nerve_n_blocks"},
+    ],
+    # ── WireSR (CF2lter) — anti-aliasing / structures fines ; défauts = constructeur auteur ──
+    "wiresr": [
+        {"label": "Dim", "key": "dim", "default": 64, "tip_key": "wiresr_dim"},
+        {"label": "N Blocks", "key": "n_blocks", "default": 24, "tip_key": "wiresr_n_blocks"},
+        {"label": "Stripe Kernel", "key": "stripe_kernel", "default": 61, "tip_key": "wiresr_stripe"},
+        {"label": "Diag Kernel", "key": "diag_kernel", "default": 17, "tip_key": "wiresr_diag"},
+        {"label": "Attn Every", "key": "attn_every", "default": 5, "tip_key": "wiresr_attn_every"},
+        {"label": "Upsampler", "key": "upsampler", "default": "pixelshuffle", "type": "combobox",
+         "choices": ["pixelshuffle", "pixelshuffledirect", "nearest+conv", "dysample", "conv"],
+         "tip_key": "upsampler"},
+    ],
+    # ── MoTSR (xyether, MIT) — vidéo 2x, 5 frames + retours récurrents ──────────────
+    "motsr": [
+        {"label": "Étape", "key": "stage", "default": "joint", "type": "combobox",
+         "choices": ["joint", "partial", "bootstrap"], "tip_key": "motsr_stage"},
+        {"label": "Blocs dégelés", "key": "unfreeze_last_blocks", "default": 6, "tip_key": "motsr_unfreeze"},
+        {"label": "Dim", "key": "dim", "default": 64, "tip_key": "motsr_dim"},
+        {"label": "N Blocks", "key": "n_block", "default": 24, "tip_key": "motsr_n_block"},
+        {"label": "Temporal Dim", "key": "temporal_dim", "default": 32, "tip_key": "motsr_temporal_dim"},
+        {"label": "Feedback Dim", "key": "feedback_dim", "default": 32, "tip_key": "motsr_feedback_dim"},
+    ],
+
     # DITN
     "ditn_real": [{"label": "Dim", "key": "dim", "default": 60}, {"label": "ITL Blocks", "key": "ITL_blocks", "default": 4}],
     
@@ -1821,6 +2475,12 @@ REDUX_ARCH_FIELDS = {
     "hat_l": [{"label": "Embed Dim", "key": "embed_dim", "default": 180}, {"label": "Depths", "key": "depths", "default": "[6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6]"}],
     "hat_m": [{"label": "Embed Dim", "key": "embed_dim", "default": 180}, {"label": "Depths", "key": "depths", "default": "[6, 6, 6, 6, 6, 6]"}],
     "hat_s": [{"label": "Embed Dim", "key": "embed_dim", "default": 144}, {"label": "Depths", "key": "depths", "default": "[6, 6, 6, 6, 6, 6]"}],
+    # HAT avec i-LN (instance LayerNorm, arXiv 2504.06629) — mêmes params que HAT non-iLN
+    "hat_iln_l": [{"label": "Embed Dim", "key": "embed_dim", "default": 180}, {"label": "Depths", "key": "depths", "default": "[6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6]"}],
+    "hat_iln_l_aligned": [{"label": "Embed Dim", "key": "embed_dim", "default": 192}, {"label": "Depths", "key": "depths", "default": "[6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6]"}],
+    "hat_iln_m": [{"label": "Embed Dim", "key": "embed_dim", "default": 180}, {"label": "Depths", "key": "depths", "default": "[6, 6, 6, 6, 6, 6]"}],
+    "hat_iln_m_aligned": [{"label": "Embed Dim", "key": "embed_dim", "default": 192}, {"label": "Depths", "key": "depths", "default": "[6, 6, 6, 6, 6, 6]"}],
+    "hat_iln_s": [{"label": "Embed Dim", "key": "embed_dim", "default": 144}, {"label": "Depths", "key": "depths", "default": "[6, 6, 6, 6, 6, 6]"}],
     
     # HiT
     "hit_sir": [{"label": "Embed Dim", "key": "embed_dim", "default": 60}, {"label": "Base Win", "key": "base_win_size", "default": "[8, 8]"}],
@@ -1986,10 +2646,175 @@ REDUX_ARCH_FIELDS = {
     "tscunet": [{"label": "Dim", "key": "dim", "default": 64}, {"label": "Residual", "key": "residual", "default": "true"}],
     "temporalspan": [{"label": "Feat Channels", "key": "feature_channels", "default": 48}, {"label": "Num Frames", "key": "num_frames", "default": 5}],
     "temporalspanv2": [{"label": "Feat Channels", "key": "feature_channels", "default": 48}, {"label": "Num Frames", "key": "num_frames", "default": 5}],
+    # TFDAT (Kim2091) — pas de param frame exposé (fixé en dur à 5 en interne),
+    # clip_size UI doit rester à 5 pour cette arch.
+    "tfdat": [{"label": "Embed Dim", "key": "embed_dim", "default": 120}, {"label": "Num Groups", "key": "num_groups", "default": 4}, {"label": "Depth/Groupe", "key": "depth_per_group", "default": 3}, {"label": "Window", "key": "window_size", "default": 8}],
+    # FDAT-RD (stinkybread) — presets small/medium/large ; défauts = presets de l'auteur.
+    # Recette auteur : scale 2 + unshuffle_mod, patch LQ 120 (multiple de 30 / 60).
+    **{_n: [
+        {"label": "Unshuffle", "key": "unshuffle_mod", "default": "true", "type": "combobox",
+         "choices": ["true", "false"], "tip_key": "fdat_rd_unshuffle"},
+        {"label": "Groups", "key": "num_groups", "default": _g, "tip_key": "fdat_rd_groups"},
+        {"label": "Depth/Groupe", "key": "depth_per_group", "default": 2, "tip_key": "fdat_rd_depth"},
+        {"label": "Dict Tokens", "key": "num_dict_tokens", "default": _m, "tip_key": "fdat_rd_dict"},
+        {"label": "Upsampler", "key": "upsampler_type", "default": "transpose+conv", "type": "combobox",
+         "choices": ["transpose+conv", "pixelshuffle", "pixelshuffledirect", "nearest+conv", "dysample"],
+         "tip_key": "upsampler"},
+        {"label": "Checkpoint", "key": "use_checkpoint", "default": "false", "type": "combobox",
+         "choices": ["false", "true"], "tip_key": "fdat_rd_checkpoint"},
+    ] for _n, _g, _m in (("fdat_rd_small", 4, 64), ("fdat_rd_medium", 4, 128), ("fdat_rd_large", 6, 256))},
+    # TFDAT v2 (Kim2091, branche tfdat-v2 — 2x_bndl_animefilm_v3). clip_size = celui du
+    # dataset, injecté par config_handler (la couche de fusion en dépend).
+    "tfdatv2": [
+        {"label": "Embed Dim", "key": "embed_dim", "default": 120, "tip_key": "embed_dim"},
+        {"label": "Num Groups", "key": "num_groups", "default": 4, "tip_key": "n_blocks"},
+        {"label": "Depth/Groupe", "key": "depth_per_group", "default": 3, "tip_key": "tfdatv2_depth"},
+        {"label": "Window", "key": "window_size", "default": 8, "tip_key": "window_size"},
+        {"label": "Flow Base Ch", "key": "flow_base_ch", "default": 32, "tip_key": "tfdatv2_flow"},
+    ],
     
-    # Fallback
-    "default": [{"label": "Num Feat", "key": "num_feat", "default": 64}]
+    # Fallback : AUCUN paramètre injecté pour une arch non listée → le factory du moteur
+    # utilise ses propres défauts. (Avant : num_feat=64, mais beaucoup d'archs — artcnn,
+    # gaterv3_s, realplksr_tiny, rtmosr_ul… — n'acceptent pas `num_feat` → crash
+    # "unexpected keyword argument num_feat".)
+    "default": []
 }
+
+# Taille de patch (lq_size) MINIMUM par arch — les transformers à fenêtre cassent en
+# dessous (RuntimeError reshape/shape). Sources : sets REQUIRE_*_HW du moteur (arch_info.py)
+# + archs confirmées par le harnais de tests (#6) qui plantaient au patch 64.
+# Sert à un AVERTISSEMENT au moment de sauvegarder une config (pas un blocage).
+ARCH_MIN_PATCH = {
+    # confirmées par le harnais : reshape KO au patch 64 → recommander >= 128 (multiple de 16)
+    "atd": 128, "dat": 128, "dat_2": 128, "dat_light": 128, "dat_s": 128,
+    "dat_iln": 128, "dat_iln_2": 128, "dat_iln_light": 128, "dat_iln_s": 128,
+    "drct": 128, "drct_l": 128, "drct_xl": 128, "dwt": 128, "dwt_s": 128,
+    "fdat_xl": 128, "grl_b": 128, "hat_l": 128, "hat_m": 128,
+    "hat_iln_l": 128, "hat_iln_l_aligned": 128, "hat_iln_m": 128, "hat_iln_m_aligned": 128,
+    "hit_sir": 128, "hit_sng": 128,
+    # HEART : fenêtres d'attention de 32 px (+ décalage 16 px, padding reflect) →
+    # patch LQ >= 64 ; le template officiel utilise 96 (multiple de 32 conseillé).
+    "heart": 64,
+    # omnisr: was missing from this table entirely (only drct/drct_l/drct_xl were
+    # present). Isolated forward pass only hard-crashes below patch ~16
+    # (RuntimeError: Output size is too small at patch=8, both traiNNer-redux and
+    # neosr variants), but it's a window-attention arch (window_size=8 default)
+    # like its sibling entries above — 128 kept for consistency with those
+    # ("confirmées par le harnais") rather than the much lower isolated-forward
+    # floor, since real training (GAN discriminator + full loss stack) needs more
+    # headroom than a bare forward pass.
+    "omnisr": 128,
+    # moteur REQUIRE_64_HW
+    "cascadedgaze": 64, "hit_lmlt": 64, "lmlt_base": 64, "lmlt_large": 64, "lmlt_tiny": 64,
+    "metaflexnet": 64, "scunet_aaf6aa": 64, "tscunet": 64, "temporalspan": 64, "tfdat": 64, "tfdatv2": 64,
+    "fdat_rd_small": 60, "fdat_rd_medium": 60, "fdat_rd_large": 60,
+    "swin2sr_s": 64, "swin2sr_m": 64, "swin2sr_l": 64, "sst_large": 64,
+    # moteur REQUIRE_32_HW
+    "emt": 32, "hit_srf": 32, "realcugan": 32, "escrealm": 32, "escrealm_xl": 32,
+    "srformerv2": 32, "temporalspanv2": 32,
+    "sst_large_plus": 96,
+    # DUAL : fenêtres locales 16 + voisinage 32/64 → patch LQ >= 64 (multiple de 16).
+    "dual_light": 64, "dual_xs": 64, "dual_s": 64, "dual_m": 64, "dual_l": 64, "dual_xl": 64,
+}
+
+
+# What the pretrained network inside a loss was trained on (badge in the losses panel).
+# Checked against the loss code: Percep. Anime = ResNet-50 Danbooru (APISR), LineDistiller
+# = anime line-art extractor; VGG-16/19 (Perceptual, FP16, DISTS, Contextual, FDL) and
+# InceptionNeXt (SparK) are ImageNet. AESOP uses a user-supplied autoencoder: no badge.
+# Losses without an entry use no learned network.
+LOSS_NET_BADGE = {
+    "loss_percep_anime": "anime",
+    "loss_linedistiller": "anime",
+    "loss_percep": "photo",
+    "loss_percep_fp16": "photo",
+    "loss_dists": "photo",
+    "loss_contextual": "photo",
+    "loss_fdl": "photo",
+    "loss_spark": "photo",
+}
+
+
+def arch_min_patch(arch: str) -> int:
+    """Taille de patch minimale recommandée pour `arch` (0 = pas de contrainte connue)."""
+    return ARCH_MIN_PATCH.get(str(arch), 0)
+
+
+def fdat_rd_patch_multiple(scale: int, unshuffle_mod: bool) -> int:
+    """Input alignment of FDAT-RD (check_img_size): lcm(10, 30) = 30, times the
+    pixel-unshuffle factor (4 // scale) when unshuffle_mod is on at scale 1-2.
+
+    An lq_size that is not a multiple of it is always padded in training, so the
+    network never learns a real bottom/right border: images whose size is a multiple
+    of it then get a dark edge line in tools that run the raw arch (chaiNNer, ONNX)."""
+    if unshuffle_mod and scale < 3:
+        return 30 * (4 // max(1, scale))
+    return 30
+
+
+# Archs à SCALE FIXE imposé (sinon `assert scale == N` au build → crash).
+# cascadedgaze (cgnet) = restauration 1x uniquement (denoise/deblur, pas d'upscale).
+# realcugan = exige scale 2/3/4 (refuse 1) — géré séparément côté UI.
+ARCH_FIXED_SCALE = {
+    "cascadedgaze": 1,
+    # MoTSR : _TemporalBase lève ValueError si scale != 2 (design centré 2x).
+    "motsr": 2,
+}
+
+# Archs avec un SCALE MINIMUM (refusent en dessous → ValueError au build).
+# realcugan : scale 2/3/4 uniquement (refuse 1).
+ARCH_MIN_SCALE = {
+    "realcugan": 2,
+}
+
+
+def arch_fixed_scale(arch: str) -> int:
+    """Scale imposé par l'arch (0 = libre). cascadedgaze=1 (restauration only)."""
+    return ARCH_FIXED_SCALE.get(str(arch), 0)
+
+
+def arch_min_scale(arch: str) -> int:
+    """Scale minimum imposé par l'arch (0 = pas de contrainte). realcugan=2."""
+    return ARCH_MIN_SCALE.get(str(arch), 0)
+
+
+# Archs avec un ENSEMBLE de scales explicitement supportées (ni min ni max simple).
+# msdan (neosr) : forward() ne branche que sur upscale_factor in {2,3,4} — toute
+# autre valeur (scale=1 restauration, ou scale=8) laisse `x_up` jamais assigné ->
+# UnboundLocalError: cannot access local variable 'x_up' where it is not
+# associated with a value. L'arch ne stocke pas non plus le scale dans les poids
+# (ambigüité connue), donc il n'y a pas de valeur par défaut sûre à déduire.
+ARCH_ALLOWED_SCALES = {
+    "msdan": frozenset({2, 3, 4}),
+    # swin2sr_l uses the "nearest+conv" upsampler, which asserts upscale == 4.
+    "swin2sr_l": frozenset({4}),
+    # WSR / DUAL (Rift73) : 1x, 2x et 4x natifs uniquement (ValueError sinon).
+    "wsr_mobile": frozenset({1, 2, 4}),
+    "wsr_superultracompact": frozenset({1, 2, 4}),
+    "wsr_ultracompact": frozenset({1, 2, 4}),
+    "wsr_compact": frozenset({1, 2, 4}),
+    "wsr": frozenset({1, 2, 4}),
+    "dual_light": frozenset({1, 2, 4}),
+    "dual_xs": frozenset({1, 2, 4}),
+    "dual_s": frozenset({1, 2, 4}),
+    "dual_m": frozenset({1, 2, 4}),
+    "dual_l": frozenset({1, 2, 4}),
+    "dual_xl": frozenset({1, 2, 4}),
+}
+
+
+# Engine-specific limits. NeoSR esrgan: x1/x2 through pixel-unshuffle, then two fixed
+# x2 upconvs = x4 only — x3/x8 crash at the first iteration (size mismatch 256 vs 512).
+NEOSR_ALLOWED_SCALES = {
+    "esrgan": frozenset({1, 2, 4}),
+}
+
+
+def arch_allowed_scales(arch: str, engine: str = "") -> frozenset:
+    """Ensemble exact des scales supportées par `arch` (vide = pas de contrainte connue)."""
+    if "neosr" in str(engine).lower() and str(arch) in NEOSR_ALLOWED_SCALES:
+        return NEOSR_ALLOWED_SCALES[str(arch)]
+    return ARCH_ALLOWED_SCALES.get(str(arch), frozenset())
 
 # Estimations VRAM pour Redux — mis à jour avec bench 2026-05-19 (GTX 1080 Ti, scale=1, SMI normalisé)
 # Facteurs relatifs à compact (2.09 GB SMI @ patch=96 → référence = 1.0)
@@ -2011,8 +2836,15 @@ REDUX_VRAM_FACTORS = {
     "swin2sr_s": 1.0, "swin2sr_m": 3.0, "swin2sr_l": 5.0,
     # HAT family
     "hat_s": 4.0, "hat_m": 5.0, "hat_l": 6.0,
+    # HAT i-LN family (arXiv 2504.06629) — même coût que HAT non-iLN
+    "hat_iln_s": 4.0, "hat_iln_m": 5.0, "hat_iln_l": 6.0, "hat_iln_l_aligned": 6.0, "hat_iln_m_aligned": 5.0,
     # DAT family
     "dat": 4.0, "dat_s": 3.5, "dat_2": 4.5, "dat_light": 2.0,
+    # DAT i-LN family (arXiv 2504.06629) — même coût que DAT non-iLN
+    "dat_iln": 4.0, "dat_iln_s": 3.5, "dat_iln_2": 4.5, "dat_iln_light": 2.0,
+    # DocRes (Restormer-style, attention canal — moins gourmand que l'attention
+    # spatiale/fenêtrée de HAT/DAT à dim équivalente) — estimation non benchmarkée
+    "docres_base": 1.8, "docres_large": 3.2,
     # DRCT family
     "drct": 1.59, "drct_l": 4.0, "drct_xl": 5.0, "drct_s": 2.5,
     # Omni / Attention — VRAM élevée (5.33 GB SMI)
@@ -2036,6 +2868,10 @@ REDUX_VRAM_FACTORS = {
     # ParagonSR2 (Phhofm) — dual-path, selective attention, deployment-first
     "paragonsr2_realtime": 0.30, "paragonsr2_stream": 0.50, "paragonsr2_photo": 0.80,
     "paragonsr2_pro": 1.20, "paragonsr2_ultimate": 2.50, "paragonsr2_ultimate_v2": 2.50,
+    # WSR / DUAL (Rift73) — provisoire, à mesurer
+    "wsr_mobile": 0.40, "wsr_superultracompact": 0.55, "wsr_ultracompact": 0.80,
+    "wsr_compact": 0.95, "wsr": 1.30,
+    "dual_light": 2.20, "dual_xs": 3.00, "dual_s": 3.80, "dual_m": 4.60, "dual_l": 6.00, "dual_xl": 7.50,
     "sebica": 0.75, "sebica_mini": 0.60,
     "ditn_real": 1.98, "ditn": 3.0,
     "eimn_a": 0.94, "eimn_l": 2.0,
@@ -2045,3 +2881,108 @@ REDUX_VRAM_FACTORS = {
     "rgt": 1.6, "srformer": 1.3, "atd": 1.5, "atd_light": 1.0,
     "default": 1.2,
 }
+
+# ── Tooltips added 2026-10-29: fields that had none (audit of the Config tab), with the
+# criterion values each engine really accepts (checked against the engine sources). ──
+_CRIT_FR = ("\n\nCritère (comparaison des features / pixels) :\n"
+            "• l1 : écart absolu, net, garde les bords.\n"
+            "• l2 : écart au carré, plus doux, pénalise fort les grosses erreurs (peut lisser).\n"
+            "• charbonnier : comme l1 mais dérivable en 0, plus stable.\n"
+            "• huber : l2 pour les petits écarts, l1 pour les grands.")
+_CRIT_EN = ("\n\nCriterion (how features / pixels are compared):\n"
+            "• l1: absolute difference, sharp, keeps edges.\n"
+            "• l2: squared difference, softer, punishes big errors hard (can smooth).\n"
+            "• charbonnier: like l1 but smooth at 0, more stable.\n"
+            "• huber: l2 for small differences, l1 for large ones.")
+TOOLTIPS.update({
+    "percep_criterion": "Critère de VGG Perceptual.\n• TraiNNer-Redux : charbonnier (défaut), l1, fd, pd, fd+l1, pd+l1.\n  - fd (feature distribution) : compare la distribution des features (projections aléatoires) plutôt que pixel à pixel → textures plus naturelles, un peu plus lent.\n  - pd : variante sur les features ReLU.\n  - fd+l1 / pd+l1 : distribution + l1, le plus complet.\n• NeoSR : huber (défaut), l1, l2, charbonnier, chc_loss (Clipped Huber + similarité cosinus).\nAvant : l2 / huber étaient proposés en Redux et devenaient l1 sans le dire.",
+    "percep_fp16_criterion": "Critère de Perceptual FP16 (VGG en demi-précision) : charbonnier (défaut), l1, fd, pd, fd+l1, pd+l1 (voir VGG Perceptual).",
+    "percep_anime_criterion": "Critère de Perceptual Anime : l1 (défaut) ou charbonnier." + _CRIT_FR,
+    "linedistiller_criterion": "Critère de LineDistiller (compare les cartes de traits extraites de la sortie et de la GT) : l1 (défaut, traits nets) ou charbonnier." + _CRIT_FR,
+    "ldl_criterion": "Critère de LDL (pondération des artefacts) : TraiNNer-Redux l1, l2, charbonnier, huber ; NeoSR l1, l2, huber, chc." + _CRIT_FR,
+    "color_criterion": "Critère de Color Loss (canaux de chrominance UV après réduction) : l1 (défaut), l2, charbonnier." + _CRIT_FR,
+    "luma_criterion": "Critère de Luma Loss (canal de luminance seul) : l1 (défaut), l2, charbonnier." + _CRIT_FR,
+    "gv_criterion": "Critère de Gradient Variance : charbonnier (défaut), l1, l2." + _CRIT_FR,
+    "aesop_criterion": "Critère d'AESOP (compare les sorties de l'autoencodeur fourni) : charbonnier (défaut) ou l1.",
+    "spark_criterion": "Critère de SparK :\n• fd (défaut) : distance entre distributions de features (InceptionNeXt), textures naturelles.\n• charbonnier : écart point à point des features, plus strict.",
+    "spark_path": "SparK — chemin vers les poids InceptionNeXt pré-entraînés.\nVide = poids téléchargés automatiquement par le moteur.",
+    "gv_patch_size": "Gradient Variance — taille des blocs où la variance du gradient est comparée.\n[+] Plus grand : structures plus larges.\n[-] Plus petit : détails fins.\nDéfaut : 16 (blocs sans recouvrement ; le bord qui ne tient pas dans un bloc est ignoré).",
+    "ldl_ksize": "LDL (NeoSR) — taille de la fenêtre locale qui mesure la variance du résidu.\nDéfaut : 7.",
+    "ff_alpha": "Focal Frequency — exposant du poids spectral.\n[+] Plus haut : insiste sur les fréquences mal reconstruites (souvent les hautes).\nDéfaut : 1.0.",
+    "cosim_lambda": "CosimLoss — multiplicateur de la distance cosinus (1 − similarité des couleurs par pixel).\nDéfaut : 5.",
+    "ctx_distance_type": "Contextual Loss — distance entre features : cosine (défaut), l1, l2.\ncosine : compare l'orientation des features (style/texture), indépendant de leur intensité.",
+    "ctx_band_width": "Contextual Loss — largeur de bande h (douceur de l'appariement des features).\n[+] Plus grand : appariement plus tolérant.\n[-] Plus petit : plus strict.\nDéfaut : 0.5 (doit être > 0).",
+    "hsluv_hue_weight": "HSLuv Loss — poids de l'écart de teinte. Défaut : 0.33.",
+    "hsluv_sat_weight": "HSLuv Loss — poids de l'écart de saturation. Défaut : 0.33.",
+    "hsluv_lum_weight": "HSLuv Loss — poids de l'écart de luminosité. Défaut : 0.33.",
+    "bcedice_weight_bce": "BCE + Dice — poids de la partie BCE (erreur par pixel). Défaut : 1.0.",
+    "bcedice_weight_dice": "BCE + Dice — poids de la partie Dice (recouvrement global, utile pour les masques / traits fins). Défaut : 1.0.",
+    "consistency_blur": "Consistency Loss (NeoSR) — flou gaussien (21 px, sigma 3) avant la comparaison : ne regarde que les couleurs moyennes, pas le détail.",
+    "consistency_cosim": "Consistency Loss (NeoSR) — ajoute une similarité cosinus sur la chrominance Oklab.",
+    "consistency_saturation": "Consistency Loss (NeoSR) — poids de l'écart de saturation (chroma Oklab). Défaut : 1.0.",
+    "consistency_brightness": "Consistency Loss (NeoSR) — poids de l'écart de luminosité (CIE L*). Défaut : 1.0.",
+    "mssim_window_size": "MS-SSIM (NeoSR) — taille de la fenêtre gaussienne. Défaut : 11.",
+    "mssim_sigma": "MS-SSIM (NeoSR) — écart-type de la fenêtre gaussienne. Défaut : 1.5.",
+    "mssim_k1": "MS-SSIM (NeoSR) — constante de stabilité de la luminance. Défaut : 0.01.",
+    "mssim_k2": "MS-SSIM (NeoSR) — constante de stabilité du contraste. Défaut : 0.03.",
+    "loss_edge": "Edge Loss — TraiNNer-Redux uniquement : SobelEdgeLoss (gradients Sobel X+Y sur la luma, MSE sur leur amplitude).\n[+] Contours plus marqués.\n[-] La MSE écrase les traits pâles ; LineDistiller est souvent meilleur pour l'anime.\nNeoSR n'a pas de loss Edge (l'ancienne option n'était pas lue par le moteur).",
+    "dyn_gan_weight": "Poids de la loss GAN (adversaire) dans la perte totale du générateur.\n[+] Plus haut : plus de texture et de netteté inventées, risque d'artefacts.\n[-] Plus bas : plus fidèle, plus lisse.\nTypique : 0.05-0.15 (lsgan). Surveiller d_fake dans le log.",
+    "gan_weight_d2": "Poids de la loss GAN du 2e discriminateur (s'ajoute à celle du 1er).\nGarder plus bas que le 1er (ex. moitié).",
+    "net_d2_type": "Type du 2e discriminateur. Il juge les mêmes images que le 1er : choisir un type complémentaire (ex. UNet + PatchGAN), pas le même.",
+    "arch": "Architecture du générateur (le réseau entraîné).\nLes paramètres propres à l'archi apparaissent en dessous ; l'estimation VRAM / vitesse suit l'archi.",
+    "channels_last": "Format mémoire channels_last.\n[+] Plus rapide sur les GPU à Tensor Cores (RTX) avec AMP.\n[-] Sans effet ou plus lent sur Pascal (GTX 10xx). Désactivé d'office pour les archis vidéo.",
+    "num_worker_per_gpu": "Nombre de processus qui chargent les images en parallèle.\n[+] Plus : GPU mieux alimenté (surtout en OTF).\n[-] Plus de RAM et de CPU. Typique : 4-8.",
+    "print_freq": "Fréquence des lignes de log (itérations).\nDéfaut : 100.",
+    "tile_val": "Validation — taille des tuiles (en pixels LQ) pour traiter les grandes images sans saturer la VRAM.\n0 = image entière.",
+    "tile_pad": "Validation — marge recouverte entre tuiles (pixels), pour éviter les joints visibles.",
+    "aug_debug_limit": "Nombre maximal de batchs d'augmentation (MoA) enregistrés en images quand le debug est actif.",
+    "high_order_degradations_debug_limit": "Nombre maximal d'images LQ OTF enregistrées quand le debug OTF est actif (0 = sans limite).",
+    "n_block": "Nombre de blocs de traitement.",
+    "filters": "Nombre de canaux internes (filtres).\n[+] Plus : modèle plus capable, plus lent.\n[-] Moins : modèle léger, rapide.",
+})
+TOOLTIPS_EN.update({
+    "percep_criterion": "VGG Perceptual criterion.\n• TraiNNer-Redux: charbonnier (default), l1, fd, pd, fd+l1, pd+l1.\n  - fd (feature distribution): compares the distribution of the features (random projections) instead of pixel by pixel → more natural textures, a bit slower.\n  - pd: variant on the ReLU features.\n  - fd+l1 / pd+l1: distribution + l1, the most complete.\n• NeoSR: huber (default), l1, l2, charbonnier, chc_loss (Clipped Huber + cosine similarity).\nBefore: l2 / huber were offered on Redux and silently became l1.",
+    "percep_fp16_criterion": "Perceptual FP16 (half-precision VGG) criterion: charbonnier (default), l1, fd, pd, fd+l1, pd+l1 (see VGG Perceptual).",
+    "percep_anime_criterion": "Perceptual Anime criterion: l1 (default) or charbonnier." + _CRIT_EN,
+    "linedistiller_criterion": "LineDistiller criterion (compares the line maps extracted from the output and the GT): l1 (default, sharp lines) or charbonnier." + _CRIT_EN,
+    "ldl_criterion": "LDL (artifact weighting) criterion: TraiNNer-Redux l1, l2, charbonnier, huber; NeoSR l1, l2, huber, chc." + _CRIT_EN,
+    "color_criterion": "Color Loss criterion (UV chroma channels after downscaling): l1 (default), l2, charbonnier." + _CRIT_EN,
+    "luma_criterion": "Luma Loss criterion (luminance channel only): l1 (default), l2, charbonnier." + _CRIT_EN,
+    "gv_criterion": "Gradient Variance criterion: charbonnier (default), l1, l2." + _CRIT_EN,
+    "aesop_criterion": "AESOP criterion (compares the outputs of the given autoencoder): charbonnier (default) or l1.",
+    "spark_criterion": "SparK criterion:\n• fd (default): distance between feature distributions (InceptionNeXt), natural textures.\n• charbonnier: point-to-point feature difference, stricter.",
+    "spark_path": "SparK — path to the pretrained InceptionNeXt weights.\nEmpty = weights downloaded by the engine.",
+    "gv_patch_size": "Gradient Variance — size of the blocks where the gradient variance is compared.\n[+] Larger: broader structures.\n[-] Smaller: fine details.\nDefault: 16 (non-overlapping blocks; a border that does not fill a block is ignored).",
+    "ldl_ksize": "LDL (NeoSR) — size of the local window that measures the residual variance.\nDefault: 7.",
+    "ff_alpha": "Focal Frequency — exponent of the spectral weight.\n[+] Higher: focuses on the badly rebuilt frequencies (often the high ones).\nDefault: 1.0.",
+    "cosim_lambda": "CosimLoss — multiplier of the cosine distance (1 − per-pixel colour similarity).\nDefault: 5.",
+    "ctx_distance_type": "Contextual Loss — feature distance: cosine (default), l1, l2.\ncosine: compares the orientation of the features (style/texture), whatever their intensity.",
+    "ctx_band_width": "Contextual Loss — band width h (softness of the feature matching).\n[+] Larger: more tolerant matching.\n[-] Smaller: stricter.\nDefault: 0.5 (must be > 0).",
+    "hsluv_hue_weight": "HSLuv Loss — weight of the hue difference. Default: 0.33.",
+    "hsluv_sat_weight": "HSLuv Loss — weight of the saturation difference. Default: 0.33.",
+    "hsluv_lum_weight": "HSLuv Loss — weight of the lightness difference. Default: 0.33.",
+    "bcedice_weight_bce": "BCE + Dice — weight of the BCE part (per-pixel error). Default: 1.0.",
+    "bcedice_weight_dice": "BCE + Dice — weight of the Dice part (overall overlap, useful for masks / thin lines). Default: 1.0.",
+    "consistency_blur": "Consistency Loss (NeoSR) — Gaussian blur (21 px, sigma 3) before comparing: only the average colours count, not the detail.",
+    "consistency_cosim": "Consistency Loss (NeoSR) — adds a cosine similarity on the Oklab chroma.",
+    "consistency_saturation": "Consistency Loss (NeoSR) — weight of the saturation difference (Oklab chroma). Default: 1.0.",
+    "consistency_brightness": "Consistency Loss (NeoSR) — weight of the lightness difference (CIE L*). Default: 1.0.",
+    "mssim_window_size": "MS-SSIM (NeoSR) — size of the Gaussian window. Default: 11.",
+    "mssim_sigma": "MS-SSIM (NeoSR) — standard deviation of the Gaussian window. Default: 1.5.",
+    "mssim_k1": "MS-SSIM (NeoSR) — luminance stability constant. Default: 0.01.",
+    "mssim_k2": "MS-SSIM (NeoSR) — contrast stability constant. Default: 0.03.",
+    "loss_edge": "Edge Loss — TraiNNer-Redux only: SobelEdgeLoss (Sobel X+Y gradients on luma, MSE on their magnitude).\n[+] Stronger contours.\n[-] The MSE crushes faint lines; LineDistiller is often better for anime.\nNeoSR has no Edge loss (the old option was never read by the engine).",
+    "dyn_gan_weight": "Weight of the GAN (adversarial) loss in the generator's total loss.\n[+] Higher: more invented texture and sharpness, risk of artifacts.\n[-] Lower: more faithful, smoother.\nTypical: 0.05-0.15 (lsgan). Watch d_fake in the log.",
+    "gan_weight_d2": "Weight of the 2nd discriminator's GAN loss (added to the 1st one).\nKeep it below the 1st (e.g. half).",
+    "net_d2_type": "Type of the 2nd discriminator. It judges the same images as the 1st: pick a complementary type (e.g. UNet + PatchGAN), not the same.",
+    "arch": "Generator architecture (the network being trained).\nIts own parameters appear below; the VRAM / speed estimate follows the architecture.",
+    "channels_last": "channels_last memory format.\n[+] Faster on Tensor Core GPUs (RTX) with AMP.\n[-] No gain or slower on Pascal (GTX 10xx). Always off for video architectures.",
+    "num_worker_per_gpu": "Number of processes loading images in parallel.\n[+] More: GPU better fed (especially with OTF).\n[-] More RAM and CPU. Typical: 4-8.",
+    "print_freq": "Log line frequency (iterations).\nDefault: 100.",
+    "tile_val": "Validation — tile size (LQ pixels) to process large images without filling the VRAM.\n0 = whole image.",
+    "tile_pad": "Validation — overlap between tiles (pixels), to avoid visible seams.",
+    "aug_debug_limit": "Maximum number of augmentation (MoA) batches saved as images when debug is on.",
+    "high_order_degradations_debug_limit": "Maximum number of OTF LQ images saved when OTF debug is on (0 = no limit).",
+    "n_block": "Number of processing blocks.",
+    "filters": "Number of internal channels (filters).\n[+] More: more capable model, slower.\n[-] Fewer: light, fast model.",
+})

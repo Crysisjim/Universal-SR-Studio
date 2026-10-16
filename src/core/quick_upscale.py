@@ -6,6 +6,7 @@ de l'architecture depuis les poids du modèle.
 import os
 import sys
 import math
+import re
 import time
 import json
 import threading
@@ -26,11 +27,107 @@ try:
 except ImportError:
     IMAGING_AVAILABLE = False
 
+try:
+    import pyvips
+    PYVIPS_AVAILABLE = True
+except ImportError:
+    PYVIPS_AVAILABLE = False
+
 
 # ─── Architecture detection from state_dict ─────────────────────
 
 # Key signatures to identify architecture from weight keys
 ARCH_SIGNATURES = {
+    # ── WSR / DUAL (Rift73) — built by arch_infer.py (preset read from the shapes) ──
+    "wsr": ["stem.sk.weight", "context_stem.sk.weight", "gates.0.project.weight", "reconstruct.weight"],
+    # SPANF3 (traiNNer-redux): SPAN blocks + att_conv + Conv3XC to_pixel (no upsampler.0)
+    "spanf3": ["conv_cat.weight", "to_pixel.sk.weight", "block_1.att_conv.weight"],
+    "dual": ["stem.direct.expand.weight", "stem.sequential.reduce.weight"],
+    # ── HEART / NERVE (traiNNer-redux master, Phhofm) — first: HEART shares
+    # "conv_first"/"layers.N.residual_group.blocks"/"conv_after_body" with the
+    # SwinIR/HAT/HMA family below, ".attn.to_hidden" (RIB bias) is unique to it.
+    # Model construction is delegated to arch_infer.py (shapes → kwargs).
+    "heart": ["conv_first.weight", ".attn.to_hidden", "residual_group.blocks"],
+    # NeoSR-trained KRGN / MAN / MoSRv2 (no MetaUpsample, unlike traiNNer-redux's) —
+    # rebuilt by neosr_general_runner.py::build_extra (strict load, scale tried).
+    "krgn": ["head_conv.weight", "features_fusion_module", "sub_mean.weight"],
+    "man_neosr": ["head.weight", ".LKA.", "tail.0.weight"],  # + no sub_mean (see excludes)
+    # DAT-iLN (traiNNer-redux) — built by arch_infer.py (preset matched on the shapes)
+    "dat_iln": ["before_RG.norm.weight", "conv_first.weight", "layers.0.blocks.0.attn.attns."],
+    # FDAT-RD (stinkybread) — FDAT + token dictionary; must win over FDAT (its checkpoints
+    # also match FDAT's keys). Built by arch_infer.py.
+    "fdat_rd": [".attn.dictionary", ".attn.rel_pos_bias", "upsampler.MetaUpsample"],
+    # MoTSR (xyether) — 5-frame + recurrent video model, sequence pipeline only.
+    "motsr": ["temporal.compress.weight", "feedback_older.0.weight"],
+    "nerve": ["stem.weight", "blocks.0.conv1.weight", "upsampler.0.weight"],
+    # WireSR (CF2lter, "1x_Wired" anti-aliasing) — built by arch_infer.py.
+    "wiresr": ["blocks.0.mix.stripe_h.weight", "blocks.0.mix.diag_m.weight", "upsampler.MetaUpsample"],
+    # ── v2.7.0 batch : 8 archs NeoSR supplémentaires (Quick Upscale, subprocess
+    # général neosr_general_runner.py) ──────────────────────────────────────────
+    # Placées EN TOUT PREMIER dans le dict : "hit_srf" partage ".correlation.qv.
+    # linear." + "conv_first.weight" avec la signature "hit_sir" plus bas (les deux
+    # familles HiT-SR ont un module "correlation" nommé pareil) — doit gagner la
+    # course. "hma" partage "layers.0.residual_group.blocks" + "conv_after_body"
+    # avec "swinir" plus bas (HMA dérive de SwinIR) — même raison.
+    # PlainUSR — head/tail conv + Block(MBConv/PConv/LocalAttention). Ne couvre que
+    # les checkpoints "training-time" (non reparamétrés via switch_to_deploy() —
+    # c'est le cas normal des checkpoints net_g/params_ema utilisés par cette app).
+    "plainusr": ["head.weight", "block1.body.0.expand_conv.weight", "tail.0.weight"],
+    # ASID — IDSG_A (block0) + IDSG (block1/block2/...) avec ESA + pixelshuffle_block.
+    "asid": ["block0.res_end.weight", "block1.esa.conv_f.weight"],
+    # GRFormer — GRSA (Group-wise Residual self-attention), ESRPB_MLP + q1/k1/v1
+    # (Group Residual Linear) sont uniques à cette arch.
+    "grformer": ["layers.0.blocks.0.attn.ESRPB_MLP.0.weight",
+                 "layers.0.blocks.0.attn.q1.weight"],
+    # DCT (Dual Compression Transformer) — swsa (Adaptive_Window_Attention) + lla
+    # (Linear_Attention) dans les blocs pairs.
+    "dct": ["layers.0.blocks.0.swsa.attns.0.pos.pos_proj.weight",
+            "layers.0.blocks.0.lla.qkv.weight"],
+    # FlexNet — déjà signalé plus bas (in_to_feat.weight/short_cut.conv11.weight)
+    # pour le routing traiNNer — structure de poids identique côté neosr (vérifié).
+    # Pas de nouvelle entrée : "flexnet" est ajouté à _NEOSR_GENERAL_ARCHS, ce qui
+    # fait gagner ce runner sur _TRAINNER_SUBPROCESS_ARCHS pour les .safetensors.
+    # HiT-SRF (famille HiT-SR) — RHTB/residual_group (comme swinir/hat/drct) avec
+    # un module "correlation" (SCC) partageant ".correlation.qv.linear." avec
+    # hit_sir/hit_sng plus bas → doit être détecté AVANT ces deux entrées.
+    "hit_srf": ["layers.0.residual_group.blocks.0.correlation.pos.pos3.2.weight",
+                "layers.0.residual_group.blocks.0.mlp.dwconv.depthwise_conv.0.weight"],
+    # HMA (Hybrid Multi-axis Aggregation) — RHTB/residual_group avec FusedConv (SE)
+    # alterné avec FAB (window attention classique) + GAB (grid attention globale).
+    # relative_position_index_SA (buffer top-level) est unique à HMA.
+    "hma": ["relative_position_index_SA",
+            "layers.0.residual_group.blocks.0.fused_conv.weight"],
+
+    # ── v2.6.1 batch : 9 archs natives traiNNer-redux supplémentaires ──────────
+    # Placées EN PREMIER dans le dict : plusieurs d'entre elles partagent des
+    # substrings génériques ("layers.0.residual_group.blocks" + "conv_after_body",
+    # "plk_filter") avec des signatures déjà présentes plus bas (swinir/hat/esc) —
+    # detect_arch_from_state() retourne le PREMIER match trouvé dans l'ordre
+    # d'insertion du dict, donc ces entrées doivent gagner la course.
+    # HiT-SNG AVANT HiT-SIR : les deux partagent ".correlation.qv.linear.weight"
+    # (module DFE commun), seul SNG a la fenêtre NGram — ordre = désambiguïsation.
+    # NB: les signatures ci-dessous ne doivent PAS finir par ".weight"/".bias" — sinon
+    # detect_arch_from_state() bascule en mode "clé EXACTE" (voir sa docstring) et un
+    # motif partiel (préfixé par un index de layer/bloc variable) ne matchera jamais.
+    "hit_sng": [".correlation.qv.linear.",
+                ".ngram_window_partition.ngram_context.unigram_embed."],
+    "hit_sir": [".correlation.qv.linear.", "conv_first.weight"],
+    "gaterv3": ["in_to_dim.weight", "sisr_cat_conv.weight"],
+    "cascadedgaze": ["intro.weight", "ending.weight", ".GCE.depthwise_separable_convs."],
+    # ESCRealM (traiNNer) vs "esc" (neosr, plus bas) : ESCRealM utilise UniUpsampleV3
+    # (to_img.MetaUpsample), le ESC neosr n'a jamais ce buffer sur son to_img.
+    "escrealm": ["plk_filter", "to_img.MetaUpsample"],
+    "emt": ["sub_mean.weight", "head.weight", ".sa_list."],
+    "flexnet": ["in_to_feat.weight", "short_cut.conv11.weight"],
+    # SRFormerv2 (traiNNer, mixe SwinTransformerBlock "qkv" + PSA_Block "kv"/"q")
+    # AVANT SRFormer (spandrel_extra_arches, tous les blocs sont PSA_Block "kv"/"q"
+    # sans jamais de "qkv") — les deux signatures sont mutuellement exclusives par
+    # construction (bloc 0 diffère), mais on garde l'ordre pour rester explicite.
+    "srformerv2": ["layers.0.residual_group.blocks.0.attn.qkv.weight",
+                   "layers.0.residual_group.blocks.1.attn.kv.weight"],
+    "srformer": ["layers.0.residual_group.blocks.0.attn.kv.weight",
+                 "layers.0.residual_group.blocks.0.attn.q.weight"],
+
     "spanplus": ["feats.0.eval_conv", "upsampler.offset"],  # SPANPlus (traiNNer-redux, DySample upsampler)
     "span": ["feats.0.block", "feats.0.sk"],
     "compact": ["body.0.weight", "body.2.weight"],
@@ -67,10 +164,25 @@ ARCH_SIGNATURES = {
     "figsr": ["gfisr_body_half", "cat_to_dim", "fu"],
     # ParagonSR v1 (Phhofm) — Magic Kernel Sharp upsampler (very distinctive) + conv_fuse
     "paragonsr": ["magic_upsampler", "conv_fuse"],
-    # ParagonSR2 (Phhofm) — dual-path: detail_gain scalar + base path (base.conv_in or base.body)
-    "paragonsr2": ["detail_gain", "base.conv_in"],
+    # ParagonSR2 (Phhofm) — dual-path: detail_gain scalar + conv_in/body at root (no "base." prefix — that's the upsampler submodule)
+    "paragonsr2": ["detail_gain", "conv_in.weight"],
+    # MambaIR (ECCV2024) — VSSBlock's SS2D signature
+    "mambair": [".self_attention.x_proj_weight"],
+    # MambaIRv2 (CVPR2025) — ASSM/AttentiveLayer signature
+    "mambairv2": [".embeddingA.weight", ".assm.selectiveScan.x_proj_weight"],
     # AetherNet (Phhofm, NeoSR) — conv_after_body + stages + conv_before_upsample
     "aethernet": ["conv_after_body", "stages", "conv_before_upsample"],
+    # HASN (NeoSR "📦 Autres") — 6 fixed conv_1/block_1../block_6/conv_2/upsampler
+    "hasn": ["block_1.dwconv.conv.weight", "block_6.dwconv.conv.weight", "esa.conv_f"],
+    # MSDAN (NeoSR "📦 Autres") — BSConv_first/DFEB/upsampler.BSConv_2/BSConv_3.
+    # Weights are IDENTICAL regardless of trained scale (upscale_factor is a
+    # plain int, never a saved buffer) — scale_hint (UI dropdown) is REQUIRED.
+    "msdan": ["BSConv_first.pw.weight", "upsampler.BSConv_2.pw.weight", "upsampler.BSConv_3.pw.weight"],
+    # CFSR (NeoSR "📦 Autres") — LargeKernelConv reparam (lkb_reparam) + ConvMod attn.
+    # First two sigs are EXACT top-level keys (layers.0.blocks.0....) — must match
+    # detect_arch_from_state()'s "ends in .weight/.bias → exact key" rule.
+    "cfsr": ["layers.0.blocks.0.attn.a.2.lkb_reparam.weight", "layers.0.blocks.0.mlp.fc2.weight",
+             "conv_after_body.weight"],
 
     # ── v2.5.5 : nouveaux moteurs ─────────────────────────────────────────────
     # OSEDiff : One-Step Efficient Diffusion SR (diffusion UNet + VAE, SD-based)
@@ -83,11 +195,80 @@ ARCH_SIGNATURES = {
     "tvt": ["temporal_attn.0.norm1.weight", "frame_token.weight"],
     # DAM-VSR : Dual Attention Mechanism Video SR — temporal + spatial dual attn
     "dam_vsr": ["dual_attn.temporal_attn.to_q.weight", "flow_warp.weight"],
+
+    # ── v2.5.8 : archs traiNNer-redux custom (Quick Upscale, batch 1) ──────────
+    # NOTE: "lmlt"/"eimn" ci-dessus visent déjà neosr_general_runner (structure de
+    # poids identique entre traiNNer-redux et neosr pour ces deux archs) — pas de
+    # doublon ici, le bloc manuel traiNNer de universal_runner.py/persistent_
+    # upscale_worker.py pour lmlt/eimn n'est donc jamais atteint par ce routing
+    # (inoffensif, juste redondant).
+    "artcnn": ["depth_to_space.upscale.0.weight", "res_block.0.conv.0.0.weight"],
+    "lkfmixer": ["layers.layers.0.FDB.c1_d.weight", "upsampler.upsampleOneStep.0.weight"],
+    "rtmosr": [".conv.0.poll.1.alpha", "to_img.0.alpha"],
+    "mosrv2": ["to_img.MetaUpsample", "gblocks."],
+    "mosrv2_neosr": ["gblocks.", "to_img.0.weight"],   # NeoSR's (checked after the MetaUpsample one)
+    "sebica": ["body.0.attn.channel_attention_forward.1.weight"],
+    "man": ["body.0.body_t.att.0.weight", "add_mean.weight"],
+    "elan": [".modules_lfe.lfe_0.", ".modules_gmsa.gmsa_0."],
+
+    # ── v2.6.0 : archs vidéo/temporelles traiNNer-redux (Quick Upscale séquence) ──
+    # traiNNer/archs/arch_info.py::TEMPORAL_ARCHS = {tscunet, temporalspan,
+    # temporalspanv2, tfdat}. Toutes prennent (B,T,C,H,W) et sortent (B,C,H,W)
+    # (frame centrale du clip). Contrairement à TVT/DAM-VSR (_VIDEO_ARCHS,
+    # inférence frame unique via fallback spandrel), ces 4 archs ont un vrai
+    # chemin d'inférence multi-frames dédié — voir _SEQUENCE_ARCHS ci-dessous.
+    # TSCUNet (classe enregistrée directement, style SCUNet/Swin transformer) —
+    # "m_head.0.weight" (nn.Sequential, distinct de temporalspanv2's "m_head.weight"
+    # nu) + le buffer d'attention SCUNet-transformer très distinctif.
+    # m_layers.0.m_head.0.weight: per-frame heads, absent from the image SCUNet
+    # (scunet_aaf6aa), which the bare m_head.0.weight signature took for TSCUNet.
+    "tscunet": ["m_head.0.weight", "m_layers.0.m_head.0.weight",
+                "trans_block.msa.relative_position_params"],
+    # TemporalSPAN — fusion précoce : conv dédiée par frame (center + history)
+    "temporalspan": ["center_conv.eval_conv.weight", "history_convs.0.eval_conv.weight"],
+    # TemporalSPANv2 — m_head est un nn.Conv2d nu (PAS de ".0.", à la différence
+    # de tscunet) + blocs SPAB internes préfixés "m_layers.N.blocks.M.c1_r...".
+    "temporalspanv2": ["m_head.weight", "m_layers.0.blocks.0.c1_r.eval_conv.weight"],
+    # TFDAT — flow_net (optical flow léger) + temporal_fuse, uniques à cette arch.
+    "tfdat": ["flow_net.flow_pred.weight", "temporal_fuse.0.weight", "conv_first.weight"],
+    # TFDAT v2 (Kim2091, branch tfdat-v2 — e.g. 2x_bndl_animefilm_v3): pyramid flow
+    # decoder + confidence-gated fusion. Incompatible with v1 checkpoints.
+    "tfdatv2": ["flow_net.dec1.0.weight", "temporal_fusion.fuse.0.weight", "align_refine.body.0.weight"],
+
+    # ── DocRes (Restormer-style document restoration, traiNNer native) ────────
+    # 4-stage encoder/decoder U-Net (encoder_level1..3/latent + decoder_level1..3
+    # + refinement), scale FIXE 1x (deskew/nettoyage scan, jamais d'upscale).
+    # docres_base/docres_large share the same class — dim/blocks/heads all
+    # derived from real tensor shapes, no separate signature needed per variant.
+    "docres": ["patch_embed.proj.weight", "encoder_level1.0.attn.temperature",
+               "refinement.0.attn.temperature"],
 }
 
 # Modèles à renvoyer avec message spécialisé (pas d'inférence image directe)
 _DIFFUSION_ARCHS = {"osediff", "vosr"}          # besoins runtime diffusion
-_VIDEO_ARCHS     = {"tvt", "dam_vsr"}            # besoin entrée multi-frames
+_VIDEO_ARCHS     = {"tvt", "dam_vsr"}            # besoin entrée multi-frames (pas de chemin dédié — fallback frame unique)
+# Archs vidéo/temporelles AVEC un vrai chemin d'inférence multi-frames (fenêtre
+# glissante, dossier/batch uniquement — voir _build_sequence_model /
+# _sequence_video_upscale_folder plus bas).
+_SEQUENCE_ARCHS  = {"tscunet", "temporalspan", "temporalspanv2", "tfdat", "tfdatv2", "motsr"}
+
+
+def _engine_base() -> str:
+    """Racine des moteurs (engine_paths.base_engine_path : ~/USRS, ou la racine de dev isolée)."""
+    try:
+        from src.core.engine_paths import base_engine_path as _ebp
+    except ImportError:  # venv runner: engine_paths.py ships loose next to this file
+        from engine_paths import base_engine_path as _ebp
+    return _ebp()
+
+
+# Keys that rule an arch out even when its signature matches (a more specific arch
+# shares the same prefix and is checked later in ARCH_SIGNATURES).
+_ARCH_SIGNATURE_EXCLUDES = {
+    "swinir": (".self_attention.x_proj_weight",),  # MambaIR (same residual_group.blocks + conv_after_body)
+    "dat": ("before_RG.norm.weight",),       # DAT-iLN (LayerNorm instead of conv before RG)
+    "man_neosr": ("sub_mean.weight",),        # traiNNer-redux MAN has MeanShift layers
+}
 
 
 def detect_arch_from_state(state_dict: dict) -> Optional[str]:
@@ -101,6 +282,8 @@ def detect_arch_from_state(state_dict: dict) -> Optional[str]:
     keys     = set(state_dict.keys())
     keys_str = " ".join(keys)
     for arch, signatures in ARCH_SIGNATURES.items():
+        if any(x in keys_str for x in _ARCH_SIGNATURE_EXCLUDES.get(arch, ())):
+            continue
         match = True
         for sig in signatures:
             if sig.endswith(".weight") or sig.endswith(".bias"):
@@ -129,8 +312,42 @@ def extract_weights(checkpoint: dict) -> dict:
     return checkpoint
 
 
-def detect_scale_from_state(state_dict: dict) -> int:
-    """Try to infer scale factor from upsampling layers."""
+def detect_scale_from_state(state_dict: dict, default: int = 4) -> int:
+    """Try to infer scale factor from upsampling layers. Returns `default` when no rule
+    matches (default=0 lets the caller know the scale is unknown)."""
+    # Archs rebuilt by arch_infer (HEART/NERVE/WireSR/MoTSR/TFDAT v1-v2) know their real
+    # scale; the generic shuffle heuristic below reads TFDAT's internal x4 upsampler.
+    try:
+        try:
+            from src.core import arch_infer as _ai
+        except ImportError:
+            import arch_infer as _ai
+        _a = _ai.detect(state_dict)
+        if _a:
+            _kw = _ai.describe_state(_a, state_dict)
+            if _kw and _kw.get("scale"):
+                return int(_kw["scale"])
+    except Exception:
+        pass
+    # DocRes (document restoration) is always 1x; its Restormer-style convs read 8x
+    if "refinement.0.attn.temperature" in state_dict:
+        return 1
+    # MoSRv2 / RTMoSR unshuffle_mod: a 2x model unshuffles the input by 2 and then runs
+    # an internal x4 upsampler (MetaUpsample / to_img read 4). The unshuffled input conv
+    # (3 * u^2 channels) gives the real scale: 4 // u.
+    _in_w = None
+    if "gblocks.1.weight" in state_dict and "gblocks.0.weight" not in state_dict:
+        _in_w = state_dict["gblocks.1.weight"]          # MoSRv2 (gblocks.0 = PixelUnshuffle)
+    elif "to_feat.1.conv2.weight" in state_dict:
+        _in_w = state_dict["to_feat.1.conv2.weight"]    # RTMoSR (to_feat.0 = PixelUnshuffle)
+    if _in_w is not None and len(_in_w.shape) == 4:
+        _u = int(round(math.sqrt(int(_in_w.shape[1]) / 3)))
+        if _u in (2, 4) and 3 * _u * _u == int(_in_w.shape[1]):
+            return 4 // _u
+    # pixel_shuffle convs: out_channels = in_channels * factor^2. A 4x upsampler is often
+    # two x2 stages (upsample.0 / upsample.2, HAT/SwinIR/DAT…): the stages multiply.
+    # (The first stage alone used to be returned, reading every such 4x model as 2x.)
+    _stages = []
     for key in state_dict:
         if "upsample" in key.lower() or "upconv" in key.lower() or "pixel_shuffle" in key.lower():
             tensor = state_dict[key]
@@ -138,11 +355,15 @@ def detect_scale_from_state(state_dict: dict) -> int:
                 out_ch = tensor.shape[0]
                 in_ch = tensor.shape[1]
                 if out_ch > in_ch:
-                    ratio = out_ch / in_ch
-                    # pixel_shuffle: out_channels = in_channels * scale^2
-                    scale = int(math.sqrt(ratio))
-                    if scale in (2, 3, 4, 8):
-                        return scale
+                    f = int(round(math.sqrt(out_ch / in_ch)))
+                    if f in (2, 3, 4, 8) and f * f * in_ch == out_ch:
+                        _stages.append(f)
+    if _stages:
+        scale = 1
+        for f in _stages:
+            scale *= f
+        if scale in (2, 3, 4, 8):
+            return scale
     # DySample upsampler (SPANPlus): offset channels = 4 * 2 * scale^2 = 8 * scale^2
     # init_pos / offset.weight both use the same channel count
     if "upsampler.offset.weight" in state_dict:
@@ -183,8 +404,10 @@ def detect_scale_from_state(state_dict: dict) -> int:
         try:
             scales = [int(v.item()) for v in meta]
             if scales:
-                # Return max scale (most common use case)
-                s = max(scales)
+                # IGConv decodes any scale of the list; traiNNer-redux validates at its
+                # eval_base_scale default (2). Max (4) was returned before: 2x-trained
+                # SpanPP models came out 4x. The UI scale still overrides this.
+                s = 2 if 2 in scales else min(scales)
                 if s in (1, 2, 3, 4, 8):
                     return s
         except Exception:
@@ -200,9 +423,111 @@ def detect_scale_from_state(state_dict: dict) -> int:
         if probe_key in state_dict:
             ch = state_dict[probe_key].shape[0]
             s = int(round(math.sqrt(ch / 3)))
-            if s >= 1 and s * s * 3 == ch:
+            # s == 1 (3 channels) is also the plain last conv after an upsampler (RCAN's
+            # tail.1): not proof of a 1x model.
+            if s >= 2 and s * s * 3 == ch:
                 return s
-    return 4  # Default
+    # Generic: the last conv of a pixel-shuffle upsampler outputs 3 * scale^2 channels
+    # (12 in 2x, 48 in 4x). Without it, every 2x model whose last layer has another name
+    # (depth_to_space, dim_to_in, to_img.0.conv1, tail.2, up.0, conv_near…) or fewer
+    # outputs than inputs (12 < 48) was read as 4x and failed to load.
+    # Only output-like layer names (safetensors keys are sorted alphabetically, so "the
+    # last key" is not the output layer: a 48-channel body conv read as 4x), and only
+    # when every such layer agrees.
+    _out_name = re.compile(r"(^|\.)(up\w*|tail|conv_last|last\w*|to_img|depth_to_space|"
+                           r"dim_to_in|conv_near|conv_out|out)(\.|$)")
+    found = set()
+    for k, t in state_dict.items():
+        # out == in channels = a feature layer (CRAFT's 48->48 "last_fc" read a 1x model as 4x)
+        if (k.endswith("weight") and hasattr(t, "shape") and len(t.shape) == 4
+                and t.shape[1] != 3 and int(t.shape[0]) != int(t.shape[1]) and _out_name.search(k)):
+            s = {12: 2, 27: 3, 48: 4, 192: 8}.get(int(t.shape[0]))
+            if s:
+                found.add(s)
+    if len(found) == 1:
+        return found.pop()
+    # SRVGGNetCompact (compact / ultracompact / superultracompact): body.N, the last
+    # conv outputs 3 * scale^2.
+    _body = [(int(m.group(1)), t) for k, t in state_dict.items()
+             if (m := re.match(r"^body\.(\d+)\.weight$", k)) and hasattr(t, "shape") and len(t.shape) == 4]
+    if _body and "body.0.weight" in state_dict and not any(k.startswith("conv_first") for k in state_dict):
+        s = {3: 1, 12: 2, 27: 3, 48: 4, 192: 8}.get(int(max(_body, key=lambda x: x[0])[1].shape[0]))
+        if s:
+            return s
+    return default
+
+
+class _ShapeOnly:
+    """Header-only stand-in for a tensor: .shape, no data (scale detection)."""
+    def __init__(self, shape):
+        self.shape = tuple(shape)
+
+
+def peek_model_scale(model_path: str) -> int:
+    """Scale of a .safetensors model from its header (large tensors are never read;
+    tensors of 16 values or less are, for the scale metadata some archs store).
+    0 = unknown (.pth / .onnx / no rule)."""
+    try:
+        if not model_path.lower().endswith(".safetensors") or not os.path.isfile(model_path):
+            return 0
+        from safetensors import safe_open
+        sd = {}
+        with safe_open(model_path, framework="numpy") as f:
+            for k in f.keys():
+                shp = f.get_slice(k).get_shape()
+                n = 1
+                for d in shp:
+                    n *= int(d)
+                sd[k] = f.get_tensor(k) if n <= 16 else _ShapeOnly(shp)
+        return int(detect_scale_from_state(sd, default=0) or 0)
+    except Exception:
+        return 0
+
+
+def _peek_arch_from_model_path(model_path: str) -> Optional[str]:
+    """Lightweight architecture detection from a checkpoint on disk, without
+    doing the full in-process model load. Reads only the safetensors header
+    (key names/shapes, zero tensor data) or the full torch checkpoint for
+    .pth (metadata isn't separable there). Used by BOTH upscale_image() and
+    upscale_folder() so the "does this arch need a sequence/multi-frame
+    dataset" gate is evaluated identically in both call paths — the app hit
+    this exact class of bug twice already this session (a detection added to
+    a runner that the caller never routed to): a single shared function makes
+    that impossible to reproduce here.
+    Returns None on any failure (caller must treat that as "unknown/normal").
+    """
+    try:
+        if not os.path.isfile(model_path):
+            return None
+        if model_path.lower().endswith(".safetensors"):
+            import struct as _struct, json as _json
+            with open(model_path, "rb") as _mf:
+                _hlen = _struct.unpack("<Q", _mf.read(8))[0]
+                _hmeta = _json.loads(_mf.read(_hlen))
+            _keys = set(k for k in _hmeta if k != "__metadata__")
+            return detect_arch_from_state({k: None for k in _keys})  # type: ignore
+        if not TORCH_AVAILABLE:
+            # Portable build: no torch in-process. The engine venv lists the key names
+            # (A02: a temporal .pth video was otherwise processed frame by frame).
+            import subprocess as _sp, json as _json
+            _py = next((p for p in (_TRAINNER_VENV_PY, _NEOSR_VENV_PY) if p and os.path.isfile(p)), None)
+            if not _py:
+                return None
+            _code = ("import sys,json,torch;ck=torch.load(sys.argv[1],map_location='cpu',weights_only=False)\n"
+                     "for k in ('params_ema','params','state_dict','model'):\n"
+                     "    if isinstance(ck,dict) and isinstance(ck.get(k),dict): ck=ck[k]; break\n"
+                     "print(json.dumps([k for k in ck.keys() if isinstance(k,str)]))")
+            _r = _sp.run([_py, "-c", _code, model_path], capture_output=True, text=True, timeout=120,
+                         creationflags=0x08000000 if sys.platform == "win32" else 0)
+            if _r.returncode != 0:
+                return None
+            _keys = _json.loads(_r.stdout.strip().splitlines()[-1])
+            return detect_arch_from_state({k: None for k in _keys})  # type: ignore
+        _ck = torch.load(model_path, map_location="cpu", weights_only=False)
+        _sd = extract_weights(_ck)
+        return detect_arch_from_state(_sd)
+    except Exception:
+        return None
 
 
 # ─── Color Fix (post-upscale color drift correction) ────────────────────────
@@ -324,8 +649,15 @@ def color_fix_image(
     nc = sr_np.shape[2]  # nombre de canaux (3 pour RGB)
 
     # ── Source de référence (LQ par défaut, ou image externe) ────────────────
-    _src_pil = ref_pil if ref_pil is not None else lq_pil
-    lq_up = np.array(_src_pil.resize((w, h), Image.BICUBIC), dtype=np.float32) / 255.0
+    if isinstance(ref_pil, np.ndarray):
+        # 16-bit reference loaded as float (load_color_fix_ref): wavelet / average keep
+        # its precision; LAB / histogram / colormap work on its 8-bit version.
+        from src.core.image_io import resize_float
+        lq_up = np.clip(resize_float(ref_pil, (w, h)), 0.0, 1.0).astype(np.float32)
+        _src_pil = Image.fromarray((ref_pil * 255.0).round().clip(0, 255).astype(np.uint8))
+    else:
+        _src_pil = ref_pil if ref_pil is not None else lq_pil
+        lq_up = np.array(_src_pil.resize((w, h), Image.BICUBIC), dtype=np.float32) / 255.0
 
     # ── Résolution du device ──────────────────────────────────────────────────
     resolved = _cf_resolve_device(device)
@@ -341,9 +673,12 @@ def color_fix_image(
         """[H,W,C] numpy → [1,C,H,W] CUDA float32."""
         return torch.from_numpy(arr.transpose(2, 0, 1)).unsqueeze(0).to("cuda", dtype=torch.float32)
 
-    def _t_to_np(t: "torch.Tensor") -> "np.ndarray":
-        """[1,C,H,W] CUDA → [H,W,C] numpy float32."""
-        return t.squeeze(0).permute(1, 2, 0).clamp(0, 1).cpu().float().numpy()
+    def _t_to_np(t: "torch.Tensor", clamp: bool = True) -> "np.ndarray":
+        """[1,C,H,W] CUDA → [H,W,C] numpy float32. clamp=False for SIGNED data (the
+        colour correction LQ − SR: clamping it to [0, 1] dropped every negative
+        correction, so the GPU Color Fix could never darken)."""
+        t = t.squeeze(0).permute(1, 2, 0)
+        return (t.clamp(0, 1) if clamp else t).cpu().float().numpy()
 
     # ── WAVELET ───────────────────────────────────────────────────────────────
     if method == "wavelet":
@@ -355,7 +690,7 @@ def color_fix_image(
                     r = 2 ** level  # 1, 2, 4, 8, 16, 32...
                     sr_t = _boxblur(sr_t, r, nc)
                     lq_t = _boxblur(lq_t, r, nc)
-                correction = _t_to_np(lq_t - sr_t)
+                correction = _t_to_np(lq_t - sr_t, clamp=False)
             except Exception:
                 # Fallback PIL si CUDA plante (OOM, etc.)
                 use_gpu = False
@@ -386,7 +721,7 @@ def color_fix_image(
                 lq_t = _np_to_t(lq_up)
                 sr_t = _boxblur(sr_t, int(radius), nc)
                 lq_t = _boxblur(lq_t, int(radius), nc)
-                correction = _t_to_np(lq_t - sr_t)
+                correction = _t_to_np(lq_t - sr_t, clamp=False)
             except Exception:
                 use_gpu = False
 
@@ -425,7 +760,11 @@ def color_fix_image(
 
             mixed_u8  = np.array(_cms.applyTransform(
                 Image.fromarray(mixed_lab.clip(0, 255).astype(np.uint8)), _to_rgb))
-            fixed_lab = mixed_u8.astype(np.float32) / 255.0
+            # the correction is the LAB round-trip delta, added to the full-precision SR
+            delta = (mixed_u8.astype(np.float32) - sr_u8.astype(np.float32)) / 255.0
+            fixed_lab = sr_np.copy()
+            for c in planes:
+                fixed_lab[:, :, c] = sr_np[:, :, c] + delta[:, :, c]
 
             if strength < 1.0:
                 fixed_lab = sr_np * (1.0 - strength) + fixed_lab * strength
@@ -492,6 +831,23 @@ def color_fix_image(
         if strength < 1.0:
             fixed_cmap = sr_np * (1.0 - strength) + fixed_cmap * strength
         return np.clip(fixed_cmap, 0.0, 1.0)
+
+    # ── GUIDED (aniCC / PACC V4, Bendel) ─────────────────────────────────────
+    # Learned colour transfer from the LR reference, handles non-uniform shifts.
+    # Model weights downloaded on first use (guided_color_fix.ensure_weights).
+    elif method == "guided":
+        try:
+            if TORCH_AVAILABLE:
+                try:
+                    from src.core.guided_color_fix import run_guided
+                except ImportError:
+                    from guided_color_fix import run_guided
+                guided = run_guided(sr_np, _src_pil, device=device)
+            else:
+                guided = _guided_color_fix_subprocess(sr_np, _src_pil, device=device)
+            correction = guided - sr_np
+        except Exception as e:
+            raise RuntimeError(f"Color Fix guided (aniCC) indisponible : {e}") from e
 
     else:
         return sr_np
@@ -606,13 +962,31 @@ def _save_output(
     save_kwargs: dict = {}
 
     if bit_depth == 16 and fmt in ("PNG", "TIFF"):
+        # NOTE: the old Pillow trick here (Image.frombuffer("RGB", ..., "raw",
+        # "RGB;16B", ...)) never actually wrote 16-bit — Pillow has no native
+        # 3x16-bit-per-channel RGB image mode, so the "RGB;16B" raw decoder
+        # silently downsamples into the 8-bit "RGB" mode while decoding. The
+        # file it produced was confirmed 8-bit on disk (IHDR bitdepth=8) even
+        # though the NumPy-2.0 byteswap/newbyteorder crash was "fixed" earlier
+        # — that fix only stopped the crash, it didn't make the output real
+        # 16-bit. Same root cause already diagnosed and solved for the
+        # video/sequence pipeline (_save_sequence_frame, see the long comment
+        # above it) — reusing that proven pyvips-based writer here instead.
+        if not PYVIPS_AVAILABLE:
+            raise RuntimeError(
+                "Sortie 16-bit demandée mais pyvips n'est pas installé "
+                "(pip install pyvips pyvips-binary). Pillow ne peut pas "
+                "écrire un vrai PNG/TIFF 16-bit par canal pour du RGB."
+            )
         arr16 = (float_arr * 65535.0).round().clip(0, 65535).astype(np.uint16)
-        h, w = arr16.shape[:2]
-        # Big-endian 16-bit RGB (required by PNG 16-bit spec)
-        arr_be = arr16.byteswap().newbyteorder()
-        img = Image.frombuffer("RGB", (w, h), bytes(arr_be.data), "raw", "RGB;16B", 0, 1)
+        h, w, c = arr16.shape
+        arr16 = np.ascontiguousarray(arr16)
+        vimg = pyvips.Image.new_from_memory(arr16.tobytes(), w, h, c, "ushort")
         if fmt == "TIFF":
-            save_kwargs["compression"] = "lzw"
+            vimg.write_to_file(output_path, compression="lzw")
+        else:
+            vimg.write_to_file(output_path)
+        return
     else:
         arr8 = (float_arr * 255.0).round().clip(0, 255).astype(np.uint8)
         img = Image.fromarray(arr8)
@@ -705,7 +1079,7 @@ def _onnx_upscale(
         if "newbyteorder" in err:
             return False, (
                 "Erreur inference ONNX : onnxruntime incompatible avec NumPy 2.0.\n"
-                "Fix : pip install \"onnxruntime-gpu>=1.18.0\"\n"
+                "Fix : pip install \"onnxruntime-gpu>=1.18.0,<1.27\"\n"
                 f"(détail : {err})"
             )
         return False, f"Erreur inference ONNX : {e}"
@@ -773,10 +1147,17 @@ def _run_proc_with_stop(proc, progress_map, log, progress_callback, stop_event):
     Returns:
       (killed: bool)  — True if process was killed by stop_event.
     """
+    import re as _re
+    _ansi = _re.compile(r"\x1b\[[0-9;]*m|\[[0-9;]{1,6}m")
+
     def _reader():
         try:
             for line in proc.stdout:
-                stripped = line.rstrip()
+                # Native libraries (onnxruntime…) may write UTF-16 text and ANSI colours:
+                # shown raw they turn into garbage in the UI log.
+                stripped = _ansi.sub("", line.replace("\x00", "")).rstrip()
+                if not stripped.strip():
+                    continue
                 log(stripped)
                 if progress_callback and progress_map:
                     for prefix, pct in progress_map:
@@ -820,6 +1201,36 @@ _ONNX_RUNNER               = os.path.join(os.path.dirname(__file__), "onnx_runne
 
 # ─── Persistent NeoSR (ESC) session ─────────────────────────────────────────
 
+
+def _read_json_reply(proc, who: str) -> dict:
+    """Next JSON line from a persistent worker. Non-JSON lines (a print() inside an
+    arch constructor, e.g. DocRes) are skipped instead of failing the session."""
+    while True:
+        resp_line = proc.stdout.readline()
+        if not resp_line:
+            raise RuntimeError(f"{who}: worker process closed stdout unexpectedly")
+        resp_line = resp_line.strip()
+        if resp_line.startswith("{"):
+            try:
+                return json.loads(resp_line)
+            except ValueError:
+                pass
+
+
+def _drain_stderr(proc, tail) -> None:
+    """Read the worker's stderr in the background: an unread PIPE fills up (warnings,
+    tracebacks) and blocks the worker. The last lines are kept for error messages."""
+    import threading
+
+    def _run():
+        try:
+            for line in proc.stderr:
+                tail.append(line.rstrip())
+        except Exception:
+            pass
+    threading.Thread(target=_run, daemon=True).start()
+
+
 class PersistentNeoSRSession:
     """
     Garde le modèle ESC chargé dans le venv neosr entre chaque image d'un batch.
@@ -833,13 +1244,14 @@ class PersistentNeoSRSession:
 
     def __init__(self, venv_py: str, model_path: str,
                  tile_size: int = 256, tile_pad: int = 32, use_amp: bool = False,
-                 log: Optional[Callable] = None):
+                 log: Optional[Callable] = None, scale_hint: int = 0):
         self._venv_py    = venv_py
         self._model_path = model_path
         self._tile_size  = tile_size
         self._tile_pad   = tile_pad
         self._use_amp    = use_amp
         self._log        = log or (lambda m: None)
+        self._scale_hint = scale_hint  # required for msdan (scale not recoverable from weights)
         self._proc       = None
         self.scale: int  = 1
         self._ready      = False
@@ -848,10 +1260,7 @@ class PersistentNeoSRSession:
         line = json.dumps(obj, ensure_ascii=False) + "\n"
         self._proc.stdin.write(line)
         self._proc.stdin.flush()
-        resp_line = self._proc.stdout.readline()
-        if not resp_line:
-            raise RuntimeError("PersistentNeoSR: worker process closed stdout unexpectedly")
-        return json.loads(resp_line.strip())
+        return _read_json_reply(self._proc, "PersistentNeoSR")
 
     def start(self) -> bool:
         import subprocess as _sp
@@ -866,7 +1275,7 @@ class PersistentNeoSRSession:
         _env["PYTHONIOENCODING"] = "utf-8"
         _env["PYTHONUTF8"] = "1"
 
-        neosr_dir = os.path.join(os.path.expanduser("~"), "IA_Engine", "neosr")
+        neosr_dir = os.path.join(_engine_base(), "neosr")
         cwd = neosr_dir if os.path.isdir(neosr_dir) else os.path.dirname(self._venv_py)
         try:
             self._proc = _sp.Popen(
@@ -879,6 +1288,9 @@ class PersistentNeoSRSession:
         except Exception as e:
             self._log(f"[ESC-Persistent] Échec lancement : {e}")
             return False
+        from collections import deque
+        self._err_tail = deque(maxlen=40)
+        _drain_stderr(self._proc, self._err_tail)
 
         try:
             resp = self._send({
@@ -887,9 +1299,11 @@ class PersistentNeoSRSession:
                 "tile_size": self._tile_size,
                 "tile_pad":  self._tile_pad,
                 "use_amp":   self._use_amp,
+                "scale_hint": self._scale_hint,
             })
         except Exception as e:
-            self._log(f"[ESC-Persistent] Erreur init : {e}")
+            _last = [l for l in getattr(self, "_err_tail", []) if l.strip()][-1:]
+            self._log(f"[ESC-Persistent] Erreur init : {e}" + (f" — {_last[0][:200]}" if _last else ""))
             self.stop()
             return False
 
@@ -906,7 +1320,10 @@ class PersistentNeoSRSession:
         if not self._ready:
             return False, "Session non prête"
         try:
-            resp = self._send({"cmd": "infer", "input": input_path, "output": output_path})
+            payload = {"cmd": "infer", "input": input_path, "output": output_path}
+            if getattr(self, "save_opts", None):
+                payload["save"] = self.save_opts
+            resp = self._send(payload)
             if resp.get("status") == "ok":
                 return True, "ok"
             return False, resp.get("msg", "erreur inconnue")
@@ -942,7 +1359,27 @@ class PersistentNeoSRSession:
 # archs/ folder before inference, re-applying on every run (survives git pull,
 # fresh installs). Same pattern as runner.py _patch_* methods.
 _CUSTOM_ARCHS_DIR = os.path.join(os.path.dirname(_UNIVERSAL_RUNNER), "custom_archs")
-_CUSTOM_ARCH_FILES = ["gfisrv2_arch.py", "smosr_arch.py", "spanpp_arch.py", "figsr_arch.py"]
+# Every .py shipped in custom_archs/ (MoTSR, WireSR, TFDAT v2, ParagonSR + resampler,
+# Mamba, discriminators…). Listing the folder instead of hard-coding names: a new
+# custom arch file can no longer be forgotten here (several were, before 2026-10).
+_CUSTOM_ARCH_FILES = sorted(
+    f for f in (os.listdir(_CUSTOM_ARCHS_DIR) if os.path.isdir(_CUSTOM_ARCHS_DIR) else [])
+    if f.endswith(".py") and not f.startswith("__"))
+# Archs held back from public builds until their author agrees (WireSR): present only
+# on the developer's machine, injected the same way when the folder exists.
+_PENDING_ARCHS_DIR = os.path.join(os.path.dirname(_CUSTOM_ARCHS_DIR), "custom_archs_pending")
+_PENDING_ARCH_FILES = sorted(
+    f for f in (os.listdir(_PENDING_ARCHS_DIR) if os.path.isdir(_PENDING_ARCHS_DIR) else [])
+    if f.endswith(".py") and not f.startswith("__"))
+
+# NeoSR-only custom archs (not shared with traiNNer-redux — aether_arch.py imports
+# from neosr.utils.registry, aether_core.py has no neosr dependency but lives
+# alongside it). Same injection pattern as _CUSTOM_ARCH_FILES, neosr archs/ only.
+# Source: runner.py injects the same pair at training-launch time (see its
+# "custom_neosr_archs" reference) — this mirrors that for Quick Upscale inference,
+# which does not go through runner.py and would otherwise never get this file.
+_CUSTOM_NEOSR_ARCHS_DIR = os.path.join(os.path.dirname(_UNIVERSAL_RUNNER), "custom_neosr_archs")
+_CUSTOM_NEOSR_ARCH_FILES = ["aether_core.py", "aether_arch.py"]
 
 
 def _peek_safetensors_keys(path: str) -> list:
@@ -956,6 +1393,88 @@ def _peek_safetensors_keys(path: str) -> list:
 
 # Cache: model_path → "neosr" | "neosr_general" | "trainner" (frozen routing decision)
 _FROZEN_ROUTE_CACHE = {}
+
+
+# Format / bit depth / quality of the current upscale_image() call, handed to the
+# one-image runner subprocesses in USS_SAVE_OPTS (read by runner_save.save_float).
+_SAVE_OPTS: dict = {}
+# Tile / tile pad / AMP of the current call, for the NeoSR runners (USS_INFER_OPTS).
+_INFER_OPTS: dict = {}
+
+
+def _runner_env(**extra):
+    env = {**os.environ, "PYTHONIOENCODING": "utf-8", **extra}
+    if _SAVE_OPTS:
+        env["USS_SAVE_OPTS"] = json.dumps(_SAVE_OPTS)
+    if _INFER_OPTS:
+        env["USS_INFER_OPTS"] = json.dumps(_INFER_OPTS)
+    return env
+
+
+def _read_float01(path):
+    """Saved output as float32 RGB [0, 1], keeping 16-bit precision."""
+    from src.core.image_io import read_float01
+    return read_float01(path)
+
+
+def _cf_try(sr, lq, log, **kw):
+    """color_fix_image that logs a failure and returns the uncorrected image."""
+    try:
+        return color_fix_image(sr, lq, **kw)
+    except Exception as e:
+        if log:
+            log(f"⚠ Color Fix échoué ({e}) — sortie sans correction")
+        return sr
+
+
+def load_color_fix_ref(path, log=None):
+    """Color Fix reference: None when empty, float32 RGB array [0, 1] (16-bit kept)
+    otherwise. A path that does not exist is reported instead of silently using the
+    LQ image (A35)."""
+    if not path:
+        return None
+    if not os.path.isfile(path):
+        if log:
+            log(f"Color Fix ref : fichier introuvable ({path}) — LQ utilisé")
+        return None
+    key = (os.path.abspath(path), os.path.getmtime(path))
+    if key in _REF_CACHE:
+        return _REF_CACHE[key]
+    try:
+        ref = _read_float01(path)
+    except Exception as e:
+        if log:
+            log(f"Color Fix ref : impossible de charger ({e}) — LQ utilisé")
+        return None
+    _REF_CACHE.clear(); _REF_CACHE[key] = ref   # one reference per batch
+    return ref
+
+
+_REF_CACHE: dict = {}
+
+
+def _apply_color_fix_file(output_path, input_path, color_fix, color_fix_wavelets,
+                          color_fix_radius, color_fix_fast, color_fix_strength,
+                          color_fix_planes, color_fix_device, out_format, bit_depth, quality, log,
+                          color_fix_ref=""):
+    """Applique Color Fix sur le fichier de sortie déjà sauvé par un subprocess
+    (inférence venv : le PNG écrit est brut, sans color fix). color_fix_image =
+    numpy/PIL → pas besoin de torch en-process. Sert au mode portable ET aux runners."""
+    if not (color_fix and color_fix != "none" and color_fix_strength > 0.0
+            and IMAGING_AVAILABLE and os.path.isfile(output_path)):
+        return
+    try:
+        _sr = _read_float01(output_path)
+        _lq = Image.open(input_path).convert("RGB")
+        _pl = color_fix_planes if color_fix_planes is not None else [0, 1, 2]
+        log(f"Color Fix ✓ [{color_fix}] strength={color_fix_strength:.2f}")
+        _sr = color_fix_image(_sr, _lq, method=color_fix, wavelets=color_fix_wavelets,
+                              radius=color_fix_radius, fast=color_fix_fast,
+                              strength=color_fix_strength, planes=_pl, device=color_fix_device,
+                              ref_pil=load_color_fix_ref(color_fix_ref, log))
+        _save_output(_sr, output_path, out_format, bit_depth, quality)
+    except Exception as _e:
+        log(f"Color Fix : erreur ({_e})")
 
 
 def _frozen_route_infer(model_path, input_path, output_path, log, progress_callback,
@@ -982,7 +1501,7 @@ def _frozen_route_infer(model_path, input_path, output_path, log, progress_callb
     def _neosr_general():
         return _neosr_general_subprocess_infer(
             model_path, input_path, output_path, log, progress_callback,
-            stop_event=stop_event)
+            stop_event=stop_event, scale_hint=scale)
 
     # Use cached routing if known (avoids repeating the fallback cascade per frame)
     if _cached == "neosr" and os.path.exists(_NEOSR_VENV_PY):
@@ -1029,21 +1548,37 @@ def _frozen_route_infer(model_path, input_path, output_path, log, progress_callb
 def ensure_custom_archs(log=None) -> None:
     """Copy bundled custom arch .py into the engine archs/ folders if missing or changed.
 
-    Targets traiNNer-redux (and neosr if present). Idempotent: only writes when
-    the destination file is absent or differs from the bundled source.
+    The custom archs are traiNNer-redux archs: copied into traiNNer-redux only. They used
+    to be copied into neosr too, where several import traiNNer at module level; NeoSR
+    imports every *_arch.py of its archs/ folder, so one of them broke every NeoSR arch
+    (training and inference). Copies left there by older versions are disabled
+    (renamed *.usrs_disabled, nothing deleted). Idempotent.
     """
     if not os.path.isdir(_CUSTOM_ARCHS_DIR):
         return
-    home = os.path.expanduser("~")
+    base = _engine_base()
+    neosr_archs = os.path.join(base, "neosr", "neosr", "archs")
+    if os.path.isdir(neosr_archs):
+        for fname in _CUSTOM_ARCH_FILES + _PENDING_ARCH_FILES:
+            stray = os.path.join(neosr_archs, fname)
+            if fname in _CUSTOM_NEOSR_ARCH_FILES or not os.path.isfile(stray):
+                continue
+            try:
+                os.replace(stray, stray + ".usrs_disabled")
+                if log:
+                    log(f"[ARCH] {fname} retiré de neosr (arch traiNNer-redux) → {fname}.usrs_disabled")
+            except Exception as _e:
+                if log:
+                    log(f"[ARCH] {fname} : désactivation dans neosr impossible : {_e}")
     targets = [
-        os.path.join(home, "IA_Engine", "traiNNer-redux", "traiNNer", "archs"),
-        os.path.join(home, "IA_Engine", "neosr", "neosr", "archs"),
+        os.path.join(base, "traiNNer-redux", "traiNNer", "archs"),
     ]
     for archs_dir in targets:
         if not os.path.isdir(archs_dir):
             continue
-        for fname in _CUSTOM_ARCH_FILES:
-            src = os.path.join(_CUSTOM_ARCHS_DIR, fname)
+        for src_dir, fname in ([(_CUSTOM_ARCHS_DIR, f) for f in _CUSTOM_ARCH_FILES]
+                               + [(_PENDING_ARCHS_DIR, f) for f in _PENDING_ARCH_FILES]):
+            src = os.path.join(src_dir, fname)
             dst = os.path.join(archs_dir, fname)
             if not os.path.isfile(src):
                 continue
@@ -1061,6 +1596,39 @@ def ensure_custom_archs(log=None) -> None:
                 if log:
                     log(f"[ARCH] Échec injection {fname} : {_e}")
 
+    # NeoSR-only custom archs (aethernet) — neosr archs/ only, not traiNNer-redux.
+    if os.path.isdir(_CUSTOM_NEOSR_ARCHS_DIR):
+        neosr_archs_dir = os.path.join(base, "neosr", "neosr", "archs")
+        if os.path.isdir(neosr_archs_dir):
+            for fname in _CUSTOM_NEOSR_ARCH_FILES:
+                src = os.path.join(_CUSTOM_NEOSR_ARCHS_DIR, fname)
+                dst = os.path.join(neosr_archs_dir, fname)
+                if not os.path.isfile(src):
+                    continue
+                try:
+                    need_copy = True
+                    if os.path.isfile(dst):
+                        with open(src, "rb") as a, open(dst, "rb") as b:
+                            need_copy = a.read() != b.read()
+                    if need_copy:
+                        import shutil
+                        shutil.copy2(src, dst)
+                        if log:
+                            log(f"[ARCH] {fname} injecté dans neosr")
+                except Exception as _e:
+                    if log:
+                        log(f"[ARCH] Échec injection {fname} : {_e}")
+
+    # Small targeted patches to upstream engine files (bugs in files the official
+    # engine ships, not whole custom files) — distinct from the whole-file injection
+    # above. Self-heals across engine re-clones. See engine_patches.py.
+    try:
+        from src.core.engine_patches import apply_all_known_engines
+        apply_all_known_engines(base, log)
+    except Exception as _e:
+        if log:
+            log(f"[PATCH] Échec application des patchs moteur : {_e}")
+
 # Archs qui appellent net_opt() au niveau module → subprocess neosr_general_runner obligatoire
 # _NEOSR_GENERAL_ARCHS now defined earlier (includes aethernet)
 
@@ -1071,9 +1639,39 @@ def ensure_custom_archs(log=None) -> None:
 # - spanc  : MetaIGConv coord-based → incertain, subprocess par sécurité
 # - spanf  : conv depthwise standard, mais subprocess pour cohérence venv
 _TRAINNER_SUBPROCESS_ARCHS = {"spanplus", "smosr", "gfisrv2", "spanc", "spanf",
-                              "figsr", "paragonsr", "paragonsr2"}
-# AetherNet = NeoSR arch → route via neosr subprocess
-_NEOSR_GENERAL_ARCHS = {"ninasr", "lmlt", "eimn", "drct", "aethernet"}
+                              "figsr", "paragonsr", "paragonsr2", "mambair", "mambairv2",
+                              # v2.5.8 batch 1 (lmlt/eimn omis : déjà routés vers neosr_general,
+                              # structure de poids partagée avec neosr — cf. ARCH_SIGNATURES)
+                              "artcnn", "lkfmixer", "rtmosr", "mosrv2", "sebica", "man", "elan",
+                              # v2.6.1 batch : 9 archs natives traiNNer-redux supplémentaires
+                              # (universal_runner.py + persistent_upscale_worker.py)
+                              "gaterv3", "hit_sir", "hit_sng", "cascadedgaze", "escrealm",
+                              "emt", "flexnet", "srformer", "srformerv2",
+                              # DocRes (docres_base/docres_large) — manual reconstruction only
+                              # lives in universal_runner.py/persistent_upscale_worker.py, no
+                              # in-process elif branch here (would be dead code, same as the
+                              # other entries in this set — see the routing gate above).
+                              "docres"}
+# AetherNet = NeoSR arch (net_opt() at module level) → route via neosr subprocess.
+# Source (aether_core.py / aether_arch.py) is NOT bundled with the neosr repo — it
+# lives in src/core/custom_neosr_archs/ and is copied into neosr/neosr/archs/ by
+# ensure_custom_archs() before every inference call (same pattern as mambair etc.
+# for traiNNer-redux). Without that injection this entry would break — do not
+# remove ensure_custom_archs()'s _CUSTOM_NEOSR_ARCH_FILES copy step.
+_NEOSR_GENERAL_ARCHS = {"ninasr", "lmlt", "eimn", "drct", "aethernet", "hasn", "msdan", "cfsr",
+                         # NeoSR CATANet / KRGN / MAN / MoSRv2 (neosr_general_runner build_extra);
+                         # CATANet's in-process path never worked (NeoSR parses argv at import).
+                         "catanet", "krgn", "man_neosr", "mosrv2_neosr",
+                         # v2.7.0 batch : 8 archs NeoSR supplémentaires (voir ARCH_SIGNATURES
+                         # ci-dessus + neosr_general_runner.py::build_model() /
+                         # persistent_neosr_worker.py::_build_general_model() pour les branches).
+                         # "flexnet" a aussi une entrée traiNNer historique dans
+                         # _TRAINNER_SUBPROCESS_ARCHS plus bas — ce set gagne pour les .safetensors
+                         # (voir la fonction de routing) et sert de repli pour les .pth.
+                         # "srformer" couvre aussi le preset srformer_medium (même classe,
+                         # hyperparamètres différents mais déduits des shapes réelles — pas
+                         # de clé "srformer_medium" séparée nécessaire dans ARCH_SIGNATURES).
+                         "plainusr", "asid", "grformer", "dct", "flexnet", "hit_srf", "hma", "srformer"}
 
 # ─── Model cache ─────────────────────────────────────────────────
 # Clé : chemin absolu canonique du modèle.
@@ -1116,7 +1714,7 @@ class PersistentBatchSession:
 
     Usage :
         with PersistentBatchSession(venv_py, model_path, tile_size, tile_pad, use_amp) as s:
-            ok, msg = s.infer(input_path, output_path)
+            ok, msg, _ = s.infer(input_path, output_path)
     """
 
     def __init__(self, venv_py: str, model_path: str,
@@ -1139,10 +1737,7 @@ class PersistentBatchSession:
         line = json.dumps(obj, ensure_ascii=False) + "\n"
         self._proc.stdin.write(line)
         self._proc.stdin.flush()
-        resp_line = self._proc.stdout.readline()
-        if not resp_line:
-            raise RuntimeError("Worker process closed stdout unexpectedly")
-        return json.loads(resp_line.strip())
+        return _read_json_reply(self._proc, "PersistentBatch")
 
     def start(self) -> bool:
         """Launch the persistent worker subprocess and init the model."""
@@ -1172,6 +1767,9 @@ class PersistentBatchSession:
         except Exception as e:
             self._log(f"[PersistentBatch] Échec lancement : {e}")
             return False
+        from collections import deque
+        self._err_tail = deque(maxlen=40)
+        _drain_stderr(self._proc, self._err_tail)
 
         # Send init command
         try:
@@ -1184,7 +1782,8 @@ class PersistentBatchSession:
                 "scale_hint": self._scale_hint,  # user-selected scale (0=auto)
             })
         except Exception as e:
-            self._log(f"[PersistentBatch] Erreur init : {e}")
+            _last = [l for l in getattr(self, "_err_tail", []) if l.strip()][-1:]
+            self._log(f"[PersistentBatch] Erreur init : {e}" + (f" — {_last[0][:200]}" if _last else ""))
             self.stop()
             return False
 
@@ -1214,6 +1813,8 @@ class PersistentBatchSession:
         if self._proc.poll() is not None:
             return False, f"Worker terminé prématurément (code {self._proc.returncode})", {}
         payload: dict = {"cmd": "infer", "input": input_path, "output": output_path}
+        if getattr(self, "save_opts", None):
+            payload["save"] = self.save_opts
         if prev_input and prev_output:
             payload["prev_input"] = prev_input
             payload["prev_output"] = prev_output
@@ -1224,7 +1825,7 @@ class PersistentBatchSession:
             return False, f"Erreur communication worker : {e}", {}
         ok  = resp.get("status") == "ok"
         msg = resp.get("msg", "")
-        extra = {k: resp[k] for k in ("dandere_changed", "dandere_total", "dandere_pct")
+        extra = {k: resp[k] for k in ("dandere_changed", "dandere_total", "dandere_pct", "note")
                  if k in resp}
         return ok, msg, extra
 
@@ -1258,6 +1859,90 @@ class PersistentBatchSession:
     @property
     def is_ready(self) -> bool:
         return self._ready
+
+
+def _persistent_route(model_path: str) -> str:
+    """Which persistent worker runs this model: "neosr" (ESC + the NeoSR-only archs,
+    neosr venv), "trainner" (traiNNer-redux subprocess archs), or "" (spandrel archs,
+    which the traiNNer worker also loads). Reads only the key names."""
+    try:
+        if model_path.endswith(".safetensors"):
+            # Read only the header (key names + dtypes/shapes) — zero tensor data
+            import struct as _struct
+            with open(model_path, "rb") as _mf:
+                _hlen = _struct.unpack("<Q", _mf.read(8))[0]
+                _hmeta = json.loads(_mf.read(_hlen))
+            _sd_keys = set(k for k in _hmeta if k != "__metadata__")
+        else:
+            _ck = torch.load(model_path, map_location="cpu", weights_only=False)
+            _sd = _ck if any(k.endswith(".weight") for k in _ck.keys()) else (
+                _ck.get("params_ema") or _ck.get("params") or _ck)
+            _sd_keys = set(_sd.keys())
+        arch = detect_arch_from_state({k: None for k in _sd_keys}) or ""  # type: ignore
+    except Exception:
+        return ""
+    # persistent_neosr_worker.py handles ESC and the NeoSR "general" archs
+    # (ninasr/lmlt/eimn/drct/aethernet/hasn/msdan/catanet/krgn…)
+    if arch == "esc" or arch in _NEOSR_GENERAL_ARCHS:
+        return "neosr"
+    # + the archs rebuilt by arch_infer (HEART/NERVE/WireSR/FDAT-RD/DAT-iLN/WSR/DUAL),
+    # which also run in the traiNNer subprocess
+    if arch in _TRAINNER_SUBPROCESS_ARCHS | {"heart", "nerve", "wiresr", "fdat_rd", "dat_iln",
+                                              "wsr", "dual", "spanf3"}:
+        return "trainner"
+    return ""
+
+
+class _NeoSRSessionAdapter:
+    """PersistentNeoSRSession behind the PersistentBatchSession interface
+    (infer returns ok, msg, extra) so callers can use either one."""
+
+    def __init__(self, session: "PersistentNeoSRSession"):
+        self._s = session
+
+    def start(self) -> bool:
+        return self._s.start()
+
+    def infer(self, input_path: str, output_path: str, *_, **__) -> Tuple[bool, str, dict]:
+        ok, msg = self._s.infer(input_path, output_path)
+        return ok, msg, {}
+
+    def stop(self) -> None:
+        self._s.stop()
+
+    @property
+    def is_ready(self) -> bool:
+        return bool(getattr(self._s, "_ready", False))
+
+    @property
+    def scale(self) -> int:
+        return self._s.scale
+
+    @property
+    def save_opts(self):
+        return getattr(self._s, "save_opts", None)
+
+    @save_opts.setter
+    def save_opts(self, v):
+        self._s.save_opts = v
+
+
+def make_persistent_session(model_path: str, tile_size: int = 256, tile_pad: int = 32,
+                            use_amp: bool = False, log: Optional[Callable] = None,
+                            scale_hint: int = 0):
+    """Persistent session for the Quick Upscale tab: the NeoSR worker for NeoSR-only
+    archs, the traiNNer worker otherwise. Before, the tab always opened the traiNNer
+    worker, so ESC / GRFormer / CATANet… failed to start and ran one subprocess per
+    image. Returns an unstarted session, or None when no engine venv is installed."""
+    if _persistent_route(model_path) == "neosr" and os.path.isfile(_NEOSR_VENV_PY):
+        return _NeoSRSessionAdapter(PersistentNeoSRSession(
+            venv_py=_NEOSR_VENV_PY, model_path=model_path, tile_size=tile_size,
+            tile_pad=tile_pad, use_amp=use_amp, log=log, scale_hint=scale_hint))
+    if not _TRAINNER_VENV_PY:
+        return None
+    return PersistentBatchSession(venv_py=_TRAINNER_VENV_PY, model_path=model_path,
+                                  tile_size=tile_size, tile_pad=tile_pad, use_amp=use_amp,
+                                  log=log, scale_hint=scale_hint)
 
 
 # ─── Dandere2x helpers ────────────────────────────────────────────────────────
@@ -1461,10 +2146,10 @@ def _spanplus_subprocess_infer(
     if not os.path.isfile(venv_py):
         return False, (
             f"traiNNer-redux venv Python introuvable :\n{venv_py}\n"
-            f"Vérifiez que traiNNer-redux est installé dans ~/IA_Engine/traiNNer-redux."
+            f"Vérifiez que traiNNer-redux est installé dans {os.path.join(_engine_base(), 'traiNNer-redux')}."
         )
     if not os.path.isfile(runner):
-        return False, f"Runner SPANPlus introuvable : {runner}"
+        return False, f"Runner d'inférence introuvable : {runner}"
 
     # Map known runner output prefixes to approximate progress values
     # Covers both universal_runner and spanplus_runner output lines
@@ -1491,8 +2176,7 @@ def _spanplus_subprocess_infer(
             text=True,
             encoding="utf-8",
             errors="replace",
-            env={**os.environ, "PYTHONIOENCODING": "utf-8",
-                 "TRAINNER_ROOT": _ep.redux_path()},
+            env=_runner_env(TRAINNER_ROOT=_ep.redux_path()),
             creationflags=0x08000000 if sys.platform == "win32" else 0,  # CREATE_NO_WINDOW
         )
         killed = _run_proc_with_stop(proc, _PROGRESS_MAP, log, progress_callback, stop_event)
@@ -1500,13 +2184,14 @@ def _spanplus_subprocess_infer(
         if killed:
             return False, "Arrêt demandé par l'utilisateur."
     except Exception as e:
-        return False, f"Erreur lancement subprocess SPANPlus : {e}"
+        return False, f"Erreur lancement du subprocess d'inférence (venv traiNNer) : {e}"
 
     if proc.returncode == 0:
         if progress_callback:
             progress_callback(1.0)
-        return True, f"SPANPlus (subprocess) : {os.path.basename(output_path)}"
-    return False, f"Subprocess SPANPlus a échoué (code {proc.returncode})"
+        return True, f"Upscale (subprocess) : {os.path.basename(output_path)}"
+    return False, (f"Échec du chargement/inférence du modèle (code {proc.returncode}) — "
+                   f"architecture probablement non supportée, voir le log ci-dessus.")
 
 
 # ─── NeoSR subprocess (ESC arch) ─────────────────────────────────
@@ -1533,7 +2218,7 @@ def _neosr_subprocess_infer(
     if not os.path.isfile(venv_py):
         return False, (
             f"neosr venv Python introuvable :\n{venv_py}\n"
-            f"Vérifiez que neosr est installé dans ~/IA_Engine/neosr."
+            f"Vérifiez que neosr est installé dans {os.path.join(_engine_base(), 'neosr')}."
         )
     if not os.path.isfile(runner):
         return False, f"Runner neosr introuvable : {runner}"
@@ -1556,7 +2241,7 @@ def _neosr_subprocess_infer(
             text=True,
             encoding="utf-8",
             errors="replace",
-            env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+            env=_runner_env(),
             creationflags=0x08000000 if sys.platform == "win32" else 0,  # CREATE_NO_WINDOW
         )
         killed = _run_proc_with_stop(proc, _PROGRESS_MAP, log, progress_callback, stop_event)
@@ -1582,11 +2267,16 @@ def _neosr_general_subprocess_infer(
     log: Callable,
     progress_callback: Optional[Callable] = None,
     stop_event=None,
+    scale_hint: int = 0,
 ) -> "Tuple[bool, str]":
     """
     Run inference via neosr_general_runner.py in the neosr venv subprocess.
     Handles net_opt() patching and arch detection internally.
-    Used for archs in _NEOSR_GENERAL_ARCHS (ninasr, lmlt, eimn, drct).
+    Used for archs in _NEOSR_GENERAL_ARCHS (ninasr, lmlt, eimn, drct, aethernet,
+    hasn, msdan). scale_hint: user-selected scale — REQUIRED for msdan, whose
+    checkpoint weights are structurally identical regardless of the scale it
+    was trained at (upscale_factor is a plain Python int, never a saved
+    buffer/shape) — see Changelog Dev session 135 for the full diagnosis.
     """
     import subprocess
 
@@ -1596,7 +2286,7 @@ def _neosr_general_subprocess_infer(
     if not os.path.isfile(venv_py):
         return False, (
             f"neosr venv Python introuvable :\n{venv_py}\n"
-            f"Vérifiez que neosr est installé dans ~/IA_Engine/neosr."
+            f"Vérifiez que neosr est installé dans {os.path.join(_engine_base(), 'neosr')}."
         )
     if not os.path.isfile(runner):
         return False, f"neosr_general_runner introuvable : {runner}"
@@ -1609,7 +2299,7 @@ def _neosr_general_subprocess_infer(
         ("[NeoSR] Sauvegarde", 0.92),
     ]
 
-    cmd = [venv_py, runner, model_path, input_path, output_path]
+    cmd = [venv_py, runner, model_path, input_path, output_path, str(max(0, scale_hint))]
     try:
         proc = subprocess.Popen(
             cmd,
@@ -1618,7 +2308,7 @@ def _neosr_general_subprocess_infer(
             text=True,
             encoding="utf-8",
             errors="replace",
-            env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+            env=_runner_env(),
             creationflags=0x08000000 if sys.platform == "win32" else 0,  # CREATE_NO_WINDOW
         )
         killed = _run_proc_with_stop(proc, _PROGRESS_MAP, log, progress_callback, stop_event)
@@ -1680,6 +2370,9 @@ def upscale_image(
         return False, f"Modèle introuvable : {model_path}"
     if not os.path.isfile(input_path):
         return False, f"Image introuvable : {input_path}"
+    global _SAVE_OPTS, _INFER_OPTS
+    _SAVE_OPTS = {"format": out_format, "bit_depth": bit_depth, "quality": quality}
+    _INFER_OPTS = {"tile": int(tile_size or 0), "tile_pad": int(tile_pad), "amp": bool(use_amp)}
 
     def log(msg):
         if callback:
@@ -1697,6 +2390,17 @@ def upscale_image(
 
     # Ensure custom archs (gfisrv2, smosr, spanpp, figsr) are present in engine before inference
     ensure_custom_archs(log)
+
+    # ── Video/temporal archs (tscunet/temporalspan/temporalspanv2/tfdat) : une
+    # image seule n'a pas de sens (le réseau attend un clip de plusieurs frames
+    # consécutives). Message clair, pas de crash — utilisez le mode dossier/batch.
+    _peeked_arch = _peek_arch_from_model_path(model_path)
+    if _peeked_arch in _SEQUENCE_ARCHS:
+        return False, (
+            f"{_peeked_arch} est une architecture vidéo/temporelle — elle attend un clip de "
+            f"plusieurs frames consécutives en entrée, pas une image seule.\n"
+            f"Utilisez le mode Dossier/Batch (une séquence d'images numérotées dans un dossier)."
+        )
 
     # ── ONNX short-circuit ──
     if model_path.lower().endswith(".onnx"):
@@ -1723,11 +2427,18 @@ def upscale_image(
         # Route to the correct venv subprocess (no in-process torch needed).
         if getattr(sys, 'frozen', False):
             log("Mode portable : inference via subprocess venv (torch non dispo en-process)")
-            return _frozen_route_infer(
+            _res = _frozen_route_infer(
                 model_path, input_path, output_path, log, progress_callback,
                 stop_event=stop_event, tile_size=tile_size, tile_pad=tile_pad,
                 use_amp=use_amp, scale=scale,
             )
+            # Le subprocess sauve le PNG brut → Color Fix appliqué ici (tous modèles, portable).
+            if _res and _res[0]:
+                _apply_color_fix_file(output_path, input_path, color_fix, color_fix_wavelets,
+                                      color_fix_radius, color_fix_fast, color_fix_strength,
+                                      color_fix_planes, color_fix_device, out_format, bit_depth, quality, log,
+                                      color_fix_ref=color_fix_ref)
+            return _res
         return False, "PyTorch non installé"
     if not IMAGING_AVAILABLE:
         return False, "Pillow/NumPy non installé"
@@ -1743,8 +2454,7 @@ def upscale_image(
             if (_ok and color_fix != "none" and color_fix_strength > 0.0
                     and IMAGING_AVAILABLE and os.path.isfile(output_path)):
                 try:
-                    _sr_arr = (np.array(Image.open(output_path).convert("RGB"))
-                               .astype(np.float32) / 255.0)
+                    _sr_arr = _read_float01(output_path)
                     _lq_pil = Image.open(input_path).convert("RGB")
                     _planes = color_fix_planes if color_fix_planes is not None else [0, 1, 2]
                     log(f"Color Fix ✓ [{color_fix}] strength={color_fix_strength:.2f}")
@@ -1755,7 +2465,8 @@ def upscale_image(
                                               fast=color_fix_fast,
                                               strength=color_fix_strength,
                                               planes=_planes,
-                                              device=color_fix_device)
+                                              device=color_fix_device,
+                                              ref_pil=load_color_fix_ref(color_fix_ref, log))
                     _save_output(_sr_arr, output_path, out_format, bit_depth, quality)
                 except Exception as _cf_e:
                     log(f"Color Fix subprocess : erreur ({_cf_e})")
@@ -1770,23 +2481,24 @@ def upscale_image(
             # --- Cache hit ---
             if _cached.get("is_subprocess"):
                 detected_arch = _cached["arch"]
+                _user_scale = scale
                 if scale == 0:
                     scale = _cached["scale"]
                 stype = _cached.get("subprocess_type", "trainner")
                 log(f"[Cache] {detected_arch} (subprocess {stype}, scale {scale}x)")
                 if stype == "esc":
-                    return _neosr_subprocess_infer(
+                    return _post_colorfix(_neosr_subprocess_infer(
                         model_path, input_path, output_path, log,
-                        progress_callback, stop_event=stop_event, use_amp=use_amp)
+                        progress_callback, stop_event=stop_event, use_amp=use_amp))
                 elif stype == "neosr_general":
-                    return _neosr_general_subprocess_infer(
+                    return _post_colorfix(_neosr_general_subprocess_infer(
                         model_path, input_path, output_path, log,
-                        progress_callback, stop_event=stop_event)
+                        progress_callback, stop_event=stop_event, scale_hint=(scale if _user_scale else _cached.get("hint", scale))))
                 else:
                     return _post_colorfix(_spanplus_subprocess_infer(
                         model_path, input_path, output_path, log,
                         progress_callback, stop_event=stop_event,
-                        tile_size=tile_size, tile_pad=tile_pad, use_amp=use_amp, scale_hint=scale))
+                        tile_size=tile_size, tile_pad=tile_pad, use_amp=use_amp, scale_hint=(scale if _user_scale else _cached.get("hint", scale))))
             model         = _cached["model"]
             detected_arch = _cached["arch"]
             if scale == 0:
@@ -1808,13 +2520,21 @@ def upscale_image(
 
             # ── Detect architecture ──
             detected_arch = detect_arch_from_state(state_dict)
+            # Hint for the subprocess runners: the user's scale, or the detected one, or 0
+            # (unknown) so each runner reads the scale from the arch's own layers. The 4x
+            # default used to be sent as the hint and overrode the runners' detection.
+            _known_scale = scale or detect_scale_from_state(state_dict, default=0)
             if scale == 0:
-                scale = detect_scale_from_state(state_dict)
-            log(f"Architecture détectée : {detected_arch or 'inconnue'}, scale : {scale}x")
+                scale = _known_scale or 4
+            _hint = _known_scale
+            if not _hint and detected_arch == "msdan":
+                _hint = scale  # MSDAN's scale cannot be read from its weights
+            log(f"Architecture détectée : {detected_arch or 'inconnue'}, scale : "
+                f"{scale}x{'' if _known_scale else ' (non détecté)'}")
 
             def _store_subprocess(stype: str) -> None:
                 _MODEL_CACHE[_cache_key] = {
-                    "model": None, "scale": scale,
+                    "model": None, "scale": scale, "hint": _hint,
                     "arch": detected_arch or stype,
                     "device": _cache_device,
                     "is_subprocess": True,
@@ -1832,7 +2552,7 @@ def upscale_image(
                 return _post_colorfix(_spanplus_subprocess_infer(
                     model_path, input_path, output_path, log, progress_callback,
                     stop_event=stop_event,
-                    tile_size=tile_size, tile_pad=tile_pad, use_amp=use_amp, scale_hint=scale
+                    tile_size=tile_size, tile_pad=tile_pad, use_amp=use_amp, scale_hint=_hint
                 ))
 
             # ── Video SR (TVT, DAM-VSR) : nécessite entrée multi-frames ──────────
@@ -1845,26 +2565,38 @@ def upscale_image(
                 return _post_colorfix(_spanplus_subprocess_infer(
                     model_path, input_path, output_path, log, progress_callback,
                     stop_event=stop_event,
-                    tile_size=tile_size, tile_pad=tile_pad, use_amp=use_amp, scale_hint=scale
+                    tile_size=tile_size, tile_pad=tile_pad, use_amp=use_amp, scale_hint=_hint
+                ))
+
+            # HEART / NERVE (traiNNer-redux master) : construits par arch_infer.py dans
+            # le runner traiNNer — même chemin qu'en mode portable, une seule implémentation.
+            if detected_arch in ("heart", "nerve", "wiresr", "fdat_rd", "dat_iln", "wsr", "dual",
+                                 "spanf3"):
+                log(f"{detected_arch.upper()} détecté → subprocess traiNNer (arch_infer)...")
+                _store_subprocess("trainner")
+                return _post_colorfix(_spanplus_subprocess_infer(
+                    model_path, input_path, output_path, log, progress_callback,
+                    stop_event=stop_event,
+                    tile_size=tile_size, tile_pad=tile_pad, use_amp=use_amp, scale_hint=_hint
                 ))
 
             # ESC : net_opt() au niveau module, subprocess neosr venv obligatoire
             if detected_arch == "esc":
                 log("ESC détecté → subprocess neosr venv...")
                 _store_subprocess("esc")
-                return _neosr_subprocess_infer(
+                return _post_colorfix(_neosr_subprocess_infer(
                     model_path, input_path, output_path, log, progress_callback,
                     stop_event=stop_event, use_amp=use_amp
-                )
+                ))
 
             # ninasr/lmlt/eimn/drct : net_opt() au niveau module → neosr_general_runner
             if detected_arch in _NEOSR_GENERAL_ARCHS:
                 log(f"{detected_arch} → subprocess neosr général...")
                 _store_subprocess("neosr_general")
-                return _neosr_general_subprocess_infer(
+                return _post_colorfix(_neosr_general_subprocess_infer(
                     model_path, input_path, output_path, log, progress_callback,
-                    stop_event=stop_event
-                )
+                    stop_event=stop_event, scale_hint=_hint
+                ))
 
             if detected_arch in _TRAINNER_SUBPROCESS_ARCHS:
                 log(f"{detected_arch} → subprocess traiNNer-redux venv (kernel CUDA requis)...")
@@ -1872,7 +2604,7 @@ def upscale_image(
                 return _post_colorfix(_spanplus_subprocess_infer(
                     model_path, input_path, output_path, log, progress_callback,
                     stop_event=stop_event,
-                    tile_size=tile_size, tile_pad=tile_pad, use_amp=use_amp, scale_hint=scale
+                    tile_size=tile_size, tile_pad=tile_pad, use_amp=use_amp, scale_hint=_hint
                 ))
 
             # ── Try to instantiate model in-process ──
@@ -1881,7 +2613,7 @@ def upscale_image(
             # Try neosr imports
             if detected_arch and model is None:
                 try:
-                    neosr_path = os.path.join(os.path.expanduser("~"), "IA_Engine", "neosr")
+                    neosr_path = os.path.join(_engine_base(), "neosr")
                     if os.path.isdir(neosr_path) and neosr_path not in sys.path:
                         sys.path.insert(0, neosr_path)
                     if detected_arch == "span":
@@ -1919,7 +2651,7 @@ def upscale_image(
             # Try traiNNer-redux imports
             if detected_arch and model is None:
                 try:
-                    redux_path = os.path.join(os.path.expanduser("~"), "IA_Engine", "traiNNer-redux")
+                    redux_path = os.path.join(_engine_base(), "traiNNer-redux")
                     if os.path.isdir(redux_path) and redux_path not in sys.path:
                         sys.path.insert(0, redux_path)
                     if detected_arch == "spanplus":
@@ -1943,8 +2675,15 @@ def upscale_image(
                         # body weight keys total = num_conv + 1 (input + intermediates + output)
                         _cw0 = state_dict.get("body.0.weight")
                         _c_nf = int(_cw0.shape[0]) if _cw0 is not None else 64
-                        _c_bw = [k for k in state_dict if k.startswith("body.") and k.endswith(".weight")]
-                        _c_nc = max(1, len(_c_bw) - 1) if _c_bw else 16
+                        # Only count real conv kernels (4D weights) — body also holds PReLU
+                        # activations, which get their own "body.N.weight" key (1D, one value
+                        # per channel) that was previously counted as if it were a conv layer,
+                        # roughly doubling num_conv and corrupting every reload of a trained
+                        # compact/ultracompact/superultracompact checkpoint (2026-09-17 fix,
+                        # found by actually loading a freshly-trained superultracompact model).
+                        _c_bw = [k for k in state_dict
+                                 if k.startswith("body.") and k.endswith(".weight") and state_dict[k].dim() == 4]
+                        _c_nc = max(1, len(_c_bw) - 2) if _c_bw else 16
                         model = SRVGGNetCompact(num_feat=_c_nf, num_conv=_c_nc, upscale=scale)
                         log(f"SRVGGNetCompact instancié (num_feat={_c_nf}, num_conv={_c_nc}, scale={scale}x)")
                     elif detected_arch == "smosr":
@@ -2035,7 +2774,7 @@ def upscale_image(
                 return _post_colorfix(_spanplus_subprocess_infer(
                     model_path, input_path, output_path, log, progress_callback,
                     stop_event=stop_event,
-                    tile_size=tile_size, tile_pad=tile_pad, use_amp=use_amp, scale_hint=scale
+                    tile_size=tile_size, tile_pad=tile_pad, use_amp=use_amp, scale_hint=_hint
                 ))
 
             if not isinstance(model, torch.jit.ScriptModule):
@@ -2053,7 +2792,7 @@ def upscale_image(
                     return _post_colorfix(_spanplus_subprocess_infer(
                         model_path, input_path, output_path, log, progress_callback,
                         stop_event=stop_event,
-                        tile_size=tile_size, tile_pad=tile_pad, use_amp=use_amp, scale_hint=scale
+                        tile_size=tile_size, tile_pad=tile_pad, use_amp=use_amp, scale_hint=_hint
                     ))
                 raise  # autre erreur CUDA → propage
             log("Modèle chargé et prêt")
@@ -2117,15 +2856,11 @@ def upscale_image(
             _cf_dev = _cf_resolve_device(color_fix_device)
 
             # ── Chargement image de référence (optionnel) ──
-            _ref_pil = None
-            if color_fix_ref and os.path.isfile(color_fix_ref):
-                try:
-                    _ref_pil = Image.open(color_fix_ref).convert("RGB")
-                    log(f"Color Fix ref : {os.path.basename(color_fix_ref)}")
-                except Exception as _e:
-                    log(f"Color Fix ref : impossible de charger ({_e}) — LQ utilisé")
+            _ref_pil = load_color_fix_ref(color_fix_ref, log)
+            if _ref_pil is not None:
+                log(f"Color Fix ref : {os.path.basename(color_fix_ref)}")
 
-            _ref_label = f" ref={os.path.basename(color_fix_ref)}" if _ref_pil else ""
+            _ref_label = f" ref={os.path.basename(color_fix_ref)}" if _ref_pil is not None else ""
             if color_fix == "wavelet":
                 log(f"Color Fix [wavelet] wavelets={color_fix_wavelets} "
                     f"strength={color_fix_strength:.2f} planes={_planes} "
@@ -2142,7 +2877,7 @@ def upscale_image(
                 log("Color Fix TRT : premier appel → autotuning Triton (~3 s), "
                     "résultat mis en cache pour les prochaines images.")
 
-            output = color_fix_image(output, img,
+            output = _cf_try(output, img, log,
                                      method=color_fix,
                                      wavelets=color_fix_wavelets,
                                      radius=color_fix_radius,
@@ -2174,6 +2909,478 @@ def upscale_image(
         )
     except Exception as e:
         return False, f"Erreur : {e}\n{traceback.format_exc()}"
+
+
+# ─── Video/temporal archs (tscunet/temporalspan/temporalspanv2/tfdat) ───────
+# These 4 archs take (B,T,C,H,W) and output a single (B,C,H,W) frame — the
+# center of the input clip. Reconstruction of the network's hyperparameters
+# from the checkpoint's weight shapes follows the exact same style as the
+# other custom archs above (spanplus/smosr/spanc/gfisrv2 in-process blocks).
+
+# ── True 16-bit-capable I/O for the video/sequence pipeline only ────────────
+# (_sequence_video_upscale_folder below). NOT used by the single-image /
+# classic-folder upscale paths — those keep their existing PIL-only behavior
+# untouched, on purpose (out of scope for this pass).
+#
+# Why pyvips instead of Pillow for the loader: Pillow has no first-class 3x16
+# bit-per-channel RGB mode, so `Image.open(...).convert("RGB")` silently
+# truncates a genuine 16-bit source to 8-bit on load (verified). pyvips reads
+# the real on-disk sample format (uchar/ushort/etc.) and `.numpy()` returns it
+# with the matching numpy dtype, no truncation — this is the exact same
+# read pattern traiNNer-redux's PairedVideoDataset uses at training time
+# (vipsimfrompath()) for the same reason. Verified byte-identical to Pillow
+# for actual 8-bit sources (uint8 arrays compare equal), so the default path
+# is unaffected.
+#
+# Why pyvips instead of Pillow for the *writer* when 16-bit output is asked:
+# verified directly — Pillow's `Image.frombuffer("RGB", size, data, "raw",
+# "RGB;16B", 0, 1)` trick (used by the generic `_save_output()` above for its
+# bit_depth==16 branch) does NOT produce a genuine 16-bit-per-channel PNG; the
+# "RGB;16B" raw *decoder* downsamples 16-bit input into an 8-bit "RGB" image
+# while decoding — reopening the file this writes shows it landed on disk as
+# plain 8-bit (confirmed: pyvips reports format "uchar", not "ushort", after
+# round-tripping through that codepath). pyvips's `Image.new_from_memory(...).
+# write_to_file(...)` with an actual uint16 buffer does write a real 16-bit
+# PNG (confirmed: reloading it back reports format "ushort" and every sample
+# matches the source array exactly).
+
+_FMT_MAXVAL = {
+    "uchar": 255.0, "char": 127.0,
+    "ushort": 65535.0, "short": 32767.0,
+    "uint": 4294967295.0, "int": 2147483647.0,
+    "float": 1.0, "double": 1.0,
+}
+
+
+def _load_sequence_frame(path: str) -> "np.ndarray":
+    """Load one frame as float32 [H, W, 3] in [0, 1], normalized by the REAL
+    max value of its on-disk sample format (255 for 8-bit, 65535 for 16-bit,
+    etc.) — not a hardcoded /255. Falls back to the old Pillow (8-bit-only)
+    loader if pyvips isn't installed, so the function degrades gracefully
+    rather than hard-failing a batch that used to work."""
+    if not PYVIPS_AVAILABLE:
+        img = Image.open(path).convert("RGB")
+        return np.asarray(img).astype(np.float32) / 255.0
+    v = pyvips.Image.new_from_file(path, access="sequential")
+    if v.bands == 1:
+        v = v.bandjoin([v, v])  # gray -> 3 bands, same as PIL's .convert("RGB")
+    elif v.bands >= 4:
+        v = v[:3]  # drop alpha (and any extra bands) — no compositing, matches
+        # PIL's .convert("RGB") which also just discards alpha unmixed.
+    elif v.bands == 2:
+        v = v[:1].bandjoin([v[:1], v[:1]])
+    arr = v.numpy()
+    maxval = _FMT_MAXVAL.get(v.format, 255.0)
+    return arr.astype(np.float32) / maxval
+
+
+def _save_sequence_frame(float_arr: "np.ndarray", out_path: str, bit_depth: int = 8) -> None:
+    """Save one upscaled frame. bit_depth=8 (default) reproduces the exact
+    previous behavior byte-for-byte (Pillow uint8 PNG). bit_depth=16 writes a
+    genuine 16-bit-per-channel PNG via pyvips (see note above on why Pillow
+    can't do this for RGB)."""
+    if bit_depth == 16 and PYVIPS_AVAILABLE:
+        arr16 = (np.clip(float_arr, 0.0, 1.0) * 65535.0 + 0.5).astype(np.uint16)
+        h, w, c = arr16.shape
+        arr16 = np.ascontiguousarray(arr16)
+        vimg = pyvips.Image.new_from_memory(arr16.tobytes(), w, h, c, "ushort")
+        vimg.write_to_file(out_path)
+        return
+    arr8 = (np.clip(float_arr, 0.0, 1.0) * 255.0 + 0.5).astype(np.uint8)
+    Image.fromarray(arr8).save(out_path)
+
+def _build_sequence_model(detected_arch: str, state_dict: dict, scale: int, log):
+    """Instantiate one of the 4 video/temporal archs from its state_dict.
+    Returns (model, clip_size). Raises on failure — never masks a shape
+    mismatch on our side. One exception: TFDAT's own load_state_dict()
+    (traiNNer/archs/tfdat_arch.py) hardcodes strict=False internally
+    regardless of what's passed — a pre-existing quirk of that arch in the
+    engine, not something introduced here; we independently verify the key
+    sets match afterwards and raise ourselves if they don't, so the strict
+    guarantee still holds end-to-end.
+    """
+    redux_path = os.path.join(_engine_base(), "traiNNer-redux")
+    if os.path.isdir(redux_path) and redux_path not in sys.path:
+        sys.path.insert(0, redux_path)
+
+    if detected_arch == "motsr":
+        # Shared shape→kwargs rules (arch_infer.py), engine-registered factory.
+        try:
+            from src.core import arch_infer
+        except ImportError:
+            import arch_infer
+        model, _sc, kw = arch_infer.build("motsr", state_dict)
+        log("MoTSR instancié (" + ", ".join(f"{k}={v}" for k, v in kw.items()) + ") — mode récurrent")
+        return model, 5
+
+    if detected_arch == "tscunet":
+        from traiNNer.archs.tscunet_arch import TSCUNet
+        # TSCUNet self-configures (in_nc/dim/out_nc/clip_size/nb/scale/residual/
+        # sigma) from state_dict shapes/key-counts and self-loads with
+        # strict=True internally (see TSCUNet.__init__, state= kwarg).
+        model = TSCUNet(state=state_dict)
+        clip_size = int(model.clip_size)
+        log(f"TSCUNet instancié depuis le checkpoint (dim={model.dim}, clip_size={clip_size}, scale={model.scale}x)")
+        return model, clip_size
+
+    if detected_arch == "temporalspan":
+        from traiNNer.archs.temporal_span_arch import temporalspan
+        fc = int(state_dict["center_conv.eval_conv.weight"].shape[0])
+        hc = int(state_dict["history_convs.0.eval_conv.weight"].shape[0])
+        n_hist = len([k for k in state_dict
+                      if k.startswith("history_convs.") and k.endswith(".eval_conv.weight")])
+        num_frames = n_hist + 1
+        # scale 0 = "Auto": the scale is not stored as such — the first one whose strict
+        # load succeeds (it was built 1x before, and a 2x/4x model failed to load)
+        last = None
+        for sc in ([scale] if scale > 0 else [2, 4, 1, 3, 8]):
+            try:
+                model = temporalspan(num_in_ch=3, num_out_ch=3, num_frames=num_frames,
+                                     feature_channels=fc, scale=sc, history_channels=hc)
+                model.load_state_dict(state_dict, strict=True)
+                scale = sc
+                break
+            except Exception as e:
+                last = e
+        else:
+            raise last
+        log(f"TemporalSPAN instancié (feature_channels={fc}, history_channels={hc}, "
+            f"num_frames={num_frames}, scale={scale}x)")
+        return model, num_frames
+
+    if detected_arch == "temporalspanv2":
+        from traiNNer.archs.temporal_span_v2_arch import temporalspanv2
+        fc = int(state_dict["m_head.weight"].shape[0])
+        n_layers = len({int(k.split(".")[1]) for k in state_dict if k.startswith("m_layers.")})
+        num_frames = 2 * n_layers + 1
+        up_out = int(state_dict["m_upsample.0.weight"].shape[0])
+        eff_scale = max(1, scale) if scale else max(1, round((up_out / fc) ** 0.5))
+        # TemporalSPANBlock._forward_impl() indexes self.blocks[0..5] by hand —
+        # num_blocks is effectively hardcoded to 6 regardless of what's passed;
+        # we still read the checkpoint's real count for the log/sanity check.
+        n_blocks = len({int(k.split(".")[3]) for k in state_dict if k.startswith("m_layers.0.blocks.")})
+        if n_blocks != 6:
+            log(f"⚠ TemporalSPANv2 : {n_blocks} blocs SPAB détectés (attendu 6 — "
+                f"TemporalSPANBlock.forward() est câblé en dur pour 6). Le modèle "
+                f"pourrait ne pas se charger correctement.")
+        residual = "m_res.weight" in state_dict
+        model = temporalspanv2(num_in_ch=3, num_out_ch=3, num_frames=num_frames,
+                                feature_channels=fc, scale=eff_scale,
+                                num_blocks=max(1, n_blocks), residual=residual)
+        model.load_state_dict(state_dict, strict=True)
+        log(f"TemporalSPANv2 instancié (feature_channels={fc}, num_frames={num_frames}, "
+            f"num_blocks={n_blocks}, residual={residual}, scale={eff_scale}x)")
+        return model, num_frames
+
+    if detected_arch in ("tfdat", "tfdatv2"):
+        # Shared rules (arch_infer.py): real scale from conv_first (MetaUpsample stores the
+        # internal x4 for scale <= 2), block pattern / ffn / aim / upsampler from the
+        # weights, v2 clip_size from temporal_fusion.fuse. Key sets checked there.
+        try:
+            from src.core import arch_infer
+        except ImportError:
+            import arch_infer
+        model, _sc, kw = arch_infer.build(detected_arch, state_dict)
+        name = "TFDAT v2" if detected_arch == "tfdatv2" else "TFDAT"
+        log(f"{name} instancié (" + ", ".join(f"{k}={v}" for k, v in kw.items()) + ")")
+        return model, int(kw["clip_size"])
+
+    raise ValueError(f"Arch séquence inconnue : {detected_arch}")
+
+
+def _guided_color_fix_subprocess(sr_np, ref_pil, device="auto"):
+    """Guided Color Fix (aniCC) for the torch-less portable GUI: run
+    guided_color_fix.py in the engine venv, read back the float32 result (.npy)."""
+    import subprocess
+    import tempfile
+    script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "guided_color_fix.py")
+    with tempfile.TemporaryDirectory(prefix="usrs_gcf_") as td:
+        sr_p, lr_p, out_p = (os.path.join(td, n) for n in ("sr.npy", "lr.png", "out.npy"))
+        np.save(sr_p, np.clip(sr_np, 0, 1).astype(np.float32))   # no 8-bit round trip
+        ref_pil.convert("RGB").save(lr_p)
+        r = subprocess.run([_TRAINNER_VENV_PY, script, sr_p, lr_p, out_p, str(device)], capture_output=True,
+                           text=True, encoding="utf-8", errors="replace",
+                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        if r.returncode != 0 or not os.path.isfile(out_p):
+            raise RuntimeError((r.stderr or r.stdout or "échec").strip()[-300:])
+        return np.load(out_p)
+
+
+def _sequence_subprocess(model_path, input_folder, output_folder, detected_arch, scale, log,
+                         progress_callback, stop_event, color_fix, color_fix_wavelets,
+                         color_fix_radius, color_fix_fast, color_fix_strength,
+                         color_fix_device, out_bit_depth):
+    """Run _sequence_video_upscale_folder in the engine venv via sequence_runner.py.
+    Streams its log lines, forwards Stop through a sentinel file, returns the same
+    (success, total, errors) tuple as the in-process call."""
+    import subprocess
+    import tempfile
+    runner = os.path.join(os.path.dirname(__file__), "sequence_runner.py")
+    if not os.path.isfile(_TRAINNER_VENV_PY):
+        return 0, 0, [f"Python du venv moteur introuvable : {_TRAINNER_VENV_PY}"]
+    if not os.path.isfile(runner):
+        return 0, 0, [f"Runner séquence introuvable : {runner}"]
+    tmp = tempfile.mkdtemp(prefix="usrs_seq_")
+    stop_file = os.path.join(tmp, "stop")
+    args_file = os.path.join(tmp, "args.json")
+    with open(args_file, "w", encoding="utf-8") as f:
+        json.dump({"model_path": model_path, "input_folder": input_folder,
+                   "output_folder": output_folder, "detected_arch": detected_arch,
+                   "scale": scale, "stop_file": stop_file, "color_fix": color_fix,
+                   "color_fix_wavelets": color_fix_wavelets, "color_fix_radius": color_fix_radius,
+                   "color_fix_fast": color_fix_fast, "color_fix_strength": color_fix_strength,
+                   "color_fix_device": color_fix_device, "out_bit_depth": out_bit_depth}, f)
+    log("Mode portable : pipeline séquence dans le venv moteur (subprocess)")
+    result = None
+    try:
+        proc = subprocess.Popen(
+            [_TRAINNER_VENV_PY, runner, args_file],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+            encoding="utf-8", errors="replace", bufsize=1,
+            env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+            creationflags=0x08000000 if sys.platform == "win32" else 0)
+        for line in proc.stdout:
+            line = line.rstrip()
+            if stop_event is not None and stop_event.is_set() and not os.path.exists(stop_file):
+                open(stop_file, "w").close()
+            if line.startswith("RESULT "):
+                try:
+                    result = json.loads(line[7:])
+                except Exception:
+                    pass
+                continue
+            if line:
+                log(line)
+                if callable(progress_callback):
+                    try:
+                        progress_callback(line)
+                    except Exception:
+                        pass
+        proc.wait()
+    except Exception as e:
+        return 0, 0, [f"Lancement du runner séquence échoué : {e}"]
+    finally:
+        try:
+            import shutil
+            shutil.rmtree(tmp, ignore_errors=True)
+        except Exception:
+            pass
+    if not result:
+        return 0, 0, [f"Le runner séquence s'est arrêté sans résultat (code {proc.returncode})."]
+    return int(result.get("success", 0)), int(result.get("total", 0)), list(result.get("errors", []))
+
+
+def _sequence_video_upscale_folder(
+    model_path: str,
+    input_folder: str,
+    output_folder: str,
+    detected_arch: str,
+    scale: int,
+    log,
+    progress_callback: Optional[Callable] = None,
+    stop_event=None,
+    color_fix: str = "none",
+    color_fix_wavelets: int = 4,
+    color_fix_radius: int = 32,
+    color_fix_fast: bool = False,
+    color_fix_strength: float = 1.0,
+    color_fix_device: str = "auto",
+    out_bit_depth: int = 8,
+) -> Tuple[int, int, list]:
+    """Sliding-window sequence inference for the 4 video/temporal archs.
+
+    Loads every LQ frame in the folder, and for each frame position builds a
+    clip_size-frame window centered on it (duplicating the first/last frame
+    to fill the window at the start/end of the sequence — the standard
+    boundary strategy for sliding-window video SR, since there's no real
+    neighbor frame beyond the sequence edges), runs the model once per
+    output frame, and saves one upscaled frame per input frame.
+
+    No tiling in this pass (whole-frame only) — tiling a multi-frame window
+    consistently across all clip_size frames is materially more involved
+    than single-image tiling and was out of budget for this session; frames
+    must fit in memory/VRAM untiled.
+
+    Bit depth: frames are loaded via pyvips (`_load_sequence_frame`),
+    preserving their real on-disk precision (8 or 16-bit) instead of
+    Pillow's silent 8-bit truncation — the model itself still runs in
+    float32 [0, 1] regardless. `out_bit_depth` (8 default, or 16) controls
+    only the *output* write (`_save_sequence_frame`): 8 reproduces the exact
+    previous byte-for-byte behavior, 16 writes genuine 16-bit-per-channel
+    PNGs. When color_fix is active with out_bit_depth=16, the fix is applied
+    in-memory on the float tensor before the single 16-bit save (no lossy
+    8-bit round-trip through disk) — for out_bit_depth=8 the previous
+    save-then-reopen-then-refix codepath (`_apply_color_fix_file`) is left
+    untouched, so that default case is unchanged.
+    """
+    errors: list = []
+    if not TORCH_AVAILABLE:
+        if getattr(sys, "frozen", False):
+            # Portable exe: no torch in-process → same pipeline, run by the engine venv.
+            return _sequence_subprocess(
+                model_path, input_folder, output_folder, detected_arch, scale, log,
+                progress_callback, stop_event, color_fix, color_fix_wavelets,
+                color_fix_radius, color_fix_fast, color_fix_strength, color_fix_device,
+                out_bit_depth)
+        return 0, 0, ["PyTorch non installé"]
+    if not IMAGING_AVAILABLE:
+        return 0, 0, ["Pillow/NumPy non installé"]
+    if out_bit_depth == 16 and not PYVIPS_AVAILABLE:
+        return 0, 0, ["Sortie 16-bit demandée mais pyvips n'est pas installé "
+                       "(pip install pyvips pyvips-binary)."]
+    if not os.path.isdir(input_folder):
+        return 0, 0, [f"Dossier introuvable : {input_folder}"]
+
+    exts = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".tif"}
+    import re as _re
+    def _nat_key(s):
+        return [int(t) if t.isdigit() else t.lower() for t in _re.split(r'(\d+)', s)]
+    files = sorted((f for f in os.listdir(input_folder)
+                    if os.path.splitext(f)[1].lower() in exts), key=_nat_key)
+    if len(files) < 2:
+        return 0, 0, [f"{detected_arch} nécessite une séquence de plusieurs frames "
+                       f"(au moins 2 trouvées : {len(files)})."]
+
+    os.makedirs(output_folder, exist_ok=True)
+
+    def _cb(msg: str) -> None:
+        if callable(progress_callback):
+            try:
+                progress_callback(msg)
+            except Exception:
+                pass
+        log(msg)
+
+    def _stopped() -> bool:
+        return stop_event is not None and stop_event.is_set()
+
+    try:
+        if model_path.endswith(".safetensors"):
+            from safetensors.torch import load_file
+            state_dict = load_file(model_path, device="cpu")
+        else:
+            checkpoint = torch.load(model_path, map_location="cpu", weights_only=False)
+            state_dict = extract_weights(checkpoint)
+
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        _cb(f"Device : {device}")
+        model, clip_size = _build_sequence_model(detected_arch, state_dict, scale, _cb)
+        model = model.to(device).eval()
+    except Exception as e:
+        return 0, 0, [f"Chargement du modèle séquence échoué : {e}\n{traceback.format_exc()}"]
+
+    half = clip_size // 2
+    n = len(files)
+
+    # Preload every frame as a float tensor (folder/batch mode assumes a
+    # bounded sequence — same assumption the rest of upscale_folder makes).
+    # _load_sequence_frame normalizes by the frame's REAL dtype max (255 for
+    # 8-bit, 65535 for 16-bit, ...) instead of a hardcoded /255.
+    frame_tensors = []
+    try:
+        for f in files:
+            arr = _load_sequence_frame(os.path.join(input_folder, f))
+            frame_tensors.append(torch.from_numpy(arr).permute(2, 0, 1))
+    except Exception as e:
+        return 0, 0, [f"Lecture des frames échouée : {e}"]
+
+    # MoTSR is recurrent: each frame also consumes the two previous RAW (unclamped)
+    # SR outputs. Same algorithm as the author's motsr_video.py (verified 0.0 diff):
+    # scene cuts = mean |thumbnail(64x36) diff| > 0.30 reset the state; inside a
+    # scene the 5-LR window is clamped to the scene; the state is seeded with
+    # image_only() of the scene's first frame.
+    is_motsr = detected_arch == "motsr"
+    if is_motsr:
+        import torch.nn.functional as _Fm
+        scene_start = [0] * n
+        _prev_thumb, _start = None, 0
+        for _i in range(n):
+            _th = _Fm.interpolate(frame_tensors[_i].unsqueeze(0), size=(36, 64),
+                                  mode="bilinear", align_corners=False)
+            if _prev_thumb is not None and float((_th - _prev_thumb).abs().mean()) > 0.30:
+                _start = _i
+            scene_start[_i] = _start
+            _prev_thumb = _th
+        scene_end = [0] * n
+        _end = n
+        for _i in range(n - 1, -1, -1):
+            scene_end[_i] = _end
+            if scene_start[_i] == _i:
+                _end = _i
+        _cuts = sum(1 for _i in range(1, n) if scene_start[_i] == _i)
+        _cb(f"MoTSR : {n} frames, {_cuts} coupure(s) de scène détectée(s) (état récurrent réinitialisé)")
+        _state = {"older": None, "previous": None}
+        _gpu = {}  # frame index -> device tensor, only the current 5-frame window
+
+    def _motsr_step(i):
+        left, right = scene_start[i], scene_end[i]
+        for _k in [k for k in _gpu if k < i - 2]:
+            del _gpu[_k]
+        def lr(k):
+            k = min(max(k, left), right - 1)
+            if k not in _gpu:
+                _gpu[k] = frame_tensors[k].unsqueeze(0).to(device)
+            return _gpu[k]
+        with torch.no_grad():
+            if i == left:
+                seed = model.image_only(lr(left))
+                _state["older"], _state["previous"] = seed, seed
+            pred = model.forward_step(lr(i - 2), _state["older"], lr(i - 1), _state["previous"],
+                                      lr(i), lr(i + 1), lr(i + 2))
+        if not torch.isfinite(pred).all():
+            raise RuntimeError("prédiction non finie (NaN/Inf)")
+        _state["older"], _state["previous"] = _state["previous"], pred
+        return pred
+
+    success = 0
+    for i, fname in enumerate(files):
+        if _stopped():
+            errors.append("Arrêt demandé par l'utilisateur.")
+            break
+        _cb(f"[{i + 1}/{n}] {fname} (clip_size={clip_size})")
+        try:
+            if is_motsr:
+                out = _motsr_step(i)
+            else:
+                # Boundary strategy: clamp the window index into [0, n-1], which
+                # duplicates the first/last frame for windows that would
+                # otherwise run off the sequence edge.
+                window_idx = [min(max(i + j - half, 0), n - 1) for j in range(clip_size)]
+                window = torch.stack([frame_tensors[k] for k in window_idx], dim=0)
+                window = window.unsqueeze(0).to(device)  # (1, T, C, H, W)
+                with torch.no_grad():
+                    out = model(window)
+            out = out.clamp(0.0, 1.0).squeeze(0).permute(1, 2, 0).cpu().numpy()
+            base, _ = os.path.splitext(fname)
+            out_path = os.path.join(output_folder, f"{base}_upscaled.png")
+            do_color_fix = color_fix != "none" and color_fix_strength > 0.0
+            if out_bit_depth == 16:
+                # In-memory color fix (if any) then a single genuine 16-bit
+                # save — avoids the 8-bit round-trip through disk that the
+                # default (8-bit) codepath below still uses unchanged.
+                if do_color_fix:
+                    lq_pil = Image.open(os.path.join(input_folder, fname)).convert("RGB")
+                    _cb(f"Color Fix ✓ [{color_fix}] strength={color_fix_strength:.2f}")
+                    out = _cf_try(out, lq_pil, _cb, method=color_fix,
+                                  wavelets=color_fix_wavelets, radius=color_fix_radius,
+                                  fast=color_fix_fast, strength=color_fix_strength,
+                                  planes=[0, 1, 2], device=color_fix_device)
+                _save_sequence_frame(out, out_path, bit_depth=16)
+            else:
+                # Unchanged from before: save 8-bit, then color-fix by
+                # reopening the saved file (existing shared helper).
+                _save_sequence_frame(out, out_path, bit_depth=8)
+                if do_color_fix:
+                    _apply_color_fix_file(out_path, os.path.join(input_folder, fname),
+                                          color_fix, color_fix_wavelets, color_fix_radius,
+                                          color_fix_fast, color_fix_strength, None,
+                                          color_fix_device, "PNG", 8, 95, _cb)
+            success += 1
+        except Exception as e:
+            errors.append(f"{fname}: {e}")
+            _cb(f"  Erreur : {e}")
+
+    return success, n, errors
 
 
 def upscale_folder(
@@ -2257,31 +3464,15 @@ def upscale_folder(
 
     # Determine if the model is a subprocess arch (needs persistent worker).
     # Use all state_dict keys (metadata only for safetensors — no tensor data loaded).
-    _is_subprocess_arch = False
-    _is_esc_arch = False
+    _is_subprocess_arch = _is_esc_arch = _is_neosr_general_arch = False
     if os.path.isfile(model_path) and persistent_batch:
-        try:
-            if model_path.endswith(".safetensors"):
-                # Read only the header (key names + dtypes/shapes) — zero tensor data
-                import struct as _struct, json as _json
-                with open(model_path, "rb") as _mf:
-                    _hlen = _struct.unpack("<Q", _mf.read(8))[0]
-                    _hmeta = _json.loads(_mf.read(_hlen))
-                _sd_keys = set(k for k in _hmeta if k != "__metadata__")
-            else:
-                _ck = torch.load(model_path, map_location="cpu", weights_only=False)
-                _sd = _ck if any(k.endswith(".weight") for k in _ck.keys()) else (
-                    _ck.get("params_ema") or _ck.get("params") or _ck)
-                _sd_keys = set(_sd.keys())
-            _arch_detected = detect_arch_from_state({k: None for k in _sd_keys})  # type: ignore
-            _is_subprocess_arch = (_arch_detected or "") in _TRAINNER_SUBPROCESS_ARCHS
-            _is_esc_arch = (_arch_detected or "") == "esc"
-        except Exception:
-            pass
+        _route = _persistent_route(model_path)
+        _is_subprocess_arch = _route == "trainner"
+        _is_esc_arch = _is_neosr_general_arch = _route == "neosr"
 
     # ── Persistent batch session (traiNNer subprocess archs) ──────────────────
     _session: Optional[PersistentBatchSession] = None
-    if persistent_batch and _is_subprocess_arch:
+    if persistent_batch and _is_subprocess_arch and not str(model_path).lower().endswith(".onnx"):
         _session = PersistentBatchSession(
             venv_py=_TRAINNER_VENV_PY,
             model_path=model_path,
@@ -2295,9 +3486,9 @@ def upscale_folder(
             _session = None
             _cb("[PersistentBatch] Démarrage échoué — mode normal utilisé")
 
-    # ── Persistent ESC session (neosr venv) ───────────────────────────────────
+    # ── Persistent ESC/NeoSR-general session (neosr venv) ─────────────────────
     _esc_session: Optional[PersistentNeoSRSession] = None
-    if persistent_batch and _is_esc_arch and os.path.isfile(_NEOSR_VENV_PY):
+    if persistent_batch and (_is_esc_arch or _is_neosr_general_arch) and os.path.isfile(_NEOSR_VENV_PY):
         _esc_session = PersistentNeoSRSession(
             venv_py=_NEOSR_VENV_PY,
             model_path=model_path,
@@ -2305,6 +3496,7 @@ def upscale_folder(
             tile_pad=tile_pad,
             use_amp=use_amp,
             log=_cb,
+            scale_hint=scale,  # required for msdan (scale not recoverable from weights)
         )
         if not _esc_session.start():
             _esc_session = None
@@ -2396,8 +3588,25 @@ def upscale_folder(
                         color_fix_device=color_fix_device,
                     )
             elif _session is not None:
-                # Persistent traiNNer subprocess session
-                ok, msg = _session.infer(in_path, out_path)
+                # Persistent traiNNer subprocess session (infer returns ok, msg, extra)
+                ok, msg, _extra = _session.infer(in_path, out_path)
+                if _extra.get("note"):
+                    _cb(f"  {_extra['note']}")
+                if not ok:
+                    _cb(f"  [PersistentBatch] Erreur : {msg.strip().splitlines()[-1] if msg.strip() else msg}"
+                        " — fallback subprocess")
+                    ok, msg = upscale_image(
+                        model_path, in_path, out_path,
+                        scale=scale, tile_size=tile_size, tile_pad=tile_pad,
+                        use_amp=use_amp, callback=callback,
+                        stop_event=stop_event,
+                        color_fix=color_fix,
+                        color_fix_wavelets=color_fix_wavelets,
+                        color_fix_radius=color_fix_radius,
+                        color_fix_fast=color_fix_fast,
+                        color_fix_strength=color_fix_strength,
+                        color_fix_device=color_fix_device,
+                    )
             else:
                 ok, msg = upscale_image(
                     model_path, in_path, out_path,

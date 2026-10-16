@@ -34,8 +34,17 @@ from typing import Dict, List, Optional, Tuple
 
 _ONNX_OK = False
 try:
+    # torch first: onnxruntime-gpu then reuses torch's CUDA 12 / cuDNN 9 DLLs.
+    import torch  # noqa: F401
+except Exception:
+    pass
+try:
     import onnxruntime as ort
     _ONNX_OK = True
+    try:
+        ort.set_default_logger_severity(3)  # native log is UTF-16: garbage in the UI log
+    except Exception:
+        pass
 except ImportError:
     pass
 
@@ -145,8 +154,7 @@ class _OrtSessionCache:
         opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
         opts.enable_mem_pattern        = True
         opts.enable_cpu_mem_arena      = True
-        # Uncomment to reduce ORT verbosity:
-        # opts.log_severity_level = 3
+        opts.log_severity_level = 3
 
         # Per-provider options
         prov_opts = []

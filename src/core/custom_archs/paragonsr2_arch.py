@@ -1736,7 +1736,9 @@ def paragonsr2_ultimate_v2(scale: int = 4, **kw):
     """
     ParagonSR2 Ultimate V2 (Rep-Parameterization).
     """
-    return ParagonSR2_Ultimate(scale=scale, **kw)
+    # `ParagonSR2_Ultimate` n'existe pas (NameError) — l'arch est construite par la
+    # fonction-factory paragonsr2_ultimate() définie juste au-dessus.
+    return paragonsr2_ultimate(scale=scale, **kw)
 
 
 if __name__ == "__main__":

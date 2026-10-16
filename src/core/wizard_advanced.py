@@ -12,7 +12,13 @@ from enum import Enum
 
 
 def _t(fr: str, en: str) -> str:
-    """Return the French or English string based on current translator language."""
+    """Return the French or English string based on current UI language."""
+    try:
+        from qt_ui.i18n import get_lang
+        if get_lang() == "en":
+            return en
+    except Exception:
+        pass
     try:
         from src.core.translations import get_translator
         tr = get_translator()
@@ -408,7 +414,13 @@ class WizardEngine:
             content = self.get_answer("content_type", "mixte")
             objective = self.get_answer("objective", "equilibre")
             rec = ARCH_RECOMMENDATIONS.get(content, {}).get(objective, "span")
-            return f"💡 {_t('Recommandé pour', 'Recommended for')} {content}/{objective} : {rec}"
+            # content/objective are internal keys ("mixte", "equilibre"…): show labels.
+            _lbl = {"qualite": ("qualité", "quality"), "vitesse": ("vitesse", "speed"),
+                    "equilibre": ("équilibre", "balance"), "anime": ("anime", "anime"),
+                    "photo": ("photo", "photo"), "mixte": ("mixte", "mixed")}
+            c_lbl = _t(*_lbl[content]) if content in _lbl else content
+            o_lbl = _t(*_lbl[objective]) if objective in _lbl else objective
+            return f"💡 {_t('Recommandé pour', 'Recommended for')} {c_lbl}/{o_lbl} : {rec}"
 
         if question_id == "dataset_mode":
             return _t(

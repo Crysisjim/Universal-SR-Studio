@@ -33,16 +33,23 @@ import threading
 import subprocess
 import argparse
 from pathlib import Path
+
+# Racine moteur : ~/USRS (seul dossier généré/utilisé par l'app).
+try:
+    from src.core.engine_paths import base_engine_path as _ebp
+except ImportError:  # venv runner: engine_paths.py ships loose next to this file
+    from engine_paths import base_engine_path as _ebp
+_ENG_ROOT = Path(_ebp())
 from datetime import datetime
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
-REDUX_PATH   = Path.home() / "IA_Engine" / "traiNNer-redux"
+REDUX_PATH   = _ENG_ROOT / "traiNNer-redux"
 TRAIN_SCRIPT = REDUX_PATH / "train.py"
 
 _THIS_DIR              = Path(__file__).parent
 NEOSR_GENERAL_RUNNER   = _THIS_DIR / "neosr_general_runner.py"
-_SHARED_VENV_PY        = Path.home() / "IA_Engine" / "runtimes" / ".venv" / "Scripts" / "python.exe"
-NEOSR_PYTHON           = _SHARED_VENV_PY if _SHARED_VENV_PY.exists() else (Path.home() / "IA_Engine" / "neosr" / ".venv" / "Scripts" / "python.exe")
+_SHARED_VENV_PY        = _ENG_ROOT / "runtimes" / ".venv" / "Scripts" / "python.exe"
+NEOSR_PYTHON           = _SHARED_VENV_PY if _SHARED_VENV_PY.exists() else (_ENG_ROOT / "neosr" / ".venv" / "Scripts" / "python.exe")
 REDUX_INFERENCE_RUNNER = _THIS_DIR / "redux_inference_runner.py"
 
 
@@ -65,10 +72,10 @@ def _find_venv_python(base: Path) -> Path:
 
 REDUX_PYTHON = _find_venv_python(REDUX_PATH)
 
-DEFAULT_TRAIN_GT = str(Path.home() / "IA_Engine/datasets/train/HR")
-DEFAULT_VAL_GT   = str(Path.home() / "IA_Engine/datasets/val/GT")
-DEFAULT_VAL_LQ   = str(Path.home() / "IA_Engine/datasets/val/LQ")
-DEFAULT_TEST_IMG = str(Path.home() / "IA_Engine/datasets/val/LQ/Overlord (1).png")
+DEFAULT_TRAIN_GT = str(_ENG_ROOT / "datasets/train/HR")
+DEFAULT_VAL_GT   = str(_ENG_ROOT / "datasets/val/GT")
+DEFAULT_VAL_LQ   = str(_ENG_ROOT / "datasets/val/LQ")
+DEFAULT_TEST_IMG = str(_ENG_ROOT / "datasets/val/LQ/Overlord (1).png")
 
 # ── Modes de précision ─────────────────────────────────────────────────────────
 _PRECISION_MODES = {
@@ -694,6 +701,9 @@ def main() -> None:
     ap.add_argument("--coffre-path", type=str, default="")
     ap.add_argument("--reset",       action="store_true")
     ap.add_argument("--list",        action="store_true")
+    ap.add_argument("--chain-features", action="store_true",
+                    help="then run the feature benchmark on the fastest arch")
+    ap.add_argument("--feature-n-iter", type=int, default=0)
     args = ap.parse_args()
 
     if args.list:
@@ -709,7 +719,7 @@ def main() -> None:
     print(f"[INFO] Python venv    : {REDUX_PYTHON}", flush=True)
     if not REDUX_PATH.exists():
         print(f"[ERREUR] Dossier traiNNer-redux introuvable : {REDUX_PATH}", flush=True)
-        print("         Vérifiez que traiNNer-redux est installé dans ~/IA_Engine/traiNNer-redux/",
+        print("         Vérifiez que traiNNer-redux est installé dans ~/USRS/traiNNer-redux/",
               flush=True)
         sys.exit(1)
     if not TRAIN_SCRIPT.exists():
@@ -720,7 +730,7 @@ def main() -> None:
         for p in [REDUX_PATH / d / s / "python.exe"
                   for d in ("venv", ".venv") for s in ("Scripts", "bin")]:
             print(f"         {p}  {'✓' if p.exists() else '✗'}", flush=True)
-        print("         Créez le venv : cd ~/IA_Engine/traiNNer-redux && python -m venv venv",
+        print("         Créez le venv : cd ~/USRS/traiNNer-redux && python -m venv venv",
               flush=True)
         sys.exit(1)
     print(f"[INFO] train.py       : {TRAIN_SCRIPT}  ✓", flush=True)
@@ -734,7 +744,7 @@ def main() -> None:
     print(f"[INFO] Modes actifs: {active_modes}", flush=True)
 
     out_dir = Path(args.output_dir) if args.output_dir else (
-        Path.home() / "IA_Engine" / "benchmark_results" / "redux_bench"
+        _ENG_ROOT / "benchmark_results" / "redux_bench"
     )
     out_dir.mkdir(parents=True, exist_ok=True)
     state_path = out_dir / "redux_bench_state.json"
@@ -850,8 +860,12 @@ def main() -> None:
         print(txt, flush=True)
 
     # ── Auto-chain vers feature bench ─────────────────────────────────────────
+    # Opt-in: "Architectures" alone used to start the whole feature benchmark too (40
+    # tests, 500 it, default folder), and "Arch + Features" ran the features twice.
     feat_script = _THIS_DIR / "redux_feature_benchmark.py"
-    if not feat_script.exists():
+    if not args.chain_features:
+        pass
+    elif not feat_script.exists():
         print(f"[AUTO-CHAIN] Script introuvable: {feat_script} — skipping.", flush=True)
     else:
         ok_results = [r for r in all_results if r.get("status") == "ok" and r.get("avg_itps")]
@@ -890,6 +904,12 @@ def main() -> None:
                 feat_cmd.append("--no-amp")
             if args.coffre_path:
                 feat_cmd += ["--coffre-path", args.coffre_path]
+            if args.output_dir:
+                feat_cmd += ["--output-dir", args.output_dir]
+            if args.feature_n_iter:
+                feat_cmd += ["--n-iter", str(args.feature_n_iter)]
+            if args.reset:
+                feat_cmd.append("--reset")
 
             print(f"[AUTO-CHAIN] CMD: {' '.join(feat_cmd)}", flush=True)
             subprocess.run(feat_cmd, cwd=str(REDUX_PATH))

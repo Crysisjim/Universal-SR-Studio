@@ -52,14 +52,16 @@ _BACKENDS: dict[tuple[str, str], str] = {
 # ── Chemins Python par moteur ──────────────────────────────────────────────────
 def _find_python(engine: str) -> str:
     """Trouve python.exe dans le venv du moteur. Retourne sys.executable si absent."""
-    if engine == "redux":
-        base = Path.home() / "IA_Engine" / "traiNNer-redux"
-    else:
-        base = Path.home() / "IA_Engine" / "neosr"
+    try:
+        from src.core.engine_paths import base_engine_path as _ebp
+    except ImportError:  # venv runner: engine_paths.py ships loose next to this file
+        from engine_paths import base_engine_path as _ebp
+    _root = Path(_ebp())
+    base = _root / ("traiNNer-redux" if engine == "redux" else "neosr")
 
     candidates = [
-        Path.home() / "IA_Engine" / "runtimes" / ".venv" / "Scripts" / "python.exe",  # v2.5.6 shared
-        Path.home() / "IA_Engine" / "runtimes" / ".venv" / "bin" / "python",          # Linux shared
+        _root / "runtimes" / ".venv" / "Scripts" / "python.exe",  # v2.5.6 shared
+        _root / "runtimes" / ".venv" / "bin" / "python",          # Linux shared
         base / ".venv" / "Scripts" / "python.exe",   # Windows .venv
         base / "venv"  / "Scripts" / "python.exe",   # Windows venv
         base / ".venv" / "bin"     / "python",        # Linux .venv
@@ -79,12 +81,29 @@ _DEFAULTS: dict[str, dict] = {
     "feature": {"n_iter": 500,  "timeout": 900},
 }
 
+# ── Flags réellement supportés par chaque backend ─────────────────────────────
+# _build_backend_args used to append --tests/--reset/--list unconditionally to all
+# 4 backends, assuming they share one CLI surface. They don't — confirmed by
+# grepping each script's own add_argument() calls. Sending an unsupported flag
+# makes argparse exit(2) ("unrecognized arguments"), which is exactly what 3 of
+# the 8 Moteur×Type×Action combinations did in practice (2026-09-17 fix):
+#   - (neosr, arch): no --tests/--reset/--list at all (uses --archs instead)
+#   - (neosr, feature): --tests/--list yes, but no --reset
+#   - (redux, arch) and (redux, feature): all three supported
+_SUPPORTS_TESTS = {("neosr", "arch"): False, ("neosr", "feature"): True,
+                    ("redux", "arch"): True,  ("redux", "feature"): True}
+_SUPPORTS_RESET = {("neosr", "arch"): False, ("neosr", "feature"): False,
+                    ("redux", "arch"): True,  ("redux", "feature"): True}
+_SUPPORTS_LIST  = {("neosr", "arch"): True,  ("neosr", "feature"): True,
+                    ("redux", "arch"): True,  ("redux", "feature"): True}
+
 
 def _build_backend_args(args: argparse.Namespace) -> list[str]:
     """Traduit les args unifiés vers les args du script backend."""
     btype   = args.type
     engine  = args.engine
-    backend = _BACKENDS[(engine, btype)]
+    key     = (engine, btype)
+    backend = _BACKENDS[key]
     python  = _find_python(engine)
 
     cmd = [python, backend]
@@ -93,31 +112,47 @@ def _build_backend_args(args: argparse.Namespace) -> list[str]:
     cmd += ["--n-iter",  str(args.n_iter)]
     cmd += ["--timeout", str(args.timeout)]
     if args.tests:
-        cmd += ["--tests", args.tests]
+        if _SUPPORTS_TESTS[key]:
+            cmd += ["--tests", args.tests]
+        elif key == ("neosr", "arch"):
+            # arch_benchmark.py (neosr) names the same thing --archs instead of --tests.
+            cmd += ["--archs", args.tests]
     if args.train_gt:
         cmd += ["--train-gt", args.train_gt]
     if args.output_dir:
         cmd += ["--output-dir", args.output_dir]
-    if args.reset:
+    if args.reset and _SUPPORTS_RESET[key]:
         cmd.append("--reset")
-    if args.no_upscale:
+    if args.no_upscale and key != ("redux", "feature"):
+        # B56: redux_feature_benchmark has no upscale test at all (no --no-upscale)
         cmd.append("--no-upscale")
+    if getattr(args, "chain_features", False) and key == ("redux", "arch"):
+        cmd += ["--chain-features", "--feature-n-iter", str(args.n_iter)]
+    # B53: validation folders and test image
+    if args.val_gt:
+        cmd += ["--val-gt", args.val_gt]
+    if args.val_lq:
+        cmd += ["--val-lq", args.val_lq]
+    if args.test_image and key != ("redux", "feature"):
+        cmd += ["--test-img" if key == ("redux", "arch") else "--test-image", args.test_image]
     if args.list:
-        cmd.append("--list")
+        if _SUPPORTS_LIST[key]:
+            cmd.append("--list")
+        else:
+            # (neosr, arch) has no --list of its own — arch_benchmark.py --archs=""
+            # with no training GT configured just prints nothing useful, so tell the
+            # user honestly instead of letting argparse crash with exit(2).
+            print("[benchmark_runner] --list non supporté par arch_benchmark.py (NeoSR + "
+                  "Architectures) — ce backend n'a pas d'option de listing dédiée.",
+                  flush=True)
+            return []
 
     # Args spécifiques au type / moteur
     if btype == "arch":
         if args.modes:
-            # NeoSR arch_benchmark utilise --laptop ou --desktop, pas --modes
-            if engine == "neosr":
-                modes = [m.strip().lower() for m in args.modes.split(",") if m.strip()]
-                if set(modes) == {"normal"}:
-                    cmd.append("--desktop")
-                elif len(modes) > 1:
-                    cmd.append("--laptop")
-                # sinon normal par défaut
-            else:
-                cmd += ["--modes", args.modes]
+            # B54: both arch backends take the exact list (NeoSR one used to get
+            # --laptop = all four modes, or nothing and an unanswerable input())
+            cmd += ["--modes", args.modes]
 
     return cmd
 
@@ -158,6 +193,11 @@ def main() -> None:
                     help="Ignore l'état sauvegardé et repart de zéro")
     ap.add_argument("--no-upscale", action="store_true",
                     help="Passe le test d'inférence après chaque arch/feature")
+    ap.add_argument("--chain-features", action="store_true",
+                    help="redux arch: then the feature benchmark on the fastest arch")
+    ap.add_argument("--val-gt",     type=str,  default="")
+    ap.add_argument("--val-lq",     type=str,  default="")
+    ap.add_argument("--test-image", type=str,  default="")
     ap.add_argument("--list",       action="store_true",
                     help="Liste les tests disponibles et quitte")
     args = ap.parse_args()
@@ -191,6 +231,8 @@ def main() -> None:
         _print_header(engine, btype, backend, python)
 
     cmd = _build_backend_args(args)
+    if not cmd:
+        sys.exit(1)
 
     print(f"[CMD] {' '.join(cmd)}\n", flush=True)
 

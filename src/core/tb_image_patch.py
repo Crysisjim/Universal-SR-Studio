@@ -151,7 +151,8 @@ def patch_file(file_path: str) -> tuple:
     #   NeoSR:  imwrite(sr_img, str(save_img_path))
     #   Redux:  imwrite(cv2.cvtColor(sr_img, cv2.COLOR_RGB2BGR), save_img_path)
     imwrite_pattern = re.compile(
-        r"^(\s+)((?:cv2\.)?imwrite\s*\([^\n]*sr_img[^\n]*\))\s*$",
+        # an optional trailing comment (NeoSR: "...)  # type: ignore[...]") made it miss
+        r"^(\s+)((?:cv2\.)?imwrite\s*\([^\n#]*sr_img[^\n#]*\))\s*(#[^\n]*)?$",
         re.MULTILINE
     )
 
@@ -173,14 +174,16 @@ def patch_file(file_path: str) -> tuple:
             f"{indent}{PATCH_MARKER}_START\n"
             f"{indent}# Auto-injected: TensorBoard image logging\n"
             f"{indent}try:\n"
-            f"{indent}    if hasattr(self, 'tb_logger') and self.tb_logger is not None:\n"
+            # the tb_logger ARGUMENT of nondist_validation (Redux never sets self.tb_logger)
+            f"{indent}    _tb = locals().get('tb_logger') or getattr(self, 'tb_logger', None)\n"
+            f"{indent}    if _tb is not None:\n"
             f"{indent}        _i = getattr(self, '_usr_img_count', 0)\n"
             f"{indent}        if _i < {MAX_IMAGES_PER_VAL}:\n"
             f"{indent}            import numpy as _np\n"
             f"{indent}            _arr = sr_img\n"
             + flip_lines +
             f"{indent}            _arr = (_arr.astype('float32') / 255.0).transpose(2, 0, 1)\n"
-            f"{indent}            self.tb_logger.add_image(\n"
+            f"{indent}            _tb.add_image(\n"
             f"{indent}                f'Validation/{{img_name}}', _arr, current_iter, dataformats='CHW'\n"
             f"{indent}            )\n"
             f"{indent}            self._usr_img_count = _i + 1\n"
