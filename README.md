@@ -40,7 +40,7 @@ The biggest update so far — full details in the **[v2.6.0 patch notes](CHANGEL
 
 | | |
 |---|---|
-| ![Training](docs/screenshots/training.png) **Training** — live dashboard: GAN phase badge, loss transition, texture / edge / HF metrics, validation, Soft Stop | ![Quick Upscale](docs/screenshots/quick_upscale.png) **Quick Upscale** — any trained model (here a custom WSR checkpoint), image / folder / video, side-by-side result |
+| ![Training](docs/screenshots/training.webp) **Training** — live dashboard: speed / ETA, loss, PSNR / SSIM, texture / edge / HF metrics, validation, Soft Stop | ![Quick Upscale](docs/screenshots/quick_upscale.png) **Quick Upscale** — any trained model (here a custom WSR checkpoint), image / folder / video, side-by-side result |
 | ![Configuration](docs/screenshots/configuration.png) **Configuration** — architecture, capability bars, VRAM / speed estimate, discriminator, delayed GAN start | ![Degradations](docs/screenshots/degradations.webp) **Degradations** — custom degradations (banding, VHS, optics…) with live HQ → LQ preview |
 | ![Settings](docs/screenshots/settings_engines.png) **Settings** — one-click engine installer (both engines on a fresh install) | ![Post Processing](docs/screenshots/post_processing.png) **Post Processing** — Temporal Fix, Undistort, anti-aliasing, deband, line tools |
 | ![Assistant](docs/screenshots/assistant.png) **Assistant** — guided config wizard with GPU detection | ![LQ Generator](docs/screenshots/lq_generator.webp) **LQ Generator** — build LQ datasets from HQ images or video, before / after preview |
@@ -346,7 +346,7 @@ La plus grosse mise à jour à ce jour — tout le détail dans la **[patch note
 
 | | |
 |---|---|
-| ![Entraînement](docs/screenshots/training.png) **Entraînement** — tableau de bord en direct : badge de phase GAN, transition des losses, métriques texture / contours / HF, validation, Soft Stop | ![Quick Upscale](docs/screenshots/quick_upscale.png) **Quick Upscale** — n'importe quel modèle entraîné (ici un checkpoint WSR custom), image / dossier / vidéo, résultat côte à côte |
+| ![Entraînement](docs/screenshots/training.webp) **Entraînement** — tableau de bord en direct : vitesse / ETA, loss, PSNR / SSIM, métriques texture / contours / HF, validation, Soft Stop | ![Quick Upscale](docs/screenshots/quick_upscale.png) **Quick Upscale** — n'importe quel modèle entraîné (ici un checkpoint WSR custom), image / dossier / vidéo, résultat côte à côte |
 | ![Configuration](docs/screenshots/configuration.png) **Configuration** — architecture, barres de capacités, estimation VRAM / vitesse, discriminateur, démarrage GAN différé | ![Dégradations](docs/screenshots/degradations.webp) **Dégradations** — dégradations custom (banding, VHS, optique…) avec aperçu HQ → LQ en direct |
 | ![Paramètres](docs/screenshots/settings_engines.png) **Paramètres** — installation des moteurs en un clic (les deux moteurs sur une installation neuve) | ![Post Processing](docs/screenshots/post_processing.png) **Post Processing** — Temporal Fix, Undistort, anti-crénelage, deband, outils de lignes |
 | ![Assistant](docs/screenshots/assistant.png) **Assistant** — assistant de configuration guidé avec détection du GPU | ![Générateur LQ](docs/screenshots/lq_generator.webp) **Générateur LQ** — crée des datasets LQ depuis des images HQ ou une vidéo, aperçu avant / après |
