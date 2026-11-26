@@ -1968,6 +1968,9 @@ REDUX_ARCH_FAMILIES = {
         # v2.6 : traiNNer-redux master (Phhofm) — HEART = transformer type HAT-iLN (lourd),
         # NERVE = ResNet conv sans normalisation (très léger)
         "heart", "nerve",
+        # PULSE (Phhofm, HF Phips/PULSE) — petit frère de NERVE : base fixe Magic Kernel
+        # Sharp 2013 + 8 blocs conv-ReLU-conv, graphe Conv/ReLU/DepthToSpace (TRT/NCNN)
+        "pulse", "pulse_fast",
         # WireSR (CF2lter) — anti-aliasing / lignes fines (modèle 1x_Wired)
         *(["wiresr"] if _wiresr_available() else []),
         # FDAT-RD (stinkybread) — FDAT + fenêtres rectangulaires 10×30 + dictionnaire de
@@ -2272,6 +2275,11 @@ ARCH_PROFILES = {
     # Colonnes qualité = estimation par analogie (HEART ≈ classe HAT-iLN, NERVE ≈ ResNet léger).
     "heart":                 [8, 8, 9,  1,  2, 7, 9],
     "nerve":                 [6, 5, 7,  8,  9, 7, 6],
+    # PULSE (2026-11-26, 1080 Ti, scale 2, b2, FP32, générateur seul fwd+bwd) : patch 128
+    # 2,7x (fast 4,5x) la vitesse d'entraînement de NERVE ; inférence 960x540 torch FP32
+    # 17,6 fps (fast 27,4) contre 4,9 pour NERVE. Qualité = estimation (338k / 152k params).
+    "pulse":                 [5, 4, 6, 10, 10, 7, 5],
+    "pulse_fast":            [5, 4, 5, 10, 10, 7, 4],
     # WireSR : 0,52x la vitesse d'OmniSR, 1,45x sa VRAM (mesuré). MoTSR (vidéo, clip
     # 5 frames, stage joint) : 1,6x plus rapide, 0,25x la VRAM. Qualité = estimation.
     "wiresr":                [7, 7, 8,  4,  5, 7, 8],

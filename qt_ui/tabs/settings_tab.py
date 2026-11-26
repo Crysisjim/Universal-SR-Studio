@@ -1149,7 +1149,7 @@ class SettingsTab(QWidget):
             ("CF2lter", "", tr("WireSR (« 1x_Wired ») — anti-crénelage / traits fins, inclus avec son accord",
                                "WireSR (“1x_Wired”) — anti-aliasing / thin lines, included with his permission")),
             ("stinkybread", "https://github.com/stinkybread/FDAT-RD", tr("FDAT-RD — FDAT pour l'anime", "FDAT-RD — FDAT for anime")),
-            ("Phhofm", "https://github.com/Phhofm", "ParagonSR · ParagonSR2 · AetherNet · HEART · NERVE"),
+            ("Phhofm", "https://github.com/Phhofm", "ParagonSR · ParagonSR2 · AetherNet · HEART · NERVE · PULSE"),
             ("Kim2091", "https://github.com/Kim2091", "TFDAT v2"),
             ("Rift73", "https://github.com/Rift73", "WSR · DUAL"),
             ("enhancr", "https://github.com/enhancr/figsr", "FIGSR")],

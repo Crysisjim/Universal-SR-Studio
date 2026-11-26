@@ -209,6 +209,12 @@ ARCH_MULTIPLIER = {
     # (Previous HEART/NERVE/WireSR values were isolated fwd+bwd bench ratios and
     # underestimated real speed 8x to 30x.)
     "nerve": 82.9,           # patch 96: 8.845 it/s short run -> 11.8 it/s
+    # PULSE (2026-11-26): generator-only fwd+bwd vs NERVE, scale 2, b2, patch 128, FP32:
+    # pulse 2.72x, pulse_fast 4.45x. Projected onto NERVE's real run (85 ms/it, of which
+    # ~60 ms generator, ~25 ms fixed losses/OTF): ~47 ms -> 1.8x, fast ~39 ms -> 2.2x.
+    # Estimate, not a real-training run yet.
+    "pulse": 150.0,
+    "pulse_fast": 182.0,
     "heart": 2.94,           # patch 64 (96 does not fit 11 GB): 0.470 -> 0.63 it/s
     "wiresr": 11.7,          # patch 96, scale 2: 1.242 -> 1.66 it/s
     "fdat_rd_small": 14.6,   # patch 96, unshuffle: 1.555 -> 2.08 it/s
@@ -386,6 +392,10 @@ ARCH_BASE_VRAM = {
     # buffers (NERVE, a tiny model, peaks at 5.4 GB), which barely depends on the patch:
     # fdat_rd_medium peaked at 7.84 GB at patch 64 vs 8.03 GB at patch 96.
     "nerve": 2.9,            # 5.41 GB at patch 96
+    # PULSE: generator peak 0.117 GB (fast 0.078) vs NERVE 0.448 GB at patch 128, b2 —
+    # the loss networks + OTF buffers that dominate NERVE's 5.4 GB peak stay.
+    "pulse": 2.6,
+    "pulse_fast": 2.5,
     "heart": 9.5,            # 9.51 GB at patch 64
     "wiresr": 4.4,           # 8.10 GB at patch 96
     "fdat_rd_small": 3.9,    # 7.25 GB at patch 96
@@ -706,7 +716,7 @@ LDL_GEN_TIME_SHARE = 0.66   # fdat_rd_medium: 0.256 s of 0.385 s generator time
 # Losses included in each calibration (their cost is already in the base).
 _CALIB_LOSSES_REAL = ("ldlloss", "perceptualanimeloss")   # 2026-10-26/29 real runs
 _CALIB_LOSSES_GENERIC = ("perceptualloss",)               # older community figures
-_REAL_CALIBRATED = {"nerve", "heart", "wiresr", "fdat_rd_small", "fdat_rd_medium",
+_REAL_CALIBRATED = {"nerve", "pulse", "pulse_fast", "heart", "wiresr", "fdat_rd_small", "fdat_rd_medium",
                     "fdat_rd_large"}
 _LOSS_ALIASES = {
     # perceptualfp16loss = the same VGG-19 (bench: same cost), criteria included

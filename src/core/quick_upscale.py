@@ -60,6 +60,8 @@ ARCH_SIGNATURES = {
     # MoTSR (xyether) — 5-frame + recurrent video model, sequence pipeline only.
     "motsr": ["temporal.compress.weight", "feedback_older.0.weight"],
     "nerve": ["stem.weight", "blocks.0.conv1.weight", "upsampler.0.weight"],
+    # PULSE (Phhofm, HF Phips/PULSE) — NERVE's small sibling, built by arch_infer.py.
+    "pulse": ["stem.weight", "body.0.conv1.weight", "head.0.bias"],
     # WireSR (CF2lter, "1x_Wired" anti-aliasing) — built by arch_infer.py.
     "wiresr": ["blocks.0.mix.stripe_h.weight", "blocks.0.mix.diag_m.weight", "upsampler.MetaUpsample"],
     # ── v2.7.0 batch : 8 archs NeoSR supplémentaires (Quick Upscale, subprocess
@@ -1887,7 +1889,7 @@ def _persistent_route(model_path: str) -> str:
         return "neosr"
     # + the archs rebuilt by arch_infer (HEART/NERVE/WireSR/FDAT-RD/DAT-iLN/WSR/DUAL),
     # which also run in the traiNNer subprocess
-    if arch in _TRAINNER_SUBPROCESS_ARCHS | {"heart", "nerve", "wiresr", "fdat_rd", "dat_iln",
+    if arch in _TRAINNER_SUBPROCESS_ARCHS | {"heart", "nerve", "pulse", "wiresr", "fdat_rd", "dat_iln",
                                               "wsr", "dual", "spanf3"}:
         return "trainner"
     return ""
@@ -2570,7 +2572,7 @@ def upscale_image(
 
             # HEART / NERVE (traiNNer-redux master) : construits par arch_infer.py dans
             # le runner traiNNer — même chemin qu'en mode portable, une seule implémentation.
-            if detected_arch in ("heart", "nerve", "wiresr", "fdat_rd", "dat_iln", "wsr", "dual",
+            if detected_arch in ("heart", "nerve", "pulse", "wiresr", "fdat_rd", "dat_iln", "wsr", "dual",
                                  "spanf3"):
                 log(f"{detected_arch.upper()} détecté → subprocess traiNNer (arch_infer)...")
                 _store_subprocess("trainner")

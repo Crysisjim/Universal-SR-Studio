@@ -22,6 +22,7 @@ Licenses were checked against each upstream repository (October 2026).
 | `mambair_arch.py`, `mambairv2_arch.py` | [MambaIR / MambaIRv2](https://github.com/csguoh/MambaIR) — csguoh | Apache-2.0 |
 | `paragonsr_arch.py`, `paragonsr2_arch.py`, `resampler.py` | [ParagonSR](https://github.com/Phhofm/ParagonSR) — Phhofm | MIT |
 | `aether_arch.py`, `aether_core.py` | [AetherNet](https://github.com/Phhofm/aethernet) — Phhofm | MIT |
+| `pulse_arch.py` (+ `custom_utils/icnr.py`) | [PULSE](https://huggingface.co/Phips/PULSE) — Philip Hofmann (Phhofm) | MIT |
 | `gfisrv2_arch.py` | [GFISRv2](https://github.com/umzi2/gfisrv2) — umzi2 | MIT |
 | `spanpp_arch.py` | [SPANpp](https://github.com/umzi2/spanpp) — umzi2 | MIT |
 | `smosr_arch.py` | [SMoSR](https://github.com/umzi2/SMoSR) — umzi2 | MIT |

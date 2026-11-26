@@ -21,8 +21,8 @@ import re
 
 #: Archs that take a single image. MoTSR is a video model (5 frames + recurrence) and
 #: only runs through Quick Upscale's sequence pipeline.
-IMAGE_ARCHS = {"heart", "nerve", "wiresr", "fdat_rd", "dat_iln", "scunet_aaf6aa", "wsr", "dual",
-               "spanf3"}
+IMAGE_ARCHS = {"heart", "nerve", "pulse", "wiresr", "fdat_rd", "dat_iln", "scunet_aaf6aa", "wsr",
+               "dual", "spanf3"}
 
 
 #: Video archs built here for Quick Upscale's sequence pipeline.
@@ -67,6 +67,14 @@ def detect(state_dict) -> str | None:
             and len(state_dict["stem.weight"].shape) == 4
             and state_dict["stem.weight"].shape[2] == 5):
         return "nerve"
+    # PULSE (Phhofm, HF Phips/PULSE): stem conv + body of Conv-ReLU-Conv blocks + biased
+    # PixelShuffle head; the MKS2013 base is a non-persistent buffer (not in the weights).
+    if ("stem.weight" in state_dict and "body.0.conv1.weight" in state_dict
+            and "body.0.conv2.weight" in state_dict and "head.0.weight" in state_dict
+            and "head.0.bias" in state_dict
+            and all(k in ("stem.weight", "head.0.weight", "head.0.bias")
+                    or re.fullmatch(r"body\.\d+\.conv[12]\.weight", k) for k in keys)):
+        return "pulse"
     # DAT-iLN (traiNNer-redux): DAT with a LayerNorm before the residual groups.
     if ("before_RG.norm.weight" in state_dict and "conv_first.weight" in state_dict
             and any(k.startswith("layers.0.blocks.0.attn.attns.") for k in keys)):
@@ -126,6 +134,16 @@ def nerve_kwargs(sd) -> dict:
     head_out = int(sd["upsampler.0.weight"].shape[0])
     out_ch = in_ch
     scale = int(round(math.sqrt(head_out / out_ch)))
+    return {"scale": scale, "in_ch": in_ch, "out_ch": out_ch, "dim": dim, "n_blocks": n_blocks}
+
+
+def pulse_kwargs(sd) -> dict:
+    """PULSE: dim 48 = `pulse`, dim 32 = `pulse_fast`; any dim / depth rebuilt via the class."""
+    dim = int(sd["stem.weight"].shape[0])
+    in_ch = int(sd["stem.weight"].shape[1])
+    n_blocks = len({k.split(".")[1] for k in sd if k.startswith("body.")})
+    out_ch = in_ch
+    scale = int(round(math.sqrt(int(sd["head.0.weight"].shape[0]) / out_ch)))
     return {"scale": scale, "in_ch": in_ch, "out_ch": out_ch, "dim": dim, "n_blocks": n_blocks}
 
 
@@ -417,7 +435,8 @@ def shapes_from_file(path: str) -> dict:
             for k, v in ck.items() if hasattr(v, "shape")}
 
 
-_KWARGS = {"heart": "heart_kwargs", "nerve": "nerve_kwargs", "motsr": "motsr_kwargs",
+_KWARGS = {"heart": "heart_kwargs", "nerve": "nerve_kwargs", "pulse": "pulse_kwargs",
+           "motsr": "motsr_kwargs",
            "wiresr": "wiresr_kwargs", "tfdat": "tfdat_kwargs", "tfdatv2": "tfdatv2_kwargs",
            "fdat_rd": "fdat_rd_kwargs", "scunet_aaf6aa": "scunet_aaf6aa_kwargs",
            "wsr": "wsr_kwargs", "dual": "dual_kwargs", "spanf3": "spanf3_kwargs"}
@@ -437,6 +456,8 @@ def describe(path: str):
         return arch, heart_kwargs(sd)
     if arch == "nerve":
         return arch, nerve_kwargs(sd)
+    if arch == "pulse":
+        return arch, pulse_kwargs(sd)
     if arch == "motsr":
         return arch, motsr_kwargs(sd)
     if arch == "wiresr":
@@ -517,6 +538,19 @@ def build(arch: str, state_dict):
         kw = wsr_kwargs(state_dict) if arch == "wsr" else dual_kwargs(state_dict)
         extra = {"use_checkpoint": False} if arch == "dual" else {}
         model = getattr(mod, kw["preset"])(scale=kw["scale"], **extra)
+        model.load_state_dict(dict(state_dict), strict=True)
+        return model, kw["scale"], kw
+    if arch == "pulse":
+        try:
+            from traiNNer.archs.pulse_arch import PULSE
+        except ImportError:
+            raise RuntimeError(
+                "PULSE reconnu, mais le fichier de son architecture est absent de cette "
+                "installation (réinstallez l'app). / PULSE detected, but its architecture "
+                "file is missing from this installation (reinstall the app).")
+        kw = pulse_kwargs(state_dict)
+        model = PULSE(in_ch=kw["in_ch"], out_ch=kw["out_ch"], dim=kw["dim"],
+                      n_blocks=kw["n_blocks"], upscale=kw["scale"])
         model.load_state_dict(dict(state_dict), strict=True)
         return model, kw["scale"], kw
     if arch == "nerve":

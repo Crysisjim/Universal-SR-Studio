@@ -1005,6 +1005,50 @@ ENGINE_PATCHES: list[dict] = [
         ),
         "description": "USRS texture metrics: register calculate_usrs_* in the metric registry.",
     },
+    {
+        # Found 2026-11-14 (FT2 resume at 11244): check_resume() only redirected G, G EMA
+        # and D to the resume checkpoints, so a resumed 2-discriminator run reloaded D2 from
+        # pretrain_network_d2 (the fine-tune start point). Lived only in the engine copy
+        # until the 2026-11-26 fresh-clone audit.
+        "engine": "redux",
+        "path": "traiNNer/utils/misc.py",
+        "old": (
+            '                        f"Unable to resume, pretrain_network_d not found at path: {basepath}.{model_extensions[0]}"\n'
+            "                    )\n"
+            "\n"
+            '        if opt.path.param_key_g == "params_ema":\n'
+        ),
+        "new": (
+            '                        f"Unable to resume, pretrain_network_d not found at path: {basepath}.{model_extensions[0]}"\n'
+            "                    )\n"
+            "\n"
+            "        # USRS patch: set second discriminator path (network_d2) on resume too.\n"
+            "        # Without this, a resume reloaded net_d2 from pretrain_network_d2 (the\n"
+            "        # fine-tune start point) instead of the resume_iter checkpoint.\n"
+            "        if opt.network_d2 is not None and (\n"
+            "            opt.path.ignore_resume_networks is None\n"
+            '            or "network_d2" not in opt.path.ignore_resume_networks\n'
+            "        ):\n"
+            "            model_exists = False\n"
+            '            basepath = ""\n'
+            "            for ext in model_extensions:\n"
+            "                for model_dir in model_dirs:\n"
+            '                    basepath = osp.join(model_dir, f"net_d2_{resume_iter}")\n'
+            '                    if osp.exists(f"{basepath}.{ext}"):\n'
+            '                        opt.path.pretrain_network_d2 = f"{basepath}.{ext}"\n'
+            "                        model_exists = True\n"
+            "                        print(\n"
+            '                            f"Set pretrain_network_d2 to {opt.path.pretrain_network_d2}",\n'
+            "                        )\n"
+            "            if not model_exists:\n"
+            "                raise FileNotFoundError(\n"
+            '                    f"Unable to resume, pretrain_network_d2 not found at path: {basepath}.{model_extensions[0]}"\n'
+            "                )\n"
+            "\n"
+            '        if opt.path.param_key_g == "params_ema":\n'
+        ),
+        "description": "Resume: also point pretrain_network_d2 at net_d2_<resume_iter>.",
+    },
 ]
 
 
