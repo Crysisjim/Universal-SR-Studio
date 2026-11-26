@@ -119,100 +119,96 @@ checked.
 - **ESCRealM**: its Flex attention needs `triton`, absent from a standard Windows install and
   unsupported on GPUs older than RTX 20; the app then switches it to the equivalent SDPA
   attention (training and Quick Upscale).
+- **Added after the October sweep** (November 2026, trained and upscaled on real runs): **WSR** and **DUAL** (Rift73), **SPANF3** (AnimeJaNai V3 models load in Quick Upscale).
 
-| Architecture | Variants | Train · traiNNer-redux | Train · NeoSR | Quick Upscale | Persistent batch |
-|---|---|:-:|:-:|:-:|:-:|
-| **Light / Fast** | | | | | |
-| artcnn | `artcnn_r16f96`, `artcnn_r3f24`, `artcnn_r8f48`, `artcnn_r8f64` | ✅ | — | ✅ | ✅ |
-| compact |  | ✅ | ✅ | ✅ | ✅ |
-| cugan |  | — | ✅ | ✅ | ✅ |
-| esrgan | `esrgan`, `esrgan_lite` | ✅ | ✅ | ✅ | ✅ |
-| mosrv2 |  | ✅ | ✅ | ✅ | ✅ |
-| ninasr |  | — | ✅ | ✅ | ✅ |
-| plksr | `plksr`, `plksr_tiny` | ✅ | ✅ | ✅ | ✅ |
-| realcugan |  | ✅ | — | ✅ | ✅ |
-| realplksr | `realplksr`, `realplksr_tiny` | ✅ | ✅ | ✅ | ✅ |
-| rtmosr | `rtmosr`, `rtmosr_l`, `rtmosr_ul` | ✅ | — | ✅ | ✅ |
-| safmn | `safmn`, `safmn_l` | ✅ | ✅ | ✅ | ✅ |
-| sebica | `sebica`, `sebica_mini` | ✅ | — | ✅ | ✅ |
-| seemore_t |  | ✅ | — | ✅ | ✅ |
-| span | `span`, `span_s`, `spanf`, `spanpp` | ✅ | ✅ | ✅ | ✅ |
-| spanplus | `spanplus`, `spanplus_s`, `spanplus_st`, `spanplus_sts` | ✅ | ✅ | ✅ | ✅ |
-| superultracompact |  | ✅ | — | ✅ | ✅ |
-| ultracompact |  | ✅ | — | ✅ | ✅ |
-| **Transformers / Attention** | | | | | |
-| atd | `atd`, `atd_light` | ✅ | ✅ | ✅ | ✅ |
-| dat | `dat`, `dat_2`, `dat_light`, `dat_s` | ✅ | ✅ | ✅ | ✅ |
-| dat_iln | `dat_iln`, `dat_iln_2`, `dat_iln_light`, `dat_iln_s` | ✅ | — | ✅ | ✅ |
-| drct | `drct`, `drct_l`, `drct_xl` | ✅ | ✅ | ✅ | ✅ |
-| elan | `elan`, `elan_light` | ✅ | — | ✅ | ✅ |
-| hat | `hat_l`, `hat_m`, `hat_s` | ✅ | ✅ | ✅ | ✅ |
-| hat_iln | `hat_iln_l`, `hat_iln_l_aligned`, `hat_iln_m`, `hat_iln_m_aligned`, `hat_iln_s` | ✅ | — | ✅ | ✅ |
-| omnisr |  | ✅ | ✅ | ✅ | ✅ |
-| srformer | `srformer`, `srformer_light`, `srformer_medium` | ✅ | ✅ | ✅ | ✅ |
-| srformerv2 |  | ✅ | — | ✅ | ✅ |
-| swin2sr | `swin2sr_l`, `swin2sr_m`, `swin2sr_s` | ✅ | — | ✅ | ✅ |
-| swinir | `swinir_l`, `swinir_m`, `swinir_medium`, `swinir_s`, `swinir_small` | ✅ | ✅ | ✅ | ✅ |
-| **GAN / Restoration** | | | | | |
-| rcan | `rcan`, `rcan_l`, `rcan_unshuffle` | ✅ | ✅ | ✅ | ✅ |
-| scunet_aaf6aa |  | ✅ | — | ✅ | ✅ |
-| **Video / Temporal** | | | | | |
-| motsr |  | ✅ | — | ✅ video (sequence) | — (video) |
-| temporalspan | `temporalspan`, `temporalspanv2` | ✅ | — | ✅ video (sequence) | — (video) |
-| tfdat |  | ✅ | — | ✅ video (sequence) | — (video) |
-| tfdatv2 |  | ✅ | — | ✅ video (sequence) | — (video) |
-| tscunet |  | ✅ | — | ✅ video (sequence) | — (video) |
-| **Document Restoration** | | | | | |
-| docres | `docres_base`, `docres_large` | ✅ | — | ✅ | ✅ |
-| **Experimental / Heavy** | | | | | |
-| cascadedgaze |  | ✅ | — | ✅ | ✅ |
-| craft |  | ✅ | ✅ | ✅ | ✅ |
-| dctlsa |  | ✅ | ✅ | ✅ | ✅ |
-| ditn | `ditn`, `ditn_real` | ✅ | ✅ | ✅ | ✅ |
-| dwt | `dwt`, `dwt_s` | ✅ | — | ✅ | ✅ |
-| eimn | `eimn`, `eimn_a`, `eimn_l` | ✅ | ✅ | ✅ | ✅ |
-| emt |  | ✅ | — | ✅ | ✅ |
-| escrealm | `escrealm`, `escrealm_xl` | ✅ | — | ✅ | ✅ |
-| fdat | `fdat`, `fdat_light`, `fdat_xl` | ✅ | — | ✅ | ✅ |
-| flexnet |  | ✅ | ✅ | ✅ | ✅ |
-| gaterv3 | `gaterv3`, `gaterv3_s` | ✅ | — | ✅ | ✅ |
-| grl | `grl_b`, `grl_s`, `grl_t` | ✅ | — | ✅ | ✅ |
-| hit_sir |  | ✅ | — | ✅ | ✅ |
-| hit_sng |  | ✅ | — | ✅ | ✅ |
-| lkfmixer | `lkfmixer_b`, `lkfmixer_l`, `lkfmixer_t` | ✅ | — | ✅ | ✅ |
-| lmlt | `lmlt`, `lmlt_base`, `lmlt_large`, `lmlt_tiny` | ✅ | ✅ | ✅ | ✅ |
-| man | `man`, `man_light`, `man_tiny` | ✅ | ✅ | ✅ | ✅ |
-| metaflexnet |  | ✅ | — | ✅ | ✅ |
-| moesr2 |  | ✅ | — | ✅ | ✅ |
-| mosr | `mosr`, `mosr_t` | ✅ | — | ✅ | ✅ |
-| rgt | `rgt`, `rgt_s` | ✅ | ✅ | ✅ | ✅ |
-| **New / Community** | | | | | |
-| aether | `aether_extreme`, `aether_large`, `aether_medium`, `aether_mobile`, `aether_pro`, `aether_small`, `aether_tiny` | — | ✅ | ✅ | ✅ |
-| catanet |  | — | ✅ | ✅ | ✅ |
-| fdat_rd | `fdat_rd_large`, `fdat_rd_medium`, `fdat_rd_small` | ✅ | — | ✅ | ✅ |
-| figsr |  | ✅ | — | ✅ | ✅ |
-| gfisrv2 |  | ✅ | — | ✅ | ✅ |
-| heart |  | ✅ | — | ✅ | ✅ |
-| mambair |  | ✅ | — | ✅ | ✅ |
-| mambairv2 |  | ✅ | — | ✅ | ✅ |
-| nerve |  | ✅ | — | ✅ | ✅ |
-| paragonsr | `paragonsr_anime`, `paragonsr_l`, `paragonsr_m`, `paragonsr_nano`, `paragonsr_s`, `paragonsr_tiny`, `paragonsr_xl`, `paragonsr_xs` | ✅ | — | ✅ | ✅ |
-| paragonsr2 | `paragonsr2_photo`, `paragonsr2_pro`, `paragonsr2_realtime`, `paragonsr2_stream`, `paragonsr2_ultimate`, `paragonsr2_ultimate_v2` | ✅ | — | ✅ | ✅ |
-| smosr |  | ✅ | — | ✅ | ✅ |
-| wiresr |  | ✅ | — | ✅ | ✅ |
-| **Other** | | | | | |
-| asid |  | — | ✅ | ✅ | ✅ |
-| cfsr |  | — | ✅ | ✅ | ✅ |
-| dct |  | — | ✅ | ✅ | ✅ |
-| esc |  | — | ✅ | ✅ | ✅ |
-| grformer |  | — | ✅ | ✅ | ✅ |
-| hasn |  | — | ✅ | ✅ | ✅ |
-| hit_srf |  | — | ✅ | ✅ | ✅ |
-| hma |  | — | ✅ | ✅ | ✅ |
-| krgn |  | — | ✅ | ✅ | ✅ |
-| moesr |  | — | ✅ | ✅ | ✅ |
-| msdan |  | — | ✅ | ✅ | ✅ |
-| plainusr |  | — | ✅ | ✅ | ✅ |
+| Architecture | Variants | Category | Train · traiNNer-redux | Train · NeoSR | Quick Upscale | Persistent batch |
+|---|---|---|:-:|:-:|:-:|:-:|
+| aether | `aether_extreme`, `aether_large`, `aether_medium`, `aether_mobile`, `aether_pro`, `aether_small`, `aether_tiny` | **🆕 New / Community** | — | ✅ | ✅ | ✅ |
+| artcnn | `artcnn_r16f96`, `artcnn_r3f24`, `artcnn_r8f48`, `artcnn_r8f64` | **🚀 Light / Fast** | ✅ | — | ✅ | ✅ |
+| asid |  | **📦 Other** | — | ✅ | ✅ | ✅ |
+| atd | `atd`, `atd_light` | **🤖 Transformers / Attention** | ✅ | ✅ | ✅ | ✅ |
+| cascadedgaze |  | **🧪 Experimental / Heavy** | ✅ | — | ✅ | ✅ |
+| catanet |  | **🆕 New / Community** | — | ✅ | ✅ | ✅ |
+| cfsr |  | **📦 Other** | — | ✅ | ✅ | ✅ |
+| compact |  | **🚀 Light / Fast** | ✅ | ✅ | ✅ | ✅ |
+| craft |  | **🧪 Experimental / Heavy** | ✅ | ✅ | ✅ | ✅ |
+| cugan |  | **🚀 Light / Fast** | — | ✅ | ✅ | ✅ |
+| dat | `dat`, `dat_2`, `dat_light`, `dat_s` | **🤖 Transformers / Attention** | ✅ | ✅ | ✅ | ✅ |
+| dat_iln | `dat_iln`, `dat_iln_2`, `dat_iln_light`, `dat_iln_s` | **🤖 Transformers / Attention** | ✅ | — | ✅ | ✅ |
+| dct |  | **📦 Other** | — | ✅ | ✅ | ✅ |
+| dctlsa |  | **🧪 Experimental / Heavy** | ✅ | ✅ | ✅ | ✅ |
+| ditn | `ditn`, `ditn_real` | **🧪 Experimental / Heavy** | ✅ | ✅ | ✅ | ✅ |
+| docres | `docres_base`, `docres_large` | **🗎 Document Restoration** | ✅ | — | ✅ | ✅ |
+| drct | `drct`, `drct_l`, `drct_xl` | **🤖 Transformers / Attention** | ✅ | ✅ | ✅ | ✅ |
+| dual | `dual_light`, `dual_xs`, `dual_s`, `dual_m`, `dual_l`, `dual_xl` | **🤖 Transformers / Attention** | ✅ | — | ✅ | ✅ |
+| dwt | `dwt`, `dwt_s` | **🧪 Experimental / Heavy** | ✅ | — | ✅ | ✅ |
+| eimn | `eimn`, `eimn_a`, `eimn_l` | **🧪 Experimental / Heavy** | ✅ | ✅ | ✅ | ✅ |
+| elan | `elan`, `elan_light` | **🤖 Transformers / Attention** | ✅ | — | ✅ | ✅ |
+| emt |  | **🧪 Experimental / Heavy** | ✅ | — | ✅ | ✅ |
+| esc |  | **📦 Other** | — | ✅ | ✅ | ✅ |
+| escrealm | `escrealm`, `escrealm_xl` | **🧪 Experimental / Heavy** | ✅ | — | ✅ | ✅ |
+| esrgan | `esrgan`, `esrgan_lite` | **🚀 Light / Fast** | ✅ | ✅ | ✅ | ✅ |
+| fdat | `fdat`, `fdat_light`, `fdat_xl` | **🧪 Experimental / Heavy** | ✅ | — | ✅ | ✅ |
+| fdat_rd | `fdat_rd_large`, `fdat_rd_medium`, `fdat_rd_small` | **🆕 New / Community** | ✅ | — | ✅ | ✅ |
+| figsr |  | **🆕 New / Community** | ✅ | — | ✅ | ✅ |
+| flexnet |  | **🧪 Experimental / Heavy** | ✅ | ✅ | ✅ | ✅ |
+| gaterv3 | `gaterv3`, `gaterv3_s` | **🧪 Experimental / Heavy** | ✅ | — | ✅ | ✅ |
+| gfisrv2 |  | **🆕 New / Community** | ✅ | — | ✅ | ✅ |
+| grformer |  | **📦 Other** | — | ✅ | ✅ | ✅ |
+| grl | `grl_b`, `grl_s`, `grl_t` | **🧪 Experimental / Heavy** | ✅ | — | ✅ | ✅ |
+| hasn |  | **📦 Other** | — | ✅ | ✅ | ✅ |
+| hat | `hat_l`, `hat_m`, `hat_s` | **🤖 Transformers / Attention** | ✅ | ✅ | ✅ | ✅ |
+| hat_iln | `hat_iln_l`, `hat_iln_l_aligned`, `hat_iln_m`, `hat_iln_m_aligned`, `hat_iln_s` | **🤖 Transformers / Attention** | ✅ | — | ✅ | ✅ |
+| heart |  | **🆕 New / Community** | ✅ | — | ✅ | ✅ |
+| hit_sir |  | **🧪 Experimental / Heavy** | ✅ | — | ✅ | ✅ |
+| hit_sng |  | **🧪 Experimental / Heavy** | ✅ | — | ✅ | ✅ |
+| hit_srf |  | **📦 Other** | — | ✅ | ✅ | ✅ |
+| hma |  | **📦 Other** | — | ✅ | ✅ | ✅ |
+| krgn |  | **📦 Other** | — | ✅ | ✅ | ✅ |
+| lkfmixer | `lkfmixer_b`, `lkfmixer_l`, `lkfmixer_t` | **🧪 Experimental / Heavy** | ✅ | — | ✅ | ✅ |
+| lmlt | `lmlt`, `lmlt_base`, `lmlt_large`, `lmlt_tiny` | **🧪 Experimental / Heavy** | ✅ | ✅ | ✅ | ✅ |
+| mambair |  | **🆕 New / Community** | ✅ | — | ✅ | ✅ |
+| mambairv2 |  | **🆕 New / Community** | ✅ | — | ✅ | ✅ |
+| man | `man`, `man_light`, `man_tiny` | **🧪 Experimental / Heavy** | ✅ | ✅ | ✅ | ✅ |
+| metaflexnet |  | **🧪 Experimental / Heavy** | ✅ | — | ✅ | ✅ |
+| moesr |  | **📦 Other** | — | ✅ | ✅ | ✅ |
+| moesr2 |  | **🧪 Experimental / Heavy** | ✅ | — | ✅ | ✅ |
+| mosr | `mosr`, `mosr_t` | **🧪 Experimental / Heavy** | ✅ | — | ✅ | ✅ |
+| mosrv2 |  | **🚀 Light / Fast** | ✅ | ✅ | ✅ | ✅ |
+| motsr |  | **🎞️ Video / Temporal** | ✅ | — | ✅ video (sequence) | — (video) |
+| msdan |  | **📦 Other** | — | ✅ | ✅ | ✅ |
+| nerve |  | **🆕 New / Community** | ✅ | — | ✅ | ✅ |
+| ninasr |  | **🚀 Light / Fast** | — | ✅ | ✅ | ✅ |
+| omnisr |  | **🤖 Transformers / Attention** | ✅ | ✅ | ✅ | ✅ |
+| paragonsr | `paragonsr_anime`, `paragonsr_l`, `paragonsr_m`, `paragonsr_nano`, `paragonsr_s`, `paragonsr_tiny`, `paragonsr_xl`, `paragonsr_xs` | **🏆 ParagonSR (Phhofm)** | ✅ | — | ✅ | ✅ |
+| paragonsr2 | `paragonsr2_photo`, `paragonsr2_pro`, `paragonsr2_realtime`, `paragonsr2_stream`, `paragonsr2_ultimate`, `paragonsr2_ultimate_v2` | **🏆 ParagonSR (Phhofm)** | ✅ | — | ✅ | ✅ |
+| plainusr |  | **📦 Other** | — | ✅ | ✅ | ✅ |
+| plksr | `plksr`, `plksr_tiny` | **🚀 Light / Fast** | ✅ | ✅ | ✅ | ✅ |
+| rcan | `rcan`, `rcan_l`, `rcan_unshuffle` | **🎨 GAN / Restoration** | ✅ | ✅ | ✅ | ✅ |
+| realcugan |  | **🚀 Light / Fast** | ✅ | — | ✅ | ✅ |
+| realplksr | `realplksr`, `realplksr_tiny` | **🚀 Light / Fast** | ✅ | ✅ | ✅ | ✅ |
+| rgt | `rgt`, `rgt_s` | **🧪 Experimental / Heavy** | ✅ | ✅ | ✅ | ✅ |
+| rtmosr | `rtmosr`, `rtmosr_l`, `rtmosr_ul` | **🚀 Light / Fast** | ✅ | — | ✅ | ✅ |
+| safmn | `safmn`, `safmn_l` | **🚀 Light / Fast** | ✅ | ✅ | ✅ | ✅ |
+| scunet_aaf6aa |  | **🎨 GAN / Restoration** | ✅ | — | ✅ | ✅ |
+| sebica | `sebica`, `sebica_mini` | **🚀 Light / Fast** | ✅ | — | ✅ | ✅ |
+| seemore_t |  | **🚀 Light / Fast** | ✅ | — | ✅ | ✅ |
+| smosr |  | **🆕 New / Community** | ✅ | — | ✅ | ✅ |
+| span | `span`, `span_s`, `spanf`, `spanpp` | **🚀 Light / Fast** | ✅ | ✅ | ✅ | ✅ |
+| spanf3 |  | **🚀 Light / Fast** | ✅ | — | ✅ | ✅ |
+| spanplus | `spanplus`, `spanplus_s`, `spanplus_st`, `spanplus_sts` | **🚀 Light / Fast** | ✅ | ✅ | ✅ | ✅ |
+| srformer | `srformer`, `srformer_light`, `srformer_medium` | **🤖 Transformers / Attention** | ✅ | ✅ | ✅ | ✅ |
+| srformerv2 |  | **🤖 Transformers / Attention** | ✅ | — | ✅ | ✅ |
+| superultracompact |  | **🚀 Light / Fast** | ✅ | — | ✅ | ✅ |
+| swin2sr | `swin2sr_l`, `swin2sr_m`, `swin2sr_s` | **🤖 Transformers / Attention** | ✅ | — | ✅ | ✅ |
+| swinir | `swinir_l`, `swinir_m`, `swinir_medium`, `swinir_s`, `swinir_small` | **🤖 Transformers / Attention** | ✅ | ✅ | ✅ | ✅ |
+| temporalspan | `temporalspan`, `temporalspanv2` | **🎞️ Video / Temporal** | ✅ | — | ✅ video (sequence) | — (video) |
+| tfdat |  | **🎞️ Video / Temporal** | ✅ | — | ✅ video (sequence) | — (video) |
+| tfdatv2 |  | **🎞️ Video / Temporal** | ✅ | — | ✅ video (sequence) | — (video) |
+| tscunet |  | **🎞️ Video / Temporal** | ✅ | — | ✅ video (sequence) | — (video) |
+| ultracompact |  | **🚀 Light / Fast** | ✅ | — | ✅ | ✅ |
+| wiresr |  | **🆕 New / Community** | ✅ | — | ✅ | ✅ |
+| wsr | `wsr_mobile`, `wsr_superultracompact`, `wsr_ultracompact`, `wsr_compact`, `wsr` | **🚀 Light / Fast** | ✅ | — | ✅ | ✅ |
 <!-- ARCH_TABLE_EN_END -->
 
 ### Quick Start — Portable (recommended)
@@ -431,100 +427,96 @@ contrôle de la taille de sortie.
 - **ESCRealM** : son attention Flex demande `triton`, absent d'une installation Windows
   standard et non supporté avant les RTX 20 ; l'app bascule alors sur l'attention SDPA
   équivalente (entraînement et Quick Upscale).
+- **Ajoutées après la campagne d'octobre** (novembre 2026, entraînées et testées en Quick Upscale) : **WSR** et **DUAL** (Rift73), **SPANF3** (les modèles AnimeJaNai V3 se chargent dans Quick Upscale).
 
-| Architecture | Variantes | Entraînement · traiNNer-redux | Entraînement · NeoSR | Quick Upscale | Batch persistant |
-|---|---|:-:|:-:|:-:|:-:|
-| **Légères / rapides** | | | | | |
-| artcnn | `artcnn_r16f96`, `artcnn_r3f24`, `artcnn_r8f48`, `artcnn_r8f64` | ✅ | — | ✅ | ✅ |
-| compact |  | ✅ | ✅ | ✅ | ✅ |
-| cugan |  | — | ✅ | ✅ | ✅ |
-| esrgan | `esrgan`, `esrgan_lite` | ✅ | ✅ | ✅ | ✅ |
-| mosrv2 |  | ✅ | ✅ | ✅ | ✅ |
-| ninasr |  | — | ✅ | ✅ | ✅ |
-| plksr | `plksr`, `plksr_tiny` | ✅ | ✅ | ✅ | ✅ |
-| realcugan |  | ✅ | — | ✅ | ✅ |
-| realplksr | `realplksr`, `realplksr_tiny` | ✅ | ✅ | ✅ | ✅ |
-| rtmosr | `rtmosr`, `rtmosr_l`, `rtmosr_ul` | ✅ | — | ✅ | ✅ |
-| safmn | `safmn`, `safmn_l` | ✅ | ✅ | ✅ | ✅ |
-| sebica | `sebica`, `sebica_mini` | ✅ | — | ✅ | ✅ |
-| seemore_t |  | ✅ | — | ✅ | ✅ |
-| span | `span`, `span_s`, `spanf`, `spanpp` | ✅ | ✅ | ✅ | ✅ |
-| spanplus | `spanplus`, `spanplus_s`, `spanplus_st`, `spanplus_sts` | ✅ | ✅ | ✅ | ✅ |
-| superultracompact |  | ✅ | — | ✅ | ✅ |
-| ultracompact |  | ✅ | — | ✅ | ✅ |
-| **Transformers / attention** | | | | | |
-| atd | `atd`, `atd_light` | ✅ | ✅ | ✅ | ✅ |
-| dat | `dat`, `dat_2`, `dat_light`, `dat_s` | ✅ | ✅ | ✅ | ✅ |
-| dat_iln | `dat_iln`, `dat_iln_2`, `dat_iln_light`, `dat_iln_s` | ✅ | — | ✅ | ✅ |
-| drct | `drct`, `drct_l`, `drct_xl` | ✅ | ✅ | ✅ | ✅ |
-| elan | `elan`, `elan_light` | ✅ | — | ✅ | ✅ |
-| hat | `hat_l`, `hat_m`, `hat_s` | ✅ | ✅ | ✅ | ✅ |
-| hat_iln | `hat_iln_l`, `hat_iln_l_aligned`, `hat_iln_m`, `hat_iln_m_aligned`, `hat_iln_s` | ✅ | — | ✅ | ✅ |
-| omnisr |  | ✅ | ✅ | ✅ | ✅ |
-| srformer | `srformer`, `srformer_light`, `srformer_medium` | ✅ | ✅ | ✅ | ✅ |
-| srformerv2 |  | ✅ | — | ✅ | ✅ |
-| swin2sr | `swin2sr_l`, `swin2sr_m`, `swin2sr_s` | ✅ | — | ✅ | ✅ |
-| swinir | `swinir_l`, `swinir_m`, `swinir_medium`, `swinir_s`, `swinir_small` | ✅ | ✅ | ✅ | ✅ |
-| **GAN / restauration** | | | | | |
-| rcan | `rcan`, `rcan_l`, `rcan_unshuffle` | ✅ | ✅ | ✅ | ✅ |
-| scunet_aaf6aa |  | ✅ | — | ✅ | ✅ |
-| **Vidéo / temporel** | | | | | |
-| motsr |  | ✅ | — | ✅ vidéo (séquence) | — (vidéo) |
-| temporalspan | `temporalspan`, `temporalspanv2` | ✅ | — | ✅ vidéo (séquence) | — (vidéo) |
-| tfdat |  | ✅ | — | ✅ vidéo (séquence) | — (vidéo) |
-| tfdatv2 |  | ✅ | — | ✅ vidéo (séquence) | — (vidéo) |
-| tscunet |  | ✅ | — | ✅ vidéo (séquence) | — (vidéo) |
-| **Restauration de documents** | | | | | |
-| docres | `docres_base`, `docres_large` | ✅ | — | ✅ | ✅ |
-| **Expérimentales / lourdes** | | | | | |
-| cascadedgaze |  | ✅ | — | ✅ | ✅ |
-| craft |  | ✅ | ✅ | ✅ | ✅ |
-| dctlsa |  | ✅ | ✅ | ✅ | ✅ |
-| ditn | `ditn`, `ditn_real` | ✅ | ✅ | ✅ | ✅ |
-| dwt | `dwt`, `dwt_s` | ✅ | — | ✅ | ✅ |
-| eimn | `eimn`, `eimn_a`, `eimn_l` | ✅ | ✅ | ✅ | ✅ |
-| emt |  | ✅ | — | ✅ | ✅ |
-| escrealm | `escrealm`, `escrealm_xl` | ✅ | — | ✅ | ✅ |
-| fdat | `fdat`, `fdat_light`, `fdat_xl` | ✅ | — | ✅ | ✅ |
-| flexnet |  | ✅ | ✅ | ✅ | ✅ |
-| gaterv3 | `gaterv3`, `gaterv3_s` | ✅ | — | ✅ | ✅ |
-| grl | `grl_b`, `grl_s`, `grl_t` | ✅ | — | ✅ | ✅ |
-| hit_sir |  | ✅ | — | ✅ | ✅ |
-| hit_sng |  | ✅ | — | ✅ | ✅ |
-| lkfmixer | `lkfmixer_b`, `lkfmixer_l`, `lkfmixer_t` | ✅ | — | ✅ | ✅ |
-| lmlt | `lmlt`, `lmlt_base`, `lmlt_large`, `lmlt_tiny` | ✅ | ✅ | ✅ | ✅ |
-| man | `man`, `man_light`, `man_tiny` | ✅ | ✅ | ✅ | ✅ |
-| metaflexnet |  | ✅ | — | ✅ | ✅ |
-| moesr2 |  | ✅ | — | ✅ | ✅ |
-| mosr | `mosr`, `mosr_t` | ✅ | — | ✅ | ✅ |
-| rgt | `rgt`, `rgt_s` | ✅ | ✅ | ✅ | ✅ |
-| **Nouvelles / communauté** | | | | | |
-| aether | `aether_extreme`, `aether_large`, `aether_medium`, `aether_mobile`, `aether_pro`, `aether_small`, `aether_tiny` | — | ✅ | ✅ | ✅ |
-| catanet |  | — | ✅ | ✅ | ✅ |
-| fdat_rd | `fdat_rd_large`, `fdat_rd_medium`, `fdat_rd_small` | ✅ | — | ✅ | ✅ |
-| figsr |  | ✅ | — | ✅ | ✅ |
-| gfisrv2 |  | ✅ | — | ✅ | ✅ |
-| heart |  | ✅ | — | ✅ | ✅ |
-| mambair |  | ✅ | — | ✅ | ✅ |
-| mambairv2 |  | ✅ | — | ✅ | ✅ |
-| nerve |  | ✅ | — | ✅ | ✅ |
-| paragonsr | `paragonsr_anime`, `paragonsr_l`, `paragonsr_m`, `paragonsr_nano`, `paragonsr_s`, `paragonsr_tiny`, `paragonsr_xl`, `paragonsr_xs` | ✅ | — | ✅ | ✅ |
-| paragonsr2 | `paragonsr2_photo`, `paragonsr2_pro`, `paragonsr2_realtime`, `paragonsr2_stream`, `paragonsr2_ultimate`, `paragonsr2_ultimate_v2` | ✅ | — | ✅ | ✅ |
-| smosr |  | ✅ | — | ✅ | ✅ |
-| wiresr |  | ✅ | — | ✅ | ✅ |
-| **Autres (NeoSR)** | | | | | |
-| asid |  | — | ✅ | ✅ | ✅ |
-| cfsr |  | — | ✅ | ✅ | ✅ |
-| dct |  | — | ✅ | ✅ | ✅ |
-| esc |  | — | ✅ | ✅ | ✅ |
-| grformer |  | — | ✅ | ✅ | ✅ |
-| hasn |  | — | ✅ | ✅ | ✅ |
-| hit_srf |  | — | ✅ | ✅ | ✅ |
-| hma |  | — | ✅ | ✅ | ✅ |
-| krgn |  | — | ✅ | ✅ | ✅ |
-| moesr |  | — | ✅ | ✅ | ✅ |
-| msdan |  | — | ✅ | ✅ | ✅ |
-| plainusr |  | — | ✅ | ✅ | ✅ |
+| Architecture | Variantes | Catégorie | Entraînement · traiNNer-redux | Entraînement · NeoSR | Quick Upscale | Batch persistant |
+|---|---|---|:-:|:-:|:-:|:-:|
+| aether | `aether_extreme`, `aether_large`, `aether_medium`, `aether_mobile`, `aether_pro`, `aether_small`, `aether_tiny` | **🆕 Nouveaux / Communauté** | — | ✅ | ✅ | ✅ |
+| artcnn | `artcnn_r16f96`, `artcnn_r3f24`, `artcnn_r8f48`, `artcnn_r8f64` | **🚀 Léger / Rapide** | ✅ | — | ✅ | ✅ |
+| asid |  | **📦 Autres** | — | ✅ | ✅ | ✅ |
+| atd | `atd`, `atd_light` | **🤖 Transformers / Attention** | ✅ | ✅ | ✅ | ✅ |
+| cascadedgaze |  | **🧪 Expérimental / Lourd** | ✅ | — | ✅ | ✅ |
+| catanet |  | **🆕 Nouveaux / Communauté** | — | ✅ | ✅ | ✅ |
+| cfsr |  | **📦 Autres** | — | ✅ | ✅ | ✅ |
+| compact |  | **🚀 Léger / Rapide** | ✅ | ✅ | ✅ | ✅ |
+| craft |  | **🧪 Expérimental / Lourd** | ✅ | ✅ | ✅ | ✅ |
+| cugan |  | **🚀 Léger / Rapide** | — | ✅ | ✅ | ✅ |
+| dat | `dat`, `dat_2`, `dat_light`, `dat_s` | **🤖 Transformers / Attention** | ✅ | ✅ | ✅ | ✅ |
+| dat_iln | `dat_iln`, `dat_iln_2`, `dat_iln_light`, `dat_iln_s` | **🤖 Transformers / Attention** | ✅ | — | ✅ | ✅ |
+| dct |  | **📦 Autres** | — | ✅ | ✅ | ✅ |
+| dctlsa |  | **🧪 Expérimental / Lourd** | ✅ | ✅ | ✅ | ✅ |
+| ditn | `ditn`, `ditn_real` | **🧪 Expérimental / Lourd** | ✅ | ✅ | ✅ | ✅ |
+| docres | `docres_base`, `docres_large` | **🗎 Restauration Document** | ✅ | — | ✅ | ✅ |
+| drct | `drct`, `drct_l`, `drct_xl` | **🤖 Transformers / Attention** | ✅ | ✅ | ✅ | ✅ |
+| dual | `dual_light`, `dual_xs`, `dual_s`, `dual_m`, `dual_l`, `dual_xl` | **🤖 Transformers / Attention** | ✅ | — | ✅ | ✅ |
+| dwt | `dwt`, `dwt_s` | **🧪 Expérimental / Lourd** | ✅ | — | ✅ | ✅ |
+| eimn | `eimn`, `eimn_a`, `eimn_l` | **🧪 Expérimental / Lourd** | ✅ | ✅ | ✅ | ✅ |
+| elan | `elan`, `elan_light` | **🤖 Transformers / Attention** | ✅ | — | ✅ | ✅ |
+| emt |  | **🧪 Expérimental / Lourd** | ✅ | — | ✅ | ✅ |
+| esc |  | **📦 Autres** | — | ✅ | ✅ | ✅ |
+| escrealm | `escrealm`, `escrealm_xl` | **🧪 Expérimental / Lourd** | ✅ | — | ✅ | ✅ |
+| esrgan | `esrgan`, `esrgan_lite` | **🚀 Léger / Rapide** | ✅ | ✅ | ✅ | ✅ |
+| fdat | `fdat`, `fdat_light`, `fdat_xl` | **🧪 Expérimental / Lourd** | ✅ | — | ✅ | ✅ |
+| fdat_rd | `fdat_rd_large`, `fdat_rd_medium`, `fdat_rd_small` | **🆕 Nouveaux / Communauté** | ✅ | — | ✅ | ✅ |
+| figsr |  | **🆕 Nouveaux / Communauté** | ✅ | — | ✅ | ✅ |
+| flexnet |  | **🧪 Expérimental / Lourd** | ✅ | ✅ | ✅ | ✅ |
+| gaterv3 | `gaterv3`, `gaterv3_s` | **🧪 Expérimental / Lourd** | ✅ | — | ✅ | ✅ |
+| gfisrv2 |  | **🆕 Nouveaux / Communauté** | ✅ | — | ✅ | ✅ |
+| grformer |  | **📦 Autres** | — | ✅ | ✅ | ✅ |
+| grl | `grl_b`, `grl_s`, `grl_t` | **🧪 Expérimental / Lourd** | ✅ | — | ✅ | ✅ |
+| hasn |  | **📦 Autres** | — | ✅ | ✅ | ✅ |
+| hat | `hat_l`, `hat_m`, `hat_s` | **🤖 Transformers / Attention** | ✅ | ✅ | ✅ | ✅ |
+| hat_iln | `hat_iln_l`, `hat_iln_l_aligned`, `hat_iln_m`, `hat_iln_m_aligned`, `hat_iln_s` | **🤖 Transformers / Attention** | ✅ | — | ✅ | ✅ |
+| heart |  | **🆕 Nouveaux / Communauté** | ✅ | — | ✅ | ✅ |
+| hit_sir |  | **🧪 Expérimental / Lourd** | ✅ | — | ✅ | ✅ |
+| hit_sng |  | **🧪 Expérimental / Lourd** | ✅ | — | ✅ | ✅ |
+| hit_srf |  | **📦 Autres** | — | ✅ | ✅ | ✅ |
+| hma |  | **📦 Autres** | — | ✅ | ✅ | ✅ |
+| krgn |  | **📦 Autres** | — | ✅ | ✅ | ✅ |
+| lkfmixer | `lkfmixer_b`, `lkfmixer_l`, `lkfmixer_t` | **🧪 Expérimental / Lourd** | ✅ | — | ✅ | ✅ |
+| lmlt | `lmlt`, `lmlt_base`, `lmlt_large`, `lmlt_tiny` | **🧪 Expérimental / Lourd** | ✅ | ✅ | ✅ | ✅ |
+| mambair |  | **🆕 Nouveaux / Communauté** | ✅ | — | ✅ | ✅ |
+| mambairv2 |  | **🆕 Nouveaux / Communauté** | ✅ | — | ✅ | ✅ |
+| man | `man`, `man_light`, `man_tiny` | **🧪 Expérimental / Lourd** | ✅ | ✅ | ✅ | ✅ |
+| metaflexnet |  | **🧪 Expérimental / Lourd** | ✅ | — | ✅ | ✅ |
+| moesr |  | **📦 Autres** | — | ✅ | ✅ | ✅ |
+| moesr2 |  | **🧪 Expérimental / Lourd** | ✅ | — | ✅ | ✅ |
+| mosr | `mosr`, `mosr_t` | **🧪 Expérimental / Lourd** | ✅ | — | ✅ | ✅ |
+| mosrv2 |  | **🚀 Léger / Rapide** | ✅ | ✅ | ✅ | ✅ |
+| motsr |  | **🎞️ Vidéo / Temporal** | ✅ | — | ✅ vidéo (séquence) | — (vidéo) |
+| msdan |  | **📦 Autres** | — | ✅ | ✅ | ✅ |
+| nerve |  | **🆕 Nouveaux / Communauté** | ✅ | — | ✅ | ✅ |
+| ninasr |  | **🚀 Léger / Rapide** | — | ✅ | ✅ | ✅ |
+| omnisr |  | **🤖 Transformers / Attention** | ✅ | ✅ | ✅ | ✅ |
+| paragonsr | `paragonsr_anime`, `paragonsr_l`, `paragonsr_m`, `paragonsr_nano`, `paragonsr_s`, `paragonsr_tiny`, `paragonsr_xl`, `paragonsr_xs` | **🆕 Nouveaux / Communauté** | ✅ | — | ✅ | ✅ |
+| paragonsr2 | `paragonsr2_photo`, `paragonsr2_pro`, `paragonsr2_realtime`, `paragonsr2_stream`, `paragonsr2_ultimate`, `paragonsr2_ultimate_v2` | **🆕 Nouveaux / Communauté** | ✅ | — | ✅ | ✅ |
+| plainusr |  | **📦 Autres** | — | ✅ | ✅ | ✅ |
+| plksr | `plksr`, `plksr_tiny` | **🚀 Léger / Rapide** | ✅ | ✅ | ✅ | ✅ |
+| rcan | `rcan`, `rcan_l`, `rcan_unshuffle` | **🎨 GAN / Restauration** | ✅ | ✅ | ✅ | ✅ |
+| realcugan |  | **🚀 Léger / Rapide** | ✅ | — | ✅ | ✅ |
+| realplksr | `realplksr`, `realplksr_tiny` | **🚀 Léger / Rapide** | ✅ | ✅ | ✅ | ✅ |
+| rgt | `rgt`, `rgt_s` | **🧪 Expérimental / Lourd** | ✅ | ✅ | ✅ | ✅ |
+| rtmosr | `rtmosr`, `rtmosr_l`, `rtmosr_ul` | **🚀 Léger / Rapide** | ✅ | — | ✅ | ✅ |
+| safmn | `safmn`, `safmn_l` | **🚀 Léger / Rapide** | ✅ | ✅ | ✅ | ✅ |
+| scunet_aaf6aa |  | **🎨 GAN / Restauration** | ✅ | — | ✅ | ✅ |
+| sebica | `sebica`, `sebica_mini` | **🚀 Léger / Rapide** | ✅ | — | ✅ | ✅ |
+| seemore_t |  | **🚀 Léger / Rapide** | ✅ | — | ✅ | ✅ |
+| smosr |  | **🆕 Nouveaux / Communauté** | ✅ | — | ✅ | ✅ |
+| span | `span`, `span_s`, `spanf`, `spanpp` | **🚀 Léger / Rapide** | ✅ | ✅ | ✅ | ✅ |
+| spanf3 |  | **🚀 Léger / Rapide** | ✅ | — | ✅ | ✅ |
+| spanplus | `spanplus`, `spanplus_s`, `spanplus_st`, `spanplus_sts` | **🚀 Léger / Rapide** | ✅ | ✅ | ✅ | ✅ |
+| srformer | `srformer`, `srformer_light`, `srformer_medium` | **🤖 Transformers / Attention** | ✅ | ✅ | ✅ | ✅ |
+| srformerv2 |  | **🤖 Transformers / Attention** | ✅ | — | ✅ | ✅ |
+| superultracompact |  | **🚀 Léger / Rapide** | ✅ | — | ✅ | ✅ |
+| swin2sr | `swin2sr_l`, `swin2sr_m`, `swin2sr_s` | **🤖 Transformers / Attention** | ✅ | — | ✅ | ✅ |
+| swinir | `swinir_l`, `swinir_m`, `swinir_medium`, `swinir_s`, `swinir_small` | **🤖 Transformers / Attention** | ✅ | ✅ | ✅ | ✅ |
+| temporalspan | `temporalspan`, `temporalspanv2` | **🎞️ Vidéo / Temporal** | ✅ | — | ✅ vidéo (séquence) | — (vidéo) |
+| tfdat |  | **🎞️ Vidéo / Temporal** | ✅ | — | ✅ vidéo (séquence) | — (vidéo) |
+| tfdatv2 |  | **🎞️ Vidéo / Temporal** | ✅ | — | ✅ vidéo (séquence) | — (vidéo) |
+| tscunet |  | **🎞️ Vidéo / Temporal** | ✅ | — | ✅ vidéo (séquence) | — (vidéo) |
+| ultracompact |  | **🚀 Léger / Rapide** | ✅ | — | ✅ | ✅ |
+| wiresr |  | **🆕 Nouveaux / Communauté** | ✅ | — | ✅ | ✅ |
+| wsr | `wsr_mobile`, `wsr_superultracompact`, `wsr_ultracompact`, `wsr_compact`, `wsr` | **🚀 Léger / Rapide** | ✅ | — | ✅ | ✅ |
 <!-- ARCH_TABLE_FR_END -->
 
 ### Démarrage rapide — Portable (recommandé)
